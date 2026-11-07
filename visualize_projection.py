@@ -21688,33 +21688,13 @@ def _tk_stage_prior(activities=_TK_ACTIVITIES):
 
 
 _TK_AL_STAGE_HOURS_PRIOR = _tk_stage_prior()
-# From Peter's conversations with frontier researchers; between METR's RCT
-# (1.04-1.2x) and self-reports (METR's 2026 survey 1.4-2x value, Anthropic's
-# staff rounds 2-4x).
-_TK_HUMAN_ACCELERATION = 1.7
 
 
-def _tk_fit_al_hours(row, prior=_TK_AL_STAGE_HOURS_PRIOR, accel=_TK_HUMAN_ACCELERATION,
-                     weights=None):
-    """`prior` (stages, or activities, x levels) raised to the power that
-    makes `row`'s ladder imply a human share of 1 / `accel` at `weights`
-    (default the stages'; bisection on the power, the share rises as it
-    falls). The prior unchanged if the target is out of reach."""
-    bands = np.array(_tk_al_bands(row))
-    base = np.array(prior)[:, :5]
-    weights = takeoff.WORKFLOW_WEIGHTS if weights is None else np.asarray(weights)
-
-    def share(k):
-        return float(weights @ (base ** k @ bands))
-    target = 1 / accel
-    lo, hi = 1e-3, 20.0
-    if not share(hi) <= target <= share(lo):
-        return tuple(tuple(r) for r in prior)
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        lo, hi = (mid, hi) if share(mid) > target else (lo, mid)
-    k = (lo + hi) / 2
-    return tuple(tuple(float(v) for v in r) + (0.0,) for r in base ** k)
+def _tk_al_hours(prior=_TK_AL_STAGE_HOURS_PRIOR):
+    """`prior` (stages, or activities, x levels) as the hours each level still
+    takes, AL5 at 0. Used as they stand: no speed-up target rescales them
+    (`test_hours_are_the_priors_as_they_stand`)."""
+    return tuple(tuple(float(v) for v in r[:5]) + (0.0,) for r in prior)
 
 
 def _tk_overall_hours(hours):
@@ -21747,7 +21727,7 @@ def _tk_ladder_start_row():
     return {**cur, 'al1': 100.0, 'al2': 100 * al2, 'al3': 100 * al3, 'al4': 100 * al4}
 
 
-_TK_AL_HUMAN_HOURS = _tk_fit_al_hours(_tk_ladder_start_row())
+_TK_AL_HUMAN_HOURS = _tk_al_hours()
 
 
 def _tk_stage_shares(row, hours=None):
@@ -21904,12 +21884,11 @@ def _tk_copies_yearly(rows, params=None):
     return float((h + (1 - h) / s) / (h + (1 - h) / (s * g)))
 
 
-def _tk_human_calibration(accel):
-    """The stage settings a human research speed-up of `accel` today implies:
-    each stage's starting human share and halving time, read through the hours
-    per level `_tk_fit_al_hours` fits to it."""
+def _tk_human_calibration():
+    """Each stage's starting human share and halving time, read off the
+    automation index through the hours per level (`_TK_AL_HUMAN_HOURS`)."""
     rows = load_rsi_automation()
-    hours = _tk_fit_al_hours(_tk_ladder_start_row(), accel=accel)
+    hours = _TK_AL_HUMAN_HOURS
     out = _tk_ladder_stage_starts(rows, hours)
     out.update(_tk_ladder_stage_halvings(rows, takeoff.DEFAULTS["human_floor"], hours))
     return out
@@ -22030,15 +22009,15 @@ def _tk_staff_al5_note():
             f"({check['median_date']:%b %Y}). Self-reported, and a share of work, not of hours.")
 
 
-def _tk_activity_path(accel):
+def _tk_activity_path():
     """Each activity's human hours per level, as a share of an unassisted
-    researcher's total, at a speed-up of `accel`: its stage's fitted hours
+    researcher's total: its stage's hours
     split among the stage's activities in proportion to their priors at that
     level, so the activities sum to the model's stages exactly. Returns
     (hours, years, shares), shares one row per activity over the coming years
     on the automation index's projection (median AL4->AL5 gap), or None if
     the ladder will not fit."""
-    stage_hours = _tk_fit_al_hours(_tk_ladder_start_row(), accel=accel)
+    stage_hours = _TK_AL_HUMAN_HOURS
     stage_of = dict(zip(takeoff.WORKFLOW_KEYS, range(3)))
     prior = {k: sum(np.array(h) for _n, s, h in _TK_ACTIVITIES if s == k)
              for k in takeoff.WORKFLOW_KEYS}
@@ -22119,19 +22098,7 @@ def _tk_ladder_curves(hours, n, seed):
     return (*overall, [_tk_ladder_curve(h, lag_days=gaps)[1] for h in hours])
 
 
-def _tk_al_hours_now():
-    """Hours per level at the session's human speed-up setting."""
-    accel = st.session_state.get("tk_human_accel", _TK_HUMAN_ACCELERATION)
-    return _tk_fit_al_hours(_tk_ladder_start_row(), accel=float(accel))
-
-
-def _tk_on_human_accel():
-    """A new speed-up resets the stage settings it implies."""
-    st.session_state.update(_tk_human_calibration(float(st.session_state["tk_human_accel"])))
-
-
-_TK_DEFAULTS["tk_human_accel"] = _TK_HUMAN_ACCELERATION
-_TK_DEFAULTS.update(_tk_human_calibration(_TK_HUMAN_ACCELERATION))
+_TK_DEFAULTS.update(_tk_human_calibration())
 
 
 _TK_COLORS = ["#8e44ad", "#2980b9", "#d68910", "#c0392b"]
@@ -22435,7 +22402,7 @@ def _tk_evidence_chain(params):
     cp_g = 2 ** (12 / takeoff.DEFAULTS["software_months"] * takeoff.DEFAULTS["ai_copies"])
     eg = ex[-1]['mult'] / ex[0]['mult']
     auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
-                                 (cap / comp) ** params["ai_copies"], _tk_al_hours_now())
+                                 (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
     cal = takeoff.calibrate_feedback(
         eg, comp, cap, float(ss("tk_cal_yield", 1.0)), float(ss("tk_cal_validated", 0)) or None,
         transfer=T, coding_slope=params["coding_slope"], parallel=params["parallelization"],
@@ -23523,7 +23490,7 @@ def _tk_humans_fig(result, today, ladder=None, markers=()):
     if ladder:
         fig.add_trace(go.Scatter(
             x=[r['date'] for r in ladder],
-            y=[100 * _tk_ladder_human_share(r, _tk_al_hours_now()) for r in ladder],
+            y=[100 * _tk_ladder_human_share(r, _TK_AL_HUMAN_HOURS) for r in ladder],
             mode="lines+markers", name="Measured: R&D automation index",
             line=dict(color="#333", width=1.5), marker=dict(color="#333", size=6),
             hovertemplate="%{x|%b %Y}<br>%{y:.0f}% of R&D hours still human"
@@ -23802,7 +23769,7 @@ def _tk_run(today, progress=None):
             automation_growth=_tk_automation_growth(
                 load_rsi_automation(), evidence, params["ai_speed"],
                 (ss("tk_cal_capability") / ss("tk_cal_compute"))
-                ** params["ai_copies"], _tk_al_hours_now()))
+                ** params["ai_copies"], _TK_AL_HUMAN_HOURS))
         w = ss("tk_cal_weight") / 100
         calibration["quality_prior"] = params["taste_slope"]
         calibration["weight"] = w
@@ -23844,7 +23811,7 @@ def _tk_run(today, progress=None):
     coding_weights = (eci_rates["compute"], eci_rates["software"])
     # Research hours follow the automation index's own projection, each stage
     # at its own hours per level and each scenario with its own AL4->AL5 gap.
-    human_curve = _tk_ladder_curves(_tk_al_hours_now(), len(onset_years), params["seed"])
+    human_curve = _tk_ladder_curves(_TK_AL_HUMAN_HOURS, len(onset_years), params["seed"])
     # Research direction also reads the next-step study, an independent
     # measurement of that stage: a log blend of the two curves.
     nextstep = _tk_nextstep_curves(len(onset_years), params["seed"], today=today)
@@ -24051,13 +24018,6 @@ def _render_takeoff(loading):
                    "RSI is when research direction (choosing what to try next) falls "
                    "to this share of its baseline human hours, after coding is "
                    "automated.")
-            number("Human research speed-up today (\u00d7)", "human_accel", 1.05, 5.0, 0.05,
-                   "How much faster people do R&D tasks today than unassisted, which "
-                   "sets how many human hours each automation level still takes: the "
-                   "prior per level is stretched by one common power until the index's "
-                   "latest month gives this speed-up (table in section 2). It resets "
-                   "each stage's starting human share and halving time.",
-                   on_change=_tk_on_human_accel)
             st.checkbox("Autopilot from RSI", key="tk_rsi_autopilot",
                         help="On: once research direction crosses the bar, no research "
                              "stage needs people at all; the hours left in experiment "
@@ -24646,8 +24606,7 @@ def _render_takeoff(loading):
     with st.expander("Where today's human share comes from, and where people's time goes",
                      key="tk_ex_human"):
         latest = _tk_ladder_start_row()
-        hours = _tk_al_hours_now()
-        accel = float(st.session_state["tk_human_accel"])
+        hours = _TK_AL_HUMAN_HOURS
         st.markdown("**Where today's human share comes from**")
         _fn_caption(
             f"The R&D automation index's mix of tasks on its trend at {latest['date']:%B %Y}, "
@@ -24656,8 +24615,8 @@ def _render_takeoff(loading):
             "\u00d7 their unassisted speed.",
             ("human time each level still takes",
              "The index rates who leads a task, not how long people spend on it, so the time "
-             "per level and stage is a judgment: a prior, raised to one common power so the "
-             f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%. "
+             "per level and stage is a judgment, used as it stands; the speed-up above is what "
+             "it and the index's mix imply. AL0 and AL5 stay at 100% and 0%. "
              "Direction keeps the most: at AL4 AI works from a person's high-level prompt and "
              "the person decides what ships (Anthropic's definition), so direction stays mostly "
              "human until AL5, while experiments are handed over first (Epoch's researcher "
@@ -24669,16 +24628,14 @@ def _render_takeoff(loading):
         st.dataframe(pandas.DataFrame({
             "Level": names + ["Human share of each stage's work"],
             "Share of tasks": [f"{100 * b:.1f}%" for b in bands] + [""],
-            **{f"{name}: human time (prior)": [f"{100 * v:.0f}% ({100 * p:.0f}%)"
-                                               for v, p in zip(row, prior)]
+            **{f"{name}: human time": [f"{100 * v:.0f}%" for v in row]
                + [f"{100 * share:.1f}%"]
-               for name, row, prior, share in zip(takeoff.WORKFLOW_STAGES, hours,
-                                                  _TK_AL_STAGE_HOURS_PRIOR, stages)},
+               for name, row, share in zip(takeoff.WORKFLOW_STAGES, hours, stages)},
             "All stages, weighted": [f"{100 * v:.1f}%" for v in overall]
                                     + [f"{100 * _tk_ladder_human_share(latest, hours):.1f}%"],
         }), hide_index=True, width="stretch")
 
-        path = _tk_activity_path(accel)
+        path = _tk_activity_path()
         if path is not None:
             act_hours, years, shares = path
             total = shares.sum(axis=0)
@@ -24713,8 +24670,7 @@ def _render_takeoff(loading):
                  "on development, the rest coordination). The level columns follow Anthropic's "
                  "definitions and move time, not just cut it: at AL3 Claude writes the code under "
                  "close direction, so people write none and direct and review more. Each stage's "
-                 "activities sum to the model's hours for it, fitted so the mix gives the "
-                 f"sidebar's {accel:g}\u00d7."))
+                 "activities sum to the model's hours for it."))
             st.dataframe(pandas.DataFrame({
                 "Activity": [a[0] for a in _TK_ACTIVITIES],
                 "Stage": [dict(zip(takeoff.WORKFLOW_KEYS, takeoff.WORKFLOW_STAGES))[a[1]]

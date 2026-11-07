@@ -264,14 +264,13 @@ AL0–AL5; direction keeps 85% at AL4, experiments 24%), each stage's sum of
 researcher's total; AL0 sums are `takeoff.WORKFLOW_WEIGHTS`, 20/70/10,
 `test_stages_are_their_activities`; at AL3 writing code goes to 0 and directing and
 reviewing AI's work peaks, `test_al3_moves_time_from_writing_code_to_directing_ai`),
-raised to one common power by
-`_tk_fit_al_hours` so the stage-weighted mix on the index's trend today
-(`_tk_ladder_start_row`, where the ladder curve starts) gives `tk_human_accel` (default 1.7×, from
-Peter's conversations with researchers; *Human research speed-up today*), ends fixed.
+used as they stand (`_tk_al_hours`, AL5 at 0; `test_hours_are_the_priors_as_they_stand`):
+no speed-up setting rescales them, so today's human share (~57%, people at ~1.76×) is
+what the index's mix on its trend today (`_tk_ladder_start_row`) and the priors imply.
 Direction keeps the most hours at every level short of AL5
-(`test_people_keep_directing_until_al5`). Changing it resets each stage's starting
-share and halving time (`_tk_on_human_accel`, `_tk_human_calibration`), and section 2's
-table shows the arithmetic (`TestTakeoffHumanSpeedup`). Under it, *Where people's time goes* (`_tk_activity_path`) is a readout the model
+(`test_people_keep_directing_until_al5`). Each stage's starting share and halving time
+come from them (`_tk_human_calibration`), and section 2's table shows the arithmetic
+(`test_human_share_table_reads_the_priors_as_they_stand`). Under it, *Where people's time goes* (`_tk_activity_path`) is a readout the model
 never reads: each stage's fitted hours split among its activities by their priors, on the
 index's projection at the median AL5 gap, and the Amdahl
 ceiling (one over the human share) in mid-2027, before AL5.

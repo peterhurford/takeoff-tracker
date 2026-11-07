@@ -288,12 +288,13 @@ code and spend more directing and reviewing AI's work (13% of unassisted time, f
 The stages sum the activities: direction (high-level direction and coordination) 20%,
 experiments (planning, code, debugging, directing AI, runs, analysis) 70%, verification
 10%, which are the stage weights. Each stage's prior per level (AL0–AL5) is its activities'
-sum over that weight, direction 100/100/100/97.5/85/0%, raised to one common power so the
-weighted mix of the index's latest month makes people 1.7x as fast as unassisted; that
-gives direction 94%, experiments 46%, verification 80%. The order follows Anthropic's
-level definitions and Epoch's and Anthropic's staff studies; no source gives the numbers.
-On the index's projection people still do ~35% of unassisted hours in mid-2027, capping
-research near 3x however fast AI is, and fall under 5% only as AL5 arrives (Mar 2028). The weights barely move
+sum over that weight, direction 100/100/100/97.5/85/0%, used as it stands: on the index's
+mix today that gives direction 93%, experiments 43%, verification 76%, people at 1.76x
+their unassisted speed. No speed-up setting rescales it. The order follows Anthropic's
+level definitions and Epoch's and Anthropic's staff studies; no source gives the numbers,
+so the priors are a judgment. On the index's projection people still do ~37% of unassisted
+hours in mid-2027, capping research near 2.7x however fast AI is, and fall under 5% only as
+AL5 arrives (Feb 2028). The weights barely move
 dates: 25/50/25 gave the same median RSI and ultraintelligence. Stage halving times all
 take that share's past-year halving. The research-quality prior is the geometric
 mean of three readings: the next-step study's win-odds growth (a Bradley-Terry strength

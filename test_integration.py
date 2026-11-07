@@ -1555,23 +1555,20 @@ class TestTakeoffTab:
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 0.0
 
-    def test_human_speedup_resets_the_stage_settings_and_shows_its_table(self):
-        """The speed-up input resets each stage's starting share and halving
-        time, and section 2's table shows the mix it is read from."""
+    def test_human_share_table_reads_the_priors_as_they_stand(self):
+        """Section 2's table is the index's mix times the per-level hours, with
+        no speed-up input; each stage's last cell is its starting share."""
+        import visualize_projection as vp
         at = self._app()
-        before = at.number_input(key="tk_human_direction").value
-        at.number_input(key="tk_human_accel").set_value(2.5).run()
-        _assert_no_error(at, "Takeoff / human speed-up")
-        assert at.number_input(key="tk_human_direction").value < before
+        assert not [n for n in at.number_input if n.key == "tk_human_accel"]
         table = next(df.value for df in at.dataframe
                      if "All stages, weighted" in df.value.columns)
-        assert table["All stages, weighted"].iloc[-1] == "40.0%"
-        # Each stage's column ends with its starting share, the sidebar's.
+        share = vp._tk_ladder_human_share(vp._tk_ladder_start_row())
+        assert table["All stages, weighted"].iloc[-1] == f"{100 * share:.1f}%"
         direction = at.number_input(key="tk_human_direction").value
         assert table.iloc[-1, 2] == f"{direction:.1f}%"
         activities = next(df.value for df in at.dataframe
                           if "Share of people's time today" in df.value.columns)
-        import visualize_projection as vp
         assert list(activities["Activity"]) == [a[0] for a in vp._TK_ACTIVITIES]
         assert any("however fast AI is" in str(c.value) for c in at.caption)
 

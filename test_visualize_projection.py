@@ -6310,31 +6310,28 @@ class TestMetrAeci:
 
 
 class TestTakeoffHumanSpeedup:
-    """Hours per stage and automation level: the prior raised to one common
-    power so the index's latest month gives the set human speed-up, ends fixed."""
+    """Hours per stage and automation level: the activity priors as they
+    stand, AL5 at 0; no speed-up setting rescales them."""
 
-    @pytest.mark.parametrize("accel", [1.3, 1.7, 2.5])
-    def test_fitted_hours_reproduce_the_speedup(self, accel):
-        row = vp.load_rsi_automation()[-1]
-        hours = vp._tk_fit_al_hours(row, accel=accel)
-        assert vp._tk_ladder_human_share(row, hours) == pytest.approx(1 / accel, rel=1e-6)
-        for stage in hours:
+    def test_hours_are_the_priors_as_they_stand(self):
+        hours = vp._TK_AL_HUMAN_HOURS
+        for stage, prior in zip(hours, vp._TK_AL_STAGE_HOURS_PRIOR):
+            np.testing.assert_allclose(stage[:5], prior[:5])
             assert stage[0] == pytest.approx(1.0) and stage[-1] == 0.0
-            # The prior's order survives: no level takes more human time than the one below.
+            # No level takes more human time than the one below.
             assert all(a >= b for a, b in zip(stage, stage[1:]))
+        assert not hasattr(vp, "_TK_HUMAN_ACCELERATION")
+        assert "tk_human_accel" not in vp._TK_DEFAULTS
 
-    @pytest.mark.parametrize("accel", [1.3, 1.7, 3.0])
-    def test_people_keep_directing_until_al5(self, accel):
+    def test_people_keep_directing_until_al5(self):
         """At AL4 AI works from a person's high-level prompt and the person
         decides what ships, so direction keeps most of its hours there, and
         more of them than any other stage at every level short of AL5."""
-        row = vp.load_rsi_automation()[-1]
-        direction, experiments, verification = vp._tk_fit_al_hours(row, accel=accel)
-        if accel <= vp._TK_HUMAN_ACCELERATION:
-            assert direction[4] > 0.5
+        direction, experiments, verification = vp._TK_AL_HUMAN_HOURS
+        assert direction[4] > 0.5
         assert all(d >= max(e, v) for d, e, v in
                    zip(direction[:5], experiments[:5], verification[:5]))
-        starts = vp._tk_human_calibration(accel)
+        starts = vp._tk_human_calibration()
         assert starts["tk_human_direction"] == max(
             starts[f"tk_human_{k}"] for k in vp.takeoff.WORKFLOW_KEYS)
 
@@ -6358,15 +6355,16 @@ class TestTakeoffHumanSpeedup:
         assert directing[0] == 0.0 and max(directing) == directing[3]
 
     def test_activity_readout_sums_to_the_model_and_ends_with_al5(self):
-        """The activities sum to the stages' fitted hours (so to the speed-up
-        today); writing code is gone before direction falls, and people's time
+        """The activities sum to the stages' hours (so to today's human
+        share); writing code is gone before direction falls, and people's time
         falls toward zero only once AL5 arrives."""
-        hours, years, shares = vp._tk_activity_path(vp._TK_HUMAN_ACCELERATION)
+        hours, years, shares = vp._tk_activity_path()
         stage = np.array(vp._TK_AL_HUMAN_HOURS)
         np.testing.assert_allclose(np.array(hours).sum(axis=0),
                                    vp.takeoff.WORKFLOW_WEIGHTS @ stage, atol=1e-12)
         total = shares.sum(axis=0)
-        assert total[0] == pytest.approx(1 / vp._TK_HUMAN_ACCELERATION, abs=0.005)
+        assert total[0] == pytest.approx(
+            vp._tk_ladder_human_share(vp._tk_ladder_start_row()), abs=0.005)
         assert (np.diff(total) <= 1e-12).all() and total[-1] < 0.01
         names = [a[0] for a in vp._TK_ACTIVITIES]
         direction = shares[names.index("High-level direction")]
@@ -6380,10 +6378,6 @@ class TestTakeoffHumanSpeedup:
         assert overall.shape == stages[0].shape == (50, len(t))
         j = np.searchsorted(t, 1.0)
         assert (rel[0][:, j] > rel[1][:, j]).all()
-
-    def test_a_faster_speedup_starts_people_lower(self):
-        slow, fast = vp._tk_human_calibration(1.4), vp._tk_human_calibration(2.5)
-        assert fast["tk_human_direction"] < slow["tk_human_direction"]
 
 
 class TestStaffAl5Check:
@@ -6440,7 +6434,6 @@ class TestTakeoffRsiCalibration:
         mean = np.array([starts[k] for k in keys]) @ vp.takeoff.WORKFLOW_WEIGHTS
         assert mean == pytest.approx(
             100 * vp._tk_ladder_human_share(vp._tk_ladder_start_row()), abs=0.1)
-        assert mean == pytest.approx(100 / vp._TK_HUMAN_ACCELERATION, abs=0.1)
 
     def test_ladder_human_share_falls_as_automation_climbs(self):
         shares = [vp._tk_ladder_human_share(r) for r in vp.load_rsi_automation()]
