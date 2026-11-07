@@ -51,27 +51,26 @@ N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 # The bubble is dark on purpose: it floats above the (light-only) page.
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
-    /* The sidebar's tab list (`_active_tab`): small chips with no radio dots,
-       packed tight, so the main tabs take a few short rows. */
-    .st-key-_active_tab [role="radiogroup"] { gap: 0.2rem 0.25rem !important; }
     [data-testid="stSidebarHeader"] { height: 2rem; min-height: 0; }
     [data-testid="stSidebarUserContent"] { padding-top: 0.25rem; }
-    .st-key-_active_tab [data-testid="stRadioOption"] { margin: 0 !important;
-        padding: 0.1rem 0.55rem; border-radius: 0.7rem;
-        border: 1px solid rgba(128,128,128,0.35); }
-    .st-key-_active_tab [data-testid="stRadioOption"] > div > div:first-child {
-        display: none; }
-    .st-key-_active_tab [data-testid="stRadioOption"] p {
-        font-size: 0.86rem !important; line-height: 1.4; }
-    /* The tabs under *More* (from `_TAB_MAIN_N`, 6, so n+7): their chips here are hidden,
-       and the expander's buttons select them instead. */
-    .st-key-_active_tab [role="radiogroup"] > :nth-child(n+7) { display: none !important; }
-    .st-key-_more_tabs button { min-height: 0; padding: 0.1rem 0.55rem; }
-    .st-key-_more_tabs button p { font-size: 0.86rem !important; }
-    .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] {
-        background: rgba(255,75,75,0.12); border-color: rgba(255,75,75,0.7); }
-    .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] p {
-        font-weight: 600; }
+    /* The tab picker: `_active_tab` holds the state but is hidden; the
+       grouped chip buttons under `_tab_nav` set it (`_TAB_GROUPS`). */
+    .st-key-_active_tab { display: none !important; }
+    .st-key-_tab_nav { gap: 0.3rem !important; }
+    .st-key-_tab_nav [data-testid="stCaptionContainer"],
+    .st-key-_tab_nav [data-testid="stCaptionContainer"] p {
+        font-size: 0.72rem !important; font-weight: 600; letter-spacing: 0.06em;
+        text-transform: uppercase; line-height: 1.2; margin: 0; padding: 0; }
+    .st-key-_tab_nav [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {
+        margin-top: 0.35rem; }
+    .st-key-_tab_nav [data-testid="stHorizontalBlock"],
+    .st-key-_tab_nav [class*="st-key-_tab_group_"] { gap: 0.25rem !important; }
+    .st-key-_tab_nav button { min-height: 0; padding: 0.1rem 0.55rem;
+        border-radius: 0.7rem; }
+    .st-key-_tab_nav button p { font-size: 0.86rem !important; }
+    .st-key-_tab_nav button[kind="primary"] { background: rgba(255,75,75,0.12);
+        border-color: rgba(255,75,75,0.7); color: inherit; }
+    .st-key-_tab_nav button[kind="primary"] p { font-weight: 600; }
     /* The Takeoff tab's loading bar (`_tk_loading`), the app's only progress
        bar: boxed, tall and in large type so a multi-second wait reads as one. */
     /* Takeoff's headline cards (the `tk_headline` slot): big dates, labels and CIs. */
@@ -3450,11 +3449,17 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
 
-# The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
-# that set the same radio, whose own chips for them the style block hides.
 _TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
                 "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds"]
-_TAB_MAIN_N = 6
+# The sidebar's tab picker, by group; every tab exactly once
+# (`test_groups_cover_every_tab_once`).
+_TAB_GROUPS = (
+    ("Forecasts", ("Takeoff", "Pacing")),
+    ("Capabilities", ("ECI", "METR Horizon", "Remote Labor Index", "UK Cyber",
+                      "Frontier Thresholds")),
+    ("Compute", ("Data Centers", "China")),
+    ("Economy", ("Revenue", "Employment")),
+)
 _TAB_LABEL = {"ECI": "Epoch ECI"}
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
@@ -3476,13 +3481,16 @@ with st.sidebar:
     active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True,
                           key="_active_tab", label_visibility="collapsed",
                           format_func=lambda t: _TAB_LABEL.get(t, t))
-    with st.expander("More", expanded=active_tab in _TAB_OPTIONS[_TAB_MAIN_N:]):
-        with st.container(key="_more_tabs", horizontal=True, gap="small"):
-            for _t in _TAB_OPTIONS[_TAB_MAIN_N:]:
-                st.button(_t, key=f"_more_tab_{_SLUG_FOR_TAB[_t]}",
-                          type="primary" if _t == active_tab else "secondary",
-                          on_click=st.session_state.__setitem__,
-                          args=("_active_tab", _t))
+    with st.container(key="_tab_nav"):
+        for _group, _tabs in _TAB_GROUPS:
+            st.caption(_group)
+            with st.container(key=f"_tab_group_{_group.lower()}", horizontal=True,
+                              gap="small"):
+                for _t in _tabs:
+                    st.button(_TAB_LABEL.get(_t, _t), key=f"_tab_btn_{_SLUG_FOR_TAB[_t]}",
+                              type="primary" if _t == active_tab else "secondary",
+                              on_click=st.session_state.__setitem__,
+                              args=("_active_tab", _t))
     # Share view (and the changed-settings badge) sit here, under the tab
     # picker, though drawn at the end of the run once the URL is synced.
     _sidebar_tools = st.container(key="_sidebar_tools")

@@ -3358,6 +3358,19 @@ class TestTodayForwardMode:
         assert at.checkbox(key="today_fwd").value is True
 
 
+class TestTabNav:
+    def test_a_group_button_switches_tab(self):
+        """Each tab's chip button sets the hidden radio and marks itself."""
+        at = _fresh_app()
+        at.run()
+        at.button(key="_tab_btn_ukcyber").click().run()
+        _assert_no_error(at, "tab nav / ukcyber")
+        assert at.session_state["_active_tab"] == "UK Cyber"
+        assert at.query_params["tab"] in ("ukcyber", ["ukcyber"])
+        assert at.button(key="_tab_btn_ukcyber").proto.type == "primary"
+        assert at.button(key="_tab_btn_takeoff").proto.type == "secondary"
+
+
 class TestSidebarTools:
     def test_share_view_sits_under_the_tab_picker_on_every_tab(self):
         """Share view is drawn last (the URL must be synced first) into a slot
