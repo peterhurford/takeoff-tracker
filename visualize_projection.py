@@ -16960,6 +16960,37 @@ def _hydrate_session_from_url():
 
 _BASELINE_SENTINEL = object()
 
+def _changed_settings():
+    """Tracked settings off their defaults: exactly what the URL carries, so
+    the badge counts what *Share view* would hand out."""
+    return [k for k in _all_tracked()[0] if k in st.query_params]
+
+
+def _reset_changed(keys):
+    """Drop each changed setting; its widget re-initialises to its default."""
+    for k in keys:
+        st.session_state.pop(k, None)
+        if k in st.query_params:
+            del st.query_params[k]
+    st.session_state.pop("_tk_fit_message", None)
+
+
+def _render_changed_badge(slot):
+    """"N settings changed" over Share view, with one button restoring them
+    (`test_changed_badge_counts_and_resets`). Nothing shows at the defaults."""
+    changed = _changed_settings()
+    if not changed:
+        return
+    n = len(changed)
+    with slot, st.container(horizontal=True, vertical_alignment="center",
+                            key="_changed_badge"):
+        st.badge(f"{n} setting{'s' * (n != 1)} changed", icon=":material/tune:",
+                 color="orange")
+        st.button("Reset all", key="_reset_changed", on_click=_reset_changed,
+                  args=(changed,), type="tertiary",
+                  help="Restore every setting off its default: " + ", ".join(changed))
+
+
 def _sync_session_to_url():
     keys, defaults = _all_tracked()
     qp = st.query_params
@@ -24797,6 +24828,8 @@ if not os.environ.get("_VP_TESTING"):
 
     # ── Section deep links: honour ?to=, and make every heading emit one ──
     _render_anchor_links(_url_to, _SLUG_FOR_TAB[active_tab])
+
+    _render_changed_badge(_sidebar_tools)
 
     # ── Share view: copy the (now state-synced) URL to the clipboard ──────
     with _sidebar_tools:

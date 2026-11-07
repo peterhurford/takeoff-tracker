@@ -3376,6 +3376,30 @@ class TestSidebarTools:
             assert not [b for b in at.button if b.label == "Reset"], tab
 
 
+    def test_changed_badge_counts_and_resets(self):
+        """The badge counts settings off their defaults and its button restores
+        them; at the defaults it is not drawn."""
+        at = _fresh_app()
+        at.query_params["tab"] = "datacenters"
+        at.run()
+        def badge():
+            return [m.value for m in at.sidebar.markdown if "changed" in m.value]
+        assert not badge()
+        default_log = at.checkbox(key="dc_log").value
+        at.checkbox(key="dc_log").set_value(not default_log)
+        at.selectbox(key="dc_timing").set_value(
+            next(o for o in at.selectbox(key="dc_timing").options
+                 if o != at.selectbox(key="dc_timing").value))
+        at.run()
+        _assert_no_error(at, "badge / changed")
+        [text] = badge()
+        assert "2 settings changed" in text
+        at.button(key="_reset_changed").click().run()
+        _assert_no_error(at, "badge / reset")
+        assert at.checkbox(key="dc_log").value == default_log
+        assert not badge()
+
+
 class TestSectionDeepLinks:
     """`?to=<anchor>` is how a section link survives a fresh load — a bare
     `#fragment` is dropped by the Community Cloud iframe and again by every

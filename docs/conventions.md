@@ -139,3 +139,8 @@ scan that counts it runs on through thousands of lines. Tokenize, or edit by han
 `_sidebar_tools`, a slot reserved right under the tab picker, so it sits above every
 tab's controls. Every tab's main reset reads *Reset to defaults*
 (`test_share_view_sits_under_the_tab_picker_on_every_tab`).
+
+Above it, `_render_changed_badge` shows *N settings changed* when any tracked setting is
+off its default, counted as the URL's tracked keys (`_changed_settings`), so it counts
+exactly what *Share view* hands out. *Reset all* pops those keys, and each widget
+re-initialises to its default (`test_changed_badge_counts_and_resets`).
