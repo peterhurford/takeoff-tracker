@@ -237,7 +237,7 @@ human labor, AI capabilities and compute (`pace_factors` `labor`/`ai`/`compute`,
 `resources`; `test_pace_factors_multiply_back_to_the_pace`), then *Compute going in*
 (`_tk_compute_fig`, each draw's `workflow_progress["compute_log"]`, post-RSI boost included,
 with the milestone medians marked), then *Where the compute goes* (`_tk_compute_split_fig`: the median budget times the median split, stacked on a log axis so the top edge is *Compute going in*'s median; `TestTakeoffComputeSplit`), then *How the compute is split*), **2. People step out of the loop**
-(`_tk_humans_fig`), **3. Anthropic's research workforce** (`_tk_workforce_fig`: heads, humans from
+(`_tk_humans_fig`), **Anthropic's research workforce** (`_tk_workforce_fig`: heads, humans from
 `_TK_HUMAN_RESEARCHERS` (3,000: the S-1/A's "majority" of ~5,300 employees in research, engineering and product) growing `_TK_HIRING_GROWTH` a year to each draw's RSI and shrinking
 by `_TK_POST_RSI_DECLINE` after, and AI copies from `_TK_AI_COPIES_TODAY` (45k, a reported
 figure for Anthropic, unconfirmed; all five workforce assumptions are *Advanced* inputs, `tk_wf_*`, read by
@@ -245,7 +245,7 @@ figure for Anthropic, unconfirmed; all five workforce assumptions are *Advanced*
 the automation index's share of today's work spread over those copies (~0.13 people), rising
 as (ECI / today's)^`_TK_AI_COMPETENCE_POWER`. Counts
 read k/M/B/T (`_tk_count`, axis `exponentformat="B"`), carried in `text` so today-forward
-can still relabel the dates. A readout, never an input), **4. What it does to capability (ECI)** (plus *How fast ECI climbs*, `_tk_eci_rate_fig`: each scenario's ECI change over a centred six-month window (`_TK_ECI_RATE_WINDOW`) per year, median and middle 80%, against today's setting and the 2024–25 average; and *2025-level ECI progress in each year* reads measured years, and this year up to today, off that trained frontier (`eci['trained']`), so the trained frontier's lead over public releases is counted; and *2025-level ECI progress in
+can still relabel the dates. A readout, never an input), **3. What it does to capability (ECI)** (plus *How fast ECI climbs*, `_tk_eci_rate_fig`: each scenario's ECI change over a centred six-month window (`_TK_ECI_RATE_WINDOW`) per year, median and middle 80%, against today's setting and the 2024–25 average; and *2025-level ECI progress in each year* reads measured years, and this year up to today, off that trained frontier (`eci['trained']`), so the trained frontier's lead over public releases is counted; and *2025-level ECI progress in
 each year*, `_tk_yearly_fig`: ECI gained per calendar year over what the frontier gained
 in `_TK_YEARLY_BASE_YEAR` (`_tk_year_gain`, 13.5 points, below the 15.7-point fitted trend
 the ECI chart uses, so these bars read ~1.16× that trend's), a different 2025 unit from
@@ -253,7 +253,7 @@ chart 1's experiments; last year is measured off
 the frontier, this year measured to today then projected, each kind its own colour; a grid
 clipped at Dec 31 may end a day before Jan 1 and still keeps that year's bar
 (`test_a_grid_ending_on_dec_31_keeps_that_year`); and
-its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **5. When it happens, and
+its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
 dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
 
@@ -368,8 +368,8 @@ coder projection's milestone table (*Milestone weights and dates*, *Set your own
 nested); after the evidence-to-pace diagram, *The math, step by step*, then *Why this isn't
 METR's ~2×* (`_tk_render_pace_vs_metr`), then *What moves the pace* with *The
 multiplication at …* nested (labelled from `tk_mult_at`, keyed so a slider move keeps it
-open); *Compute* (the three compute charts); the human-share tables; section 3, the
-workforce, which is an expander, not a heading, so the jump bar skips it; and the ECI pace
+open); *Compute* (the three compute charts); the human-share tables; the workforce
+(under section 2, an expander, not a heading, so the jump bar skips it); and the ECI pace
 pair. `test_default_render_and_stable_rerun` lists them.
 
 `render_rsi()` runs the R&D automation index, then CoBench,

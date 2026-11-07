@@ -6702,8 +6702,8 @@ _TK_JUMP_ROWS = (
     ("Model", (("What the evidence feeds in", "Inputs"),
                ("1. Research speeds up", "1 Research speeds up"),
                ("2. People step out of the loop", "2 Out of the loop"),
-               ("4. What it does to capability (ECI)", "4 Capability"),
-               ("5. When it happens, and how fast", "5 When and how fast"))),
+               ("3. What it does to capability (ECI)", "3 Capability"),
+               ("4. When it happens, and how fast", "4 When and how fast"))),
 )
 
 
@@ -24703,7 +24703,7 @@ def _render_takeoff(loading):
             }), hide_index=True, width="stretch")
 
 
-    with st.expander("3. Anthropic's research workforce", key="tk_ex_workforce"):
+    with st.expander("Anthropic's research workforce", key="tk_ex_workforce"):
         wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()
         _fn_caption(
             "How many researchers Anthropic has, human and AI, and what they add up to in "
@@ -24736,7 +24736,7 @@ def _render_takeoff(loading):
                         width="stretch")
 
 
-    st.subheader("4. What it does to capability (ECI)")
+    st.subheader("3. What it does to capability (ECI)")
     rates = result["eci_rates"]
     _fn_caption(
         "Each scenario's model capability, read as Epoch's ECI, against today's "
@@ -24799,7 +24799,7 @@ def _render_takeoff(loading):
                                        today), width="stretch")
 
 
-    st.subheader("5. When it happens, and how fast")
+    st.subheader("4. When it happens, and how fast")
     gap, reached = _tk_gap(rsi, eci["ultra"], horizon)
     _fn_caption(
         f"Arrival dates through {view_end:%Y}, and the time from RSI to "
