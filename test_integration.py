@@ -11,6 +11,7 @@ Run: pytest test_integration.py -v
 import numpy as np
 import pytest
 from datetime import datetime
+import base64
 import json
 import re
 from itertools import combinations
@@ -285,6 +286,24 @@ class TestEciTab:
         # The projection's paths carry the chart forward from today.
         spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
         assert "Projected median" in [t.get("name") for t in spec["data"]]
+
+    def test_the_headline_gap_is_where_the_chart_crosses_today(self):
+        # The headline once converted ECI points at the trend rate (10.0mo)
+        # while the chart measured calendar time (~8mo).
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.toggle(key="eci_internal").set_value(True).run()
+        at.selectbox(key="eci_entity_b").set_value("China best").run()
+        _assert_no_error(at, "ECI / China best / internal")
+        [head] = [m.value for m in at.markdown if m.value.startswith("Best model:")]
+        months = float(re.search(r"now \*\*([\d.]+)mo behind", head).group(1))
+        spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
+        [med] = [t for t in spec["data"] if t.get("name") == "Projected median"]
+        y = med["y"]
+        y0 = (np.frombuffer(base64.b64decode(y["bdata"]), dtype=y["dtype"])[0]
+              if isinstance(y, dict) else y[0])
+        assert y0 == pytest.approx(months, abs=0.06)
 
     def test_piecewise_fits_the_reference_from_the_same_breakpoint(self):
         # A piecewise subject against a whole-window reference line read the

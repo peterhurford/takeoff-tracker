@@ -1032,7 +1032,7 @@ class TestEciGap:
         ref = self._fr(vp._ECI_FRONTIER_LABEL)
         hist = vp._eci_gap_history(ref, ref)
         assert all(p["gap_months"] < 1e-9 for p in hist)
-        assert vp._eci_gap_now(ref, hist, datetime.now(), 1.0)["level"]
+        assert vp._eci_gap_now(ref, hist, datetime.now())["level"]
 
     def test_gaps_reach_back_past_the_projection_window(self):
         # The projection's Feb-2024 cutoff would date Llama 3-70B against Claude
@@ -1107,15 +1107,21 @@ class TestEciGap:
         assert vp._eci_level_word(vp._ECI_FRONTIER_LABEL, "DeepSeek") == "At frontier"
         assert vp._eci_ref_name("US best") == "US best"
 
-    def test_behind_now_is_the_eci_gap_at_the_reference_rate_not_the_models_age(self):
+    def test_behind_now_is_the_release_measure_taken_today(self):
+        # One measure for the chart, headline and table: months since the
+        # reference first released a model scoring above the lab's best. The
+        # reference's own best reads 0 however old it is.
         d = lambda y, m: datetime(y, m, 1)
         ref = [{"date": d(2025, 1), "eci_score": 100.0},
                {"date": d(2026, 1), "eci_score": 112.0}]
         hist = [{"date": d(2025, 12), "score": 111.0, "name": "m"}]
-        now = vp._eci_gap_now(ref, hist, d(2026, 10), 1.3)
+        now = vp._eci_gap_now(ref, hist, d(2026, 10))
         assert now["eci_gap"] == pytest.approx(1.0)
-        assert now["gap_now"] == pytest.approx(1 / 1.3)
+        assert now["gap_now"] == pytest.approx(9.0, abs=0.1)
         assert not now["level"]
+        lead = vp._eci_gap_now(ref, [{"date": d(2026, 1), "score": 112.0, "name": "r"}],
+                               d(2026, 10))
+        assert lead["level"] and lead["gap_now"] == 0
 
 
 
