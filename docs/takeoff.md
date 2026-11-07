@@ -351,6 +351,14 @@ since a drawn widget's key cannot be reassigned in the same run. `test_default_r
 stable_rerun` pins the order; tests find Takeoff's own charts after the RSI projection's
 CDF (`_tk_charts`).
 
+Under the headline cards, `_tk_render_jump_bar()` links every section (`_TK_JUMP_ROWS`) by
+its `?to=` id (`_heading_anchor`, Streamlit's own slug rule), scrolled in place by the
+anchor script (`test_jump_bar_targets_every_heading`). Each evidence section but the
+milestones and coder projection, the synthesis, is `_evidence_section()`: its heading,
+then one collapsed expander labelled with the latest reading against its bar
+(`_rsi_evidence_summary`); the section's charts sit inside
+(`test_evidence_sections_fold_under_their_headings`).
+
 `render_rsi()` runs the R&D automation index, then CoBench,
 then the staff survey, then
 merged code per person, OpenAI experiment velocity, research direction, then TasteVal

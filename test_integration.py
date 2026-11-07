@@ -1287,6 +1287,35 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / deep link")
         return at
 
+    def test_evidence_sections_fold_under_their_headings(self):
+        """Each evidence section is a visible heading over one collapsed line
+        naming its latest reading; the chart sits inside."""
+        at = self._app()
+        folds = [e for e in at.expander if e.label.endswith("*chart and details*")]
+        assert len(folds) == 8
+        assert all(e.label.startswith(("Latest **", "METR's")) for e in folds)
+        assert all(e.get("plotly_chart") for e in folds)
+        heads = [h.value for h in at.subheader]
+        for head in ("CoBench", "Research direction", "METR's acceleration assessment"):
+            assert head in heads
+
+    def test_jump_bar_targets_every_heading(self):
+        """Every jump-bar link names a heading the tab draws, under the id
+        Streamlit gives it."""
+        from visualize_projection import _TK_JUMP_ROWS, _heading_anchor
+        at = self._app()
+        heads = {h.value for h in at.header} | {h.value for h in at.subheader}
+        targets = [head for _, links in _TK_JUMP_ROWS for head, _ in links]
+        assert set(targets) <= heads, set(targets) - heads
+        bar = next(m.value for m in at.markdown if "**Evidence:**" in m.value)
+        for head in targets:
+            assert f"to={_heading_anchor(head)})" in bar
+        # Ids as Streamlit's frontend builds them, read off the live page.
+        assert _heading_anchor("R&D automation index") == "r-and-d-automation-index"
+        assert _heading_anchor("CoBench") == "co-bench"
+        assert _heading_anchor("METR's acceleration assessment") == \
+            "metrs-acceleration-assessment"
+
     def test_default_render_and_stable_rerun(self):
         at = self._app()
         assert at.session_state["_active_tab"] == "Takeoff"

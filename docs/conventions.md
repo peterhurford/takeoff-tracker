@@ -40,6 +40,8 @@ Three things are load-bearing:
    resizes after insert), stopping on the reader's first scroll. Its watcher is installed
    once per page and outlives tab switches, so it reads the tab from `window.__vpAnchorTab`,
    which each run sets (`test_links_follow_the_tab_after_a_switch`).
+   Any other main-column link to `?to=` on the same tab (Takeoff's jump bar) is
+   caught the same way and scrolls in place instead of reloading.
 
 A heading carries no live number: its text is its anchor, so the link would change with the
 data.

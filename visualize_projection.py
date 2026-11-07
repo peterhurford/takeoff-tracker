@@ -6614,6 +6614,107 @@ def _rsi_code_dt_ci(rows, fit_dt):
 _RSI_MAX_END_YEAR = 2031
 
 
+def _rsi_evidence_summary(key):
+    """One line for an evidence section's collapsed header: its latest reading
+    against the bar its milestone card dates."""
+    def when(r):
+        return f"{r['date']:%b %Y}"
+
+    def reading(value, where, bar=None, crossed=None):
+        line = f"Latest **{value}** ({where})"
+        if bar:
+            line += f" · bar {bar}" + (", passed" if crossed else "")
+        return line
+
+    if key == "automation":
+        r = load_rsi_automation()[-1]
+        return reading(f"{r['al4']:.0f}%", f"tasks at AL4+, {when(r)}",
+                       f"{_RSI_AUTO_TARGET:.0f}%", r['al4'] >= _RSI_AUTO_TARGET)
+    if key == "cobench":
+        r = rsi_frontier_all[-1]
+        return reading(f"{r['cobench']:.0f}%", f"{r['name']}, {when(r)}",
+                       f"{_RSI_SUBSTITUTION_BAR:.0f}%",
+                       r['cobench'] >= _RSI_SUBSTITUTION_BAR)
+    if key == "survey":
+        r = load_rsi_survey()[-1]
+        return reading(f"{r['uplift']:g}× speedup", f"{r['name']}, {when(r)}",
+                       f"{_PC_RSI_SURVEY_TARGET_X:g}×",
+                       r['uplift'] >= _PC_RSI_SURVEY_TARGET_X)
+    if key == "code":
+        r = load_rsi_code()[-1]
+        return reading(f"{r['mult']:.0f}×", f"code per engineer, {r['q']}",
+                       f"{_RSI_CODE_TARGET:g}×", r['mult'] >= _RSI_CODE_TARGET)
+    if key == "experiments":
+        r = load_rsi_experiments()[-1]
+        return reading(f"{r['mult']:g}×", f"experiments per week vs. 2025, {when(r)}",
+                       f"{_RSI_EXPERIMENT_TARGET:g}×",
+                       r['mult'] >= _RSI_EXPERIMENT_TARGET)
+    if key == "direction":
+        r = rsi_dir_frontier_all[-1]
+        return reading(f"{r['better']:.0f}%", f"better next step, {r['name']}",
+                       f"{_RSI_DIR_TARGET:.0f}%", r['better'] >= _RSI_DIR_TARGET)
+    if key == "tasteval":
+        r = max(load_tasteval(), key=lambda r: r['mult'])
+        return reading(f"{r['mult']:g}×", f"expert compute, {r['name']}, {when(r)}")
+    if key == "metr":
+        return "METR's AECI beside Epoch's ECI, and the research pace it implies"
+    return ""
+
+
+@contextmanager
+def _evidence_section(title, key):
+    """An evidence section as a heading over one collapsed line: the heading
+    stays visible so `?to=` and the jump bar can reach it, the body opens on
+    click (`test_evidence_sections_fold_under_their_headings`)."""
+    st.subheader(title)
+    with st.expander(_rsi_evidence_summary(key) + " · *chart and details*",
+                     key=f"ev_{key}"):
+        yield
+
+
+# The Takeoff jump bar's links, as (heading text, short label) per row. Each
+# heading must exist on the tab (`test_jump_bar_targets_every_heading`).
+_TK_JUMP_ROWS = (
+    ("Evidence", (("R&D automation index", "R&D automation"),
+                  ("CoBench", "CoBench"),
+                  ("Anthropic internal staff survey on speedup", "Staff survey"),
+                  ("Code merged per Anthropic engineer", "Code merged"),
+                  ("Experiment velocity at OpenAI", "Experiments"),
+                  ("Research direction", "Direction"),
+                  ("Research taste (TasteVal)", "TasteVal"),
+                  ("Capabilities Milestones", "Milestones"),
+                  ("Automated coder projection", "Coder projection"),
+                  ("METR's acceleration assessment", "METR"))),
+    ("Model", (("What the evidence feeds in", "Inputs"),
+               ("1. Research speeds up", "1 Research speeds up"),
+               ("2. People step out of the loop", "2 Out of the loop"),
+               ("3. Anthropic's research workforce", "3 Workforce"),
+               ("4. What it does to capability (ECI)", "4 Capability"),
+               ("5. When it happens, and how fast", "5 When and how fast"))),
+)
+
+
+def _heading_anchor(text):
+    """Streamlit's `id` for a heading, as its frontend builds it: `&` reads
+    "and", apostrophes drop, camelCase splits (CoBench → co-bench), and runs
+    of anything else collapse to one hyphen."""
+    text = text.replace("&", " and ").replace("'", "").replace("’", "")
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", text)
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _tk_render_jump_bar():
+    """A row of in-page links to every Takeoff section. Each is a `?to=` URL,
+    which the anchor script turns into an in-page scroll."""
+    lines = []
+    for group, links in _TK_JUMP_ROWS:
+        items = " · ".join(f"[{label}](?tab=takeoff&to={_heading_anchor(head)})"
+                           for head, label in links)
+        lines.append(f"**{group}:** {items}")
+    with st.container(border=True, key="tk_jump_bar"):
+        st.markdown("  \n".join(lines))
+
+
 def render_rsi(end_year):
     """The RSI evidence and projection: the first half of the Takeoff tab, its
     charts projected through `end_year` (capped at `_RSI_MAX_END_YEAR`)."""
@@ -6669,135 +6770,141 @@ def render_rsi(end_year):
                 min_value=0.5, max_value=99.5, step=1.0)
 
     st.header("The evidence")
-    _render_rsi_automation(rsi_end_year)
-    st.subheader("CoBench")
-    _fn_line(
-        "Recursive self-improvement runs through a lab automating its own "
-        "research. **CoBench** is Anthropic's internal measure of that.",
-        ("internal measure of that", "A model is dropped into a historical "
-                                     "snapshot of Anthropic's codebase, logs, "
-                                     "internal messaging and docs, and asked to "
-                                     "diagnose the root cause of an issue "
-                                     "Anthropic engineers actually solved. 449 "
-                                     "problems, model-graded against the root "
-                                     "cause found in practice."))
+    with _evidence_section("R&D automation index", "automation"):
+        _render_rsi_automation(rsi_end_year)
+    with _evidence_section("CoBench", "cobench"):
+        _fn_line(
+            "Recursive self-improvement runs through a lab automating its own "
+            "research. **CoBench** is Anthropic's internal measure of that.",
+            ("internal measure of that", "A model is dropped into a historical "
+                                         "snapshot of Anthropic's codebase, logs, "
+                                         "internal messaging and docs, and asked to "
+                                         "diagnose the root cause of an issue "
+                                         "Anthropic engineers actually solved. 449 "
+                                         "problems, model-graded against the root "
+                                         "cause found in practice."))
 
-    # ── Trajectories ─────────────────────────────────────────────────────
-    if rsi_dt_lo > rsi_dt_hi:
-        rsi_dt_lo, rsi_dt_hi = rsi_dt_hi, rsi_dt_lo
-    if rsi_pos_lo > rsi_pos_hi:
-        rsi_pos_lo, rsi_pos_hi = rsi_pos_hi, rsi_pos_lo
+        # ── Trajectories ─────────────────────────────────────────────────────
+        if rsi_dt_lo > rsi_dt_hi:
+            rsi_dt_lo, rsi_dt_hi = rsi_dt_hi, rsi_dt_lo
+        if rsi_pos_lo > rsi_pos_hi:
+            rsi_pos_lo, rsi_pos_hi = rsi_pos_hi, rsi_pos_lo
 
-    n = N_SAMPLES
-    proj_dt = (_lognormal_from_ci(rsi_dt_lo, rsi_dt_hi, n) if rsi_dt_dist == "Lognormal"
-               else _normal_from_ci(rsi_dt_lo, rsi_dt_hi, n))
-    proj_dt = np.maximum(proj_dt, 1.0)
-    proj_slope = np.log(2) / proj_dt
+        n = N_SAMPLES
+        proj_dt = (_lognormal_from_ci(rsi_dt_lo, rsi_dt_hi, n) if rsi_dt_dist == "Lognormal"
+                   else _normal_from_ci(rsi_dt_lo, rsi_dt_hi, n))
+        proj_dt = np.maximum(proj_dt, 1.0)
+        proj_slope = np.log(2) / proj_dt
 
-    _pos_sigma = (_logit(rsi_pos_hi / 100) - _logit(rsi_pos_lo / 100)) / (2 * 1.282)
-    # The fan starts at the measured score, as the milestone card does.
-    proj_start_logit = np.random.normal(_logit(current['cobench'] / 100),
-                                        max(_pos_sigma, 0), n)
+        _pos_sigma = (_logit(rsi_pos_hi / 100) - _logit(rsi_pos_lo / 100)) / (2 * 1.282)
+        # The fan starts at the measured score, as the milestone card does.
+        proj_start_logit = np.random.normal(_logit(current['cobench'] / 100),
+                                            max(_pos_sigma, 0), n)
 
-    proj_end_date = datetime(rsi_end_year, 12, 31)
-    proj_days = _fan_days((proj_end_date - current['date']).days)
-    proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
-    pct = _fan_pctiles(proj_start_logit, proj_slope, proj_days,
-                       (5, 10, 25, 50, 75, 90, 95), logit=True)
+        proj_end_date = datetime(rsi_end_year, 12, 31)
+        proj_days = _fan_days((proj_end_date - current['date']).days)
+        proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days]
+        pct = _fan_pctiles(proj_start_logit, proj_slope, proj_days,
+                           (5, 10, 25, 50, 75, 90, 95), logit=True)
 
-    fig = go.Figure()
-    for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                 (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                 (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+        fig = go.Figure()
+        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            fig.add_trace(go.Scatter(
+                x=proj_dates + proj_dates[::-1],
+                y=list(pct[hi]) + list(pct[lo][::-1]),
+                fill='toself', fillcolor=color, line=dict(width=0),
+                name=label, hoverinfo='skip', showlegend=True))
+
+        # Fitted trend through the recorded frontier, then the median projection.
+        _hist_days = np.arange(0, (current['date'] - _base).days + 1, dtype=float)
+        _hist_y = _inv_logit(_intercept + _slope * _hist_days) * 100
+        _hist_dates = [_base + timedelta(days=int(d)) for d in _hist_days]
         fig.add_trace(go.Scatter(
-            x=proj_dates + proj_dates[::-1],
-            y=list(pct[hi]) + list(pct[lo][::-1]),
-            fill='toself', fillcolor=color, line=dict(width=0),
-            name=label, hoverinfo='skip', showlegend=True))
-
-    # Fitted trend through the recorded frontier, then the median projection.
-    _hist_days = np.arange(0, (current['date'] - _base).days + 1, dtype=float)
-    _hist_y = _inv_logit(_intercept + _slope * _hist_days) * 100
-    _hist_dates = [_base + timedelta(days=int(d)) for d in _hist_days]
-    fig.add_trace(go.Scatter(
-        x=_hist_dates, y=_hist_y.tolist(), mode='lines',
-        line=dict(color='#2c3e50', width=2.5),
-        name=f"Fitted trend (2x odds: {_fit_dt:.0f}d)",
-        hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
-                   for d, y in zip(_hist_dates, _hist_y)],
-        hoverinfo='text'))
-    fig.add_trace(go.Scatter(
-        x=proj_dates, y=pct[50].tolist(), mode='lines',
-        line=dict(color='#2c3e50', width=2.5, dash='dash'),
-        name='Median projection',
-        hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
-                   for d, y in zip(proj_dates, pct[50])],
-        hoverinfo='text'))
-
-    for m in rsi_all:
-        _is_fr = m['is_frontier']
+            x=_hist_dates, y=_hist_y.tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5),
+            name=f"Fitted trend (2x odds: {_fit_dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                       for d, y in zip(_hist_dates, _hist_y)],
+            hoverinfo='text'))
         fig.add_trace(go.Scatter(
-            x=[m['date']], y=[m['cobench']],
-            mode='markers+text',
-            marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
-                        symbol='circle' if _is_fr else 'circle-open',
-                        line=dict(color='white' if _is_fr else '#777777', width=2)),
-            text=[m['name']],
-            textposition='top center',
-            textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
-            hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
-                      f"CoBench: {m['cobench']:.1f}%"
-                      + (f"<br>{m['note']}" if m['note'] else ""),
-            hoverinfo='text', showlegend=False))
+            x=proj_dates, y=pct[50].tolist(), mode='lines',
+            line=dict(color='#2c3e50', width=2.5, dash='dash'),
+            name='Median projection',
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                       for d, y in zip(proj_dates, pct[50])],
+            hoverinfo='text'))
 
-    fig.add_hline(
-        y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-        annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
-                        "Anthropic research staff",
-        annotation_position="top left",
-        annotation_font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
-    _add_today_vline(fig)
+        for m in rsi_all:
+            _is_fr = m['is_frontier']
+            fig.add_trace(go.Scatter(
+                x=[m['date']], y=[m['cobench']],
+                mode='markers+text',
+                marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
+                            symbol='circle' if _is_fr else 'circle-open',
+                            line=dict(color='white' if _is_fr else '#777777', width=2)),
+                text=[m['name']],
+                textposition='top center',
+                textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
+                hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
+                          f"CoBench: {m['cobench']:.1f}%"
+                          + (f"<br>{m['note']}" if m['note'] else ""),
+                hoverinfo='text', showlegend=False))
 
-    fig.update_layout(
-        height=600,
-        margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Release date",
-                   range=[rsi_all[0]['date'] - timedelta(days=25), proj_end_date],
-                   gridcolor='rgba(0,0,0,0.1)',
-                   tickfont=dict(color='#1a1a2e'), zeroline=False,
-                   title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="CoBench score (%)", range=[0, 100],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False, ticksuffix='%',
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+        fig.add_hline(
+            y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+            annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
+                            "Anthropic research staff",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color='#e74c3c'))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
+        _add_today_vline(fig)
 
-    _fn_caption(
-        "Source: "
-        f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
-        "scores read off Figure 3.4.3.A. Opus 5 and Mythos 5.1 are from the "
-        f"[Fable 5.1 system card]({_RSI_SYSCARD_URL}), Figure 2.3.4.1.A, rescaled "
-        "onto the Risk Report's problem set.",
-        ("Opus 5 and Mythos 5.1",
-         "“Mythos 5.1 scores slightly worse than Claude Opus 5 in this "
-         "evaluation… The lower performance relative to Opus 5 may be an "
-         "artifact of this particular evaluation, as our qualitative sense is "
-         "that Mythos 5.1 is somewhat more useful for performing this kind of "
-         "work internally than Opus 5 (though not dramatically so); one possible "
-         "explanation for this result is that Mythos 5.1 tends to run somewhat "
-         "shorter investigations for the same token budget on these evaluation "
-         "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
+        fig.update_layout(
+            height=600,
+            margin=dict(l=50, r=60, t=50, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Release date",
+                       range=[rsi_all[0]['date'] - timedelta(days=25), proj_end_date],
+                       gridcolor='rgba(0,0,0,0.1)',
+                       tickfont=dict(color='#1a1a2e'), zeroline=False,
+                       title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="CoBench score (%)", range=[0, 100],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False, ticksuffix='%',
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        st.plotly_chart(fig, width="stretch")
 
-    _render_rsi_survey(rsi_end_year)
-    _render_rsi_code(rsi_end_year)
-    _render_rsi_experiments(rsi_end_year)
-    _render_rsi_direction(rsi_end_year)
-    _render_rsi_tasteval(rsi_end_year)
+        _fn_caption(
+            "Source: "
+            f"[Anthropic, Redacted Risk Report, August 2026, §3.4.3]({_RSI_SOURCE_URL}); "
+            "scores read off Figure 3.4.3.A. Opus 5 and Mythos 5.1 are from the "
+            f"[Fable 5.1 system card]({_RSI_SYSCARD_URL}), Figure 2.3.4.1.A, rescaled "
+            "onto the Risk Report's problem set.",
+            ("Opus 5 and Mythos 5.1",
+             "“Mythos 5.1 scores slightly worse than Claude Opus 5 in this "
+             "evaluation… The lower performance relative to Opus 5 may be an "
+             "artifact of this particular evaluation, as our qualitative sense is "
+             "that Mythos 5.1 is somewhat more useful for performing this kind of "
+             "work internally than Opus 5 (though not dramatically so); one possible "
+             "explanation for this result is that Mythos 5.1 tends to run somewhat "
+             "shorter investigations for the same token budget on these evaluation "
+             "transcripts.” — Fable 5.1 & Mythos 5.1 system card, p. 37"))
+
+    with _evidence_section("Anthropic internal staff survey on speedup", "survey"):
+        _render_rsi_survey(rsi_end_year)
+    with _evidence_section("Code merged per Anthropic engineer", "code"):
+        _render_rsi_code(rsi_end_year)
+    with _evidence_section("Experiment velocity at OpenAI", "experiments"):
+        _render_rsi_experiments(rsi_end_year)
+    with _evidence_section("Research direction", "direction"):
+        _render_rsi_direction(rsi_end_year)
+    with _evidence_section("Research taste (TasteVal)", "tasteval"):
+        _render_rsi_tasteval(rsi_end_year)
 
     st.markdown("---")
     # The conditioning controls render inside the blend's weights expander,
@@ -6810,7 +6917,8 @@ def render_rsi(end_year):
                           end_year=rsi_end_year)
     # METR's assessment and the pace it implies close the evidence, just above
     # the takeoff model that reads that pace.
-    _render_rsi_metr()
+    with _evidence_section("METR's acceleration assessment", "metr"):
+        _render_rsi_metr()
 
 
 # The ladder's colours: a light-to-saturated ramp, so the rungs read as one
@@ -6829,7 +6937,6 @@ def _render_rsi_automation(end_year):
     ladder's own step. Each measured rung is fitted on the log-odds like
     CoBench; AL5 is not fitted at all, because it is never observed.
     """
-    st.subheader("R&D automation index")
     _fn_line(
         "The other sections measure how well models score or how much "
         "they produce. This one rates the work itself: the share of "
@@ -7157,7 +7264,6 @@ def _render_rsi_survey(end_year):
     rather than log-odds: an output multiple has no ceiling to bound it against,
     so it compounds the way METR's horizon does.
     """
-    st.subheader("Anthropic internal staff survey on speedup")
 
     rows = load_rsi_survey()
     base = rows[0]['date']
@@ -7297,7 +7403,6 @@ def _render_rsi_code(end_year):
     The counted counterpart to the self-reported survey above, fitted the same
     way — OLS on log(multiple) — over the quarters from 2025 on.
     """
-    st.subheader("Code merged per Anthropic engineer")
     _fn_line(
         "The survey asks staff how much faster they are; this counts what "
         "they merged. Lines of code per active contributor each quarter, "
@@ -7496,7 +7601,6 @@ def _pc_rsi_experiment_eta(rows, target_x=_RSI_EXPERIMENT_TARGET,
 
 
 def _render_rsi_experiments(end_year):
-    st.subheader("Experiment velocity at OpenAI")
     _fn_line(
         "Experiments per active experimenter, relative to 2025. "
         "Four-week trailing average; threshold: 10x.",
@@ -7804,7 +7908,6 @@ def _render_rsi_metr():
     """METR's AECI acceleration finding beside Epoch's public ECI on one chart:
     Anthropic's models on both indexes, internal models projected onto Epoch's,
     and where the Takeoff model starts today."""
-    st.subheader("METR's acceleration assessment")
     rows = load_metr_aeci()
     # Anthropic's models sit at their estimated end of training (`produced`),
     # not METR's staff-availability dates; METR's own fit used the latter.
@@ -8146,7 +8249,6 @@ def _render_rsi_direction(end_year):
     so the trend runs on the log-odds, dated against the study's own 90%
     practical ceiling.
     """
-    st.subheader("Research direction")
     _fn_line(
         "Automating research means choosing what to do next, not just doing "
         "it. Anthropic replayed 129 turns where one of its own researchers "
@@ -8275,7 +8377,6 @@ def _render_rsi_tasteval(end_year):
     elasticity and the prediction card. The multiplier runs on as a fan from
     the post-GPT-5.2 fit (no bar or ETA: the experts are already passed); the
     prediction curve is the paper's own."""
-    st.subheader("Research taste (TasteVal)")
     _fn_line(
         "Research also means picking which experiment to run. TasteVal has a "
         "model design the experiments on eight AI R&D tasks while a fixed "
@@ -21407,7 +21508,25 @@ def _render_anchor_links(scroll_to, tab_slug):
               });
             });
           }
+          function jumpLink(ev) {
+            // A main-column link to `?to=` on this tab (the Takeoff jump
+            // bar) scrolls in place instead of reloading the app.
+            var a = ev.target.closest && ev.target.closest("a[href]");
+            if (!a || a.closest("h1, h2, h3, h4, h5, h6")) { return; }
+            var u;
+            try { u = new URL(a.getAttribute("href"), window.location.href); }
+            catch (e) { return; }
+            var id = u.searchParams.get("to");
+            var tab = u.searchParams.get("tab");
+            if (!id || (tab && tab !== window.__vpAnchorTab)) { return; }
+            var el = find(id);
+            if (!el) { return; }
+            ev.preventDefault();
+            ev.stopPropagation();
+            el.scrollIntoView({block: "start"});
+          }
           function watch() {
+            root().addEventListener("click", jumpLink, true);
             relabel();
             new MutationObserver(relabel).observe(root(), {childList: true, subtree: true});
           }
@@ -23732,6 +23851,7 @@ def _render_takeoff(loading):
     loading.append(bar)
     _tk_loading(bar, 0)
     top = st.empty()
+    _tk_render_jump_bar()
     render_rsi(st.session_state["tk_end_year"])
     st.markdown("---")
     with st.sidebar:
