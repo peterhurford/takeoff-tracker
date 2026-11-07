@@ -6637,3 +6637,36 @@ class TestTheme:
             (Path(vp.__file__).parent / ".streamlit" / "config.toml").read_text())
         assert cfg["theme"]["base"] == "light"
         assert "dark" not in cfg["theme"] and "light" not in cfg["theme"]
+
+
+class TestEvidenceMathCoding:
+    def _chain(self):
+        import takeoff_model as tk
+        params = dict(tk.DEFAULTS)
+        params["coding_slope"] = vp._tk_survey_coding(
+            vp.load_rsi_survey(), vp.load_rsi_experiments(),
+            vp._TK_DEFAULTS["tk_cal_capability"], tk.DEFAULTS["transfer"] / 100,
+            vp._tk_copies_yearly(vp.load_rsi_automation()))
+        return vp._tk_evidence_chain(params)
+
+    def test_coding_step_shows_the_level_its_growth_and_the_amdahl_parts(self):
+        """Step 6 says the survey's ×g a year is growth in the speedup, not the
+        speedup; spells out the copies term by Amdahl; and its elasticity is
+        the one the run uses at the defaults."""
+        c = self._chain()
+        assert c["cp_after"] / c["cp_before"] == pytest.approx(c["copies_y"])
+        assert c["coding_ev"] == pytest.approx(c["coding"], abs=0.005)
+        md = vp._tk_evidence_math(c)
+        assert "is the growth, not the speedup" in md
+        assert f"= {c['cp_before']:.3f}" in md and f"= {c['cp_after']:.3f}" in md
+        assert "set in the sidebar" not in md
+
+    def test_staff_and_returns_are_separate_boxes(self):
+        """Staff growth feeds human researchers only; returns r feeds harder ideas."""
+        c = self._chain()
+        dot = vp._tk_flow_dot({"chain": c, "taste_set": 1.0, "taste_used": 1.0,
+                               "coding": c["coding"], "pace_today": c["pace"],
+                               "cal_weight": 50.0, "compute_source": "x",
+                               "compute_growth": 2.0, "hiring": 30.0, "returns": 1.0})
+        assert "pn -> fh" in dot and "pr -> fd" in dot
+        assert "pn -> fd" not in dot

@@ -22425,8 +22425,14 @@ def _tk_evidence_chain(params):
           for per, e in zip(_TASTEVAL_ECI_PER_DOUBLING, e_tv)]
     rows = load_rsi_survey()
     days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
-    survey_y = float(np.exp(fit_line(days, np.log([r['uplift'] for r in rows]))[1] * 365.25))
+    s_icpt, s_slope = fit_line(days, np.log([r['uplift'] for r in rows]))
+    survey_y = float(np.exp(s_slope * 365.25))
+    survey_now = float(np.exp(s_icpt + s_slope * (datetime.now() - rows[0]['date']).days))
     copies_y = _tk_copies_yearly(load_rsi_automation())
+    # The parts `_tk_copies_yearly` combines, for the math section.
+    cp_h = _tk_ladder_human_share(_tk_ladder_start_row())
+    cp_s = takeoff.DEFAULTS["ai_speed"]
+    cp_g = 2 ** (12 / takeoff.DEFAULTS["software_months"] * takeoff.DEFAULTS["ai_copies"])
     eg = ex[-1]['mult'] / ex[0]['mult']
     auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
                                  (cap / comp) ** params["ai_copies"], _tk_al_hours_now())
@@ -22448,6 +22454,13 @@ def _tk_evidence_chain(params):
         "judgment_set": float(ss("tk_taste_slope", _TK_DEFAULTS["tk_taste_slope"])),
         "judgment_used": float(params["taste_slope"]),
         "survey_y": survey_y, "copies_y": copies_y, "coding": float(params["coding_slope"]),
+        "survey_now": survey_now, "survey_last": rows[-1]['uplift'],
+        "survey_last_name": rows[-1]['name'], "survey_n": len(rows),
+        "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
+        "cp_months": takeoff.DEFAULTS["software_months"],
+        "coding_ev": float(np.log((survey_y / copies_y - 1 + T) / T) / np.log(cap ** (1 / yrs))),
+        "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
+        "cp_after": 1 / (cp_h + (1 - cp_h) / (cp_s * cp_g)),
         "exp_growth": eg, "parallel": params["parallelization"],
         "compute_part": comp ** params["parallelization"],
         "residual": cal["resource_adjusted_growth"] if cal else None,
@@ -22507,11 +22520,29 @@ def _tk_evidence_math(c):
             f"**{c['judgment_used']:.2f}**.",
         ]
     lines += [
-        f"**6. Coding labor.** Staff report output with AI growing ×{c['survey_y']:.2f} a "
-        f"year; ×{c['copies_y']:.3f} of that is just more AI copies, leaving "
-        f"×{c['survey_y'] / c['copies_y']:.2f}:",
-        rf"$$e = \frac{{\ln(({c['survey_y'] / c['copies_y']:.2f} - 1 + {T:g})/{T:g})}}{{\ln {cy:.1f}}} = {c['coding']:.2f}$$",
-        f"With 10× the effective compute, AI's coding help is about {10 ** c['coding']:.1f}× bigger.",
+        f"**6. Coding labor.** Staff surveys put their speedup with AI at "
+        f"~{c['survey_now']:.0f}× today on the trend through all {c['survey_n']} readings "
+        f"(the latest, {c['survey_last_name']}, {c['survey_last']:g}×). That speedup itself "
+        f"grows ×{c['survey_y']:.2f} a year, so a year on the trend reads "
+        f"~{c['survey_now'] * c['survey_y']:.0f}×; ×{c['survey_y']:.2f} is the growth, not "
+        "the speedup.",
+        "Part of that growth is just running more AI copies. People still do "
+        f"{c['cp_h']:.0%} of the work (the automation index); AI does the rest "
+        f"{c['cp_s']:g}× faster, and a year of algorithmic progress (doubling every "
+        f"{c['cp_months']:g} months) gives ×{c['cp_g']:.2f} the copies. By Amdahl's law the "
+        "speedup is one over the time the work still takes:",
+        rf"$$\frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/{c['cp_s']:g}}} = {c['cp_before']:.3f}\times \;\to\; \frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/({c['cp_s']:g} \times {c['cp_g']:.2f})}} = {c['cp_after']:.3f}\times$$",
+        f"so more copies add ×{c['copies_y']:.3f} ({100 * (c['copies_y'] - 1):+.1f}%) a "
+        f"year: AI's part is already fast, so people's {c['cp_h']:.0%} sets the pace. "
+        "Taking it out leaves "
+        f"{c['survey_y']:.2f} ÷ {c['copies_y']:.3f} = ×{c['survey_y'] / c['copies_y']:.2f} a "
+        "year for better AI. Against effective compute's "
+        f"×{cy:.1f} a year, with T = {T:.0%} of AI's gains reaching research:",
+        rf"$$e = \frac{{\ln(({c['survey_y'] / c['copies_y']:.2f} - 1 + {T:g})/{T:g})}}{{\ln {cy:.1f}}} = \frac{{\ln {(c['survey_y'] / c['copies_y'] - 1 + T) / T:.2f}}}{{\ln {cy:.1f}}} = \frac{{{np.log((c['survey_y'] / c['copies_y'] - 1 + T) / T):.3f}}}{{{np.log(cy):.3f}}} = {c['coding_ev']:.2f}$$",
+        (f"With 10× the effective compute, AI's coding help is about "
+         f"{10 ** c['coding_ev']:.1f}× bigger."
+         + (f" The run uses {c['coding']:.2f}, set in the sidebar."
+            if abs(c['coding'] - c['coding_ev']) > 0.005 else "")),
         "**7. What they do.** Each month the model's research pace is today's pace × "
         "(people and AI labor, combined with experiment compute) × (judgment) ÷ "
         "(harder ideas). Judgment multiplies everything, so it moves dates most; coding "
@@ -22582,14 +22613,15 @@ def _tk_flow_dot(v):
                       if c["fitted"] is not None else "calibration off"), p),
         # Coding labor.
         node("s_ev", "Staff speedup\\nsurvey", ora),
-        node("s_me", f"output ×{c['survey_y']:.2f}\\na year", ora),
+        node("s_me", f"speedup ~{c['survey_now']:.0f}× today,\\nitself growing\\n×{c['survey_y']:.2f} a year", ora),
         node("s_cv", f"less what just running\\nmore copies adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
         node("pc", f"Coding labor {c['coding']:.2f}", ora),
         # Other inputs.
         node("ix", "R&D automation index\\n(AL4 / AL5)", grn),
         node("ph", "People's share\\nof the work", grn),
         node("pk", f"Compute ×{v['compute_growth']:.1f}\\nin year one", blu),
-        node("pn", f"Staff +{v['hiring']:g}%/yr\\nreturns r = {v['returns']:g}", red),
+        node("pn", f"Staff +{v['hiring']:g}%/yr", grn),
+        node("pr", f"Returns to research\\nr = {v['returns']:g}", red),
         node("fj", "Research judgment", pur, "ellipse"),
         node("fa", "AI capabilities", ora, "ellipse"),
         node("fh", "Human researchers", grn, "ellipse"),
@@ -22600,7 +22632,7 @@ def _tk_flow_dot(v):
         '{rank=same; h1; e_ev; y_ev; y_sw; n_ev; t_ev; x_ev; s_ev; ix;}',
         '{rank=same; h2; e_me; y_me; n_me; t_me; x_me; s_me;}',
         '{rank=same; h3; e_cv; y_cv; n_cv; t_cv; x_cv; s_cv;}',
-        '{rank=same; h4; pt; pj; pc; ph; pk; pn;}',
+        '{rank=same; h4; pt; pj; pc; ph; pk; pn; pr;}',
         '{rank=same; h5; pb; fj; fa; fh; fk; fd;}',
         '{rank=same; h6; net;}',
         edge("e_ev", "e_me"), edge("e_me", "e_cv"), edge("e_cv", "pt"),
@@ -22614,7 +22646,7 @@ def _tk_flow_dot(v):
         edge("ix", "ph"), edge("pj", "pb"), edge("pb", "fj"), edge("pc", "fa"),
         edge("ph", "fa", "Amdahl"),
         edge("ph", "fh"), edge("pk", "fk"), edge("pn", "fh"),
-        edge("pn", "fd", "difficulty = 0.5 / r"),
+        edge("pr", "fd", f"difficulty = {_TK_R_REF_PARALLEL:g} / r"),
         edge("fj", "net", "×"), edge("fa", "net", "×"), edge("fh", "net", "×"),
         edge("fk", "net", "×"), edge("fd", "net", "÷"),
         edge("pt", "net", "starting level"),
