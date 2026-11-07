@@ -21838,16 +21838,17 @@ def _tk_hist_compute_rate():
     return fit['g'] * np.log(10) if fit else np.log(takeoff.DEFAULTS["compute_growth"])
 
 
-def _tk_evidence_window_growth(experiments, eci_today=None):
+def _tk_evidence_window_growth(experiments, eci_today=None, software_months=None):
     """(compute, effective capability) growth over the experiment evidence
     window, from evidence: the data-center compute fit, and that times the
-    software trend at today's pace (the window is 2026, after the speed-up:
-    `_tk_eci_today_pace` at `_TK_ECI_TODAY`)."""
+    software trend (baseline doubling `software_months`) at today's pace (the
+    window is 2026, after the speed-up: `_tk_eci_today_pace` at `_TK_ECI_TODAY`)."""
     years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
     compute = _tk_hist_compute_rate()
-    pace = _tk_eci_today_pace(takeoff.DEFAULTS, compute,
+    months = software_months or takeoff.DEFAULTS["software_months"]
+    pace = _tk_eci_today_pace(dict(takeoff.DEFAULTS, software_months=months), compute,
                               _TK_ECI_TODAY if eci_today is None else eci_today) or 1.0
-    software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"] * pace
+    software = np.log(2) * 12 / months * pace
     # The product of the two shown factors, so the math section multiplies out.
     comp = round(float(np.exp(compute * years)), 2)
     return comp, round(comp * round(float(np.exp(software * years)), 2), 2)
@@ -22400,11 +22401,13 @@ def _tk_evidence_chain(params):
     s_icpt, s_slope = fit_line(days, np.log([r['uplift'] for r in rows]))
     survey_y = float(np.exp(s_slope * 365.25))
     survey_now = float(np.exp(s_icpt + s_slope * (datetime.now() - rows[0]['date']).days))
-    copies_y = _tk_copies_yearly(load_rsi_automation())
+    sw0 = float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"]))
+    copies_y = _tk_copies_yearly(load_rsi_automation(),
+                                 dict(takeoff.DEFAULTS, software_months=sw0))
     # The parts `_tk_copies_yearly` combines, for the math section.
     cp_h = _tk_ladder_human_share(_tk_ladder_start_row())
     cp_s = takeoff.DEFAULTS["ai_speed"]
-    cp_g = 2 ** (12 / takeoff.DEFAULTS["software_months"] * takeoff.DEFAULTS["ai_copies"])
+    cp_g = 2 ** (12 / sw0 * takeoff.DEFAULTS["ai_copies"])
     eg = ex[-1]['mult'] / ex[0]['mult']
     auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
                                  (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
@@ -22416,8 +22419,10 @@ def _tk_evidence_chain(params):
         "E": E, "c_pts": c_pts, "a_pts": a_pts, "pace": (E - c_pts) / a_pts,
         "years": yrs, "compute": comp, "cap": cap, "cap_y": cap ** (1 / yrs), "T": T,
         "compute_y": comp ** (1 / yrs), "software": cap / comp,
-        "sw_base_months": takeoff.DEFAULTS["software_months"],
-        "sw_months": takeoff.DEFAULTS["software_months"] / ((E - c_pts) / a_pts),
+        "sw_base_months": sw0,
+        "pt_per_dbl": rates["compute"] * np.log(2),
+        "ce_months": 12 * rates["compute"] * np.log(2) / rates["algo_ppy"],
+        "sw_months": sw0 / ((E - c_pts) / a_pts),
         "transfer_off": T_set <= 0,
         "odds_y": odds_y, "value_y": odds_y ** _TK_ODDS_TO_JUDGMENT,
         "odds_power": _TK_ODDS_TO_JUDGMENT,
@@ -22429,7 +22434,7 @@ def _tk_evidence_chain(params):
         "survey_now": survey_now, "survey_last": rows[-1]['uplift'],
         "survey_last_name": rows[-1]['name'], "survey_n": len(rows),
         "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
-        "cp_months": takeoff.DEFAULTS["software_months"],
+        "cp_months": sw0,
         "cp_copies": takeoff.DEFAULTS["ai_copies"],
         "coding_ev": float(np.log((survey_y / copies_y - 1 + T) / T) / np.log(cap ** (1 / yrs))),
         "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
@@ -22527,8 +22532,8 @@ def _tk_evidence_math(c):
         rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.2f}}}{{{c['a_pts']:.2f}}} = {c['pace']:.2f}\times$$",
         "Chart 1 starts here. The model's software doubling time at the 2024–25 pace, "
         f"{c['sw_base_months']:g} months (a prior: sidebar *Baseline software doubling "
-        "time*; Epoch's estimate for pretraining is 8.4 months, 95% CI 4.5–14.3, "
-        "and the ECI fits fix only its product with points per doubling), becomes "
+        "time*; Epoch's estimate for pretraining is 8.4 months, 95% CI 4.5–14.3; "
+        "see step 2), becomes "
         f"{c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} "
         "months today.",
         "**2. Effective compute, the yardstick.** Effective compute is training compute "
@@ -22538,6 +22543,19 @@ def _tk_evidence_math(c):
         f"{c['sw_months']:.1f} months:",
         rf"$$\text{{compute}} = {c['hist_y']:.2f}^{{{yrs:.2f}}} = {c['compute']:.2f}\times \qquad \text{{algorithms}} = 2^{{{yrs:.2f} \times 12/{c['sw_months']:.1f}}} = {c['software']:.2f}\times$$",
         rf"$$c = ({c['compute']:.2f} \times {c['software']:.2f})^{{1/{yrs:.2f}}} = {c['cap']:.2f}^{{1/{yrs:.2f}}} = {cy:.1f}\times \text{{ a year}}$$",
+        "*The baseline doubling is the yardstick's softest input.* ECI history fixes "
+        f"algorithms' {c['a_pts']:.2f} points a year, not how many doublings they are. "
+        "Read as compute-equivalent, as the definition above says, each doubling would "
+        f"buy what a compute doubling buys, {c['pt_per_dbl']:.2f} points ({c['per_oom']:.2f} "
+        f"per OOM × log₁₀ 2): {c['a_pts']:.2f} ÷ {c['pt_per_dbl']:.2f} = "
+        f"{c['a_pts'] / c['pt_per_dbl']:.1f} doublings a year, one every "
+        f"{c['ce_months']:.1f} months. The {c['sw_base_months']:g}-month prior instead makes "
+        f"each algorithmic doubling worth {c['a_pts'] * c['sw_base_months'] / 12:.1f} points, "
+        f"{c['a_pts'] * c['sw_base_months'] / 12 / c['pt_per_dbl']:.1f}× a compute doubling: "
+        "it treats much of what ECI credits to release date (post-training, RL, data, "
+        "inference compute) as something other than efficiency. A faster baseline shrinks "
+        "every elasticity below, and faster effective compute ahead largely offsets that "
+        "for the RSI date, but not for ultraintelligence, which a faster baseline delays.",
         f"**3. From a growth rate to an elasticity.** T = {T:.0%} is the share of AI's "
         "gains that carries into research, a prior (sidebar *Extra AI research output that "
         "transfers*); nothing measures it. The model makes a quantity AI drives equal to "
@@ -23066,22 +23084,30 @@ def _tk_eci_today_pace(params, hist, eci_today):
     return algo_today / r["algo_ppy"] if algo_today > 0 else None
 
 
-def _tk_evidence_settings(eci_today):
-    """The evidence-read settings at `eci_today` ECI points a year: the
-    window's compute and capability growth, and the judgment and coding
-    elasticities read against them."""
+def _tk_evidence_settings(eci_today, software_months=None):
+    """The evidence-read settings at `eci_today` ECI points a year and a
+    baseline software doubling of `software_months`: the window's compute and
+    capability growth, and the judgment and coding elasticities read against
+    them. Both set the yardstick, so changing either re-reads the evidence."""
+    months = software_months or takeoff.DEFAULTS["software_months"]
     ex = load_rsi_experiments()
     tr = _TK_DEFAULTS["tk_transfer"] / 100
-    comp, cap = _tk_evidence_window_growth(ex, eci_today)
+    comp, cap = _tk_evidence_window_growth(ex, eci_today, months)
     return {"tk_cal_compute": comp, "tk_cal_capability": cap,
             "tk_taste_slope": _tk_taste_default(rsi_dir_frontier_all, ex, cap, tr, eci_today),
             "tk_coding_slope": _tk_survey_coding(load_rsi_survey(), ex, cap, tr,
-                                                 _tk_copies_yearly(load_rsi_automation()))}
+                                                 _tk_copies_yearly(load_rsi_automation(),
+                                                                   dict(takeoff.DEFAULTS,
+                                                                        software_months=months)))}
 
 
-def _tk_on_eci_today():
-    """A new ECI growth re-reads the evidence at that pace."""
-    st.session_state.update(_tk_evidence_settings(float(st.session_state["tk_eci_today"])))
+def _tk_reread_evidence():
+    """A new ECI growth or baseline software doubling re-reads the evidence
+    against the yardstick they set."""
+    ss = st.session_state.get
+    st.session_state.update(_tk_evidence_settings(
+        float(ss("tk_eci_today", _TK_ECI_TODAY)),
+        float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"]))))
 
 
 # Evidence-calibrated defaults: read at today's pace, so after the ECI and
@@ -24255,7 +24281,7 @@ def _render_takeoff(loading):
                    "past it, power and spending limits bind, and no published estimate "
                    "gives the rate. 100 keeps today's growth.")
             number("Today's ECI growth (points a year)", "eci_today", 10.0, 60.0, 0.5,
-                   on_change=_tk_on_eci_today, help=
+                   on_change=_tk_reread_evidence, help=
                    "How fast the trained frontier's ECI climbs today. This sets today's "
                    "research pace, so it moves every date: pace = (this, less the ~3 "
                    "points a year compute adds) ÷ the ~13 algorithmic points a year of "
@@ -24341,14 +24367,15 @@ def _render_takeoff(loading):
                        "future acceleration shortens calendar time.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
             st.markdown("**Validated research progress**")
-            number("Baseline software doubling time (months)", "software_months", 3.0, 60.0, 1.0,
+            number("Baseline software doubling time (months)", "software_months", 1.0, 60.0, 1.0,
                    "Validated algorithmic progress at the 2024–25 average pace, "
                    "measured as training compute saved at fixed quality, at the reference "
                    "40/40/20 compute split. Today's ECI growth above speeds it to today's "
                    "pace; that already includes today's AI assistance, which is not "
                    "multiplied in again. Epoch (Ho et al. 2024) puts pretraining "
                    "efficiency at 8.4 months a doubling (95% CI 4.5–14.3); post-training "
-                   "gains are not in that figure.")
+                   "gains are not in that figure. Changing it re-reads the evidence "
+                   "against the yardstick it sets.", on_change=_tk_reread_evidence)
             st.markdown("**Research feedback**")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
                    "Default fitted from the staff survey above: the yearly growth in "

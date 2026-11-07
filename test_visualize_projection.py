@@ -6218,6 +6218,28 @@ class TestTakeoffEciToday:
         assert faster["tk_cal_capability"] > base["tk_cal_capability"]
         assert faster["tk_coding_slope"] < base["tk_coding_slope"]
 
+    def test_the_baseline_doubling_rereads_the_evidence(self):
+        """A slower baseline software doubling shrinks the yardstick, raising
+        every elasticity read against it, and the math section follows it."""
+        st = vp.st.session_state
+        saved = dict(st)
+        try:
+            st.clear()
+            st["tk_software_months"] = 14.0
+            vp._tk_reread_evidence()
+            base = vp._tk_evidence_settings(vp._TK_ECI_TODAY)
+            assert st["tk_cal_capability"] < base["tk_cal_capability"]
+            assert st["tk_coding_slope"] > base["tk_coding_slope"]
+            assert st["tk_cal_compute"] == base["tk_cal_compute"]
+            import takeoff_model as tk
+            c = vp._tk_evidence_chain(dict(tk.DEFAULTS, taste_slope=st["tk_taste_slope"],
+                                           coding_slope=st["tk_coding_slope"]))
+            assert c["sw_base_months"] == 14.0
+            assert round(c["compute"] * round(c["software"], 2), 2) == c["cap"]
+        finally:
+            st.clear()
+            st.update(saved)
+
     def test_local_slope_recovers_a_straight_line(self):
         from datetime import timedelta
         d0 = datetime(2025, 1, 1)
