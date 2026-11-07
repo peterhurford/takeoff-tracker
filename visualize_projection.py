@@ -21848,8 +21848,9 @@ def _tk_evidence_window_growth(experiments, eci_today=None):
     pace = _tk_eci_today_pace(takeoff.DEFAULTS, compute,
                               _TK_ECI_TODAY if eci_today is None else eci_today) or 1.0
     software = np.log(2) * 12 / takeoff.DEFAULTS["software_months"] * pace
-    return (round(float(np.exp(compute * years)), 2),
-            round(float(np.exp((compute + software) * years)), 2))
+    # The product of the two shown factors, so the math section multiplies out.
+    comp = round(float(np.exp(compute * years)), 2)
+    return comp, round(comp * round(float(np.exp(software * years)), 2), 2)
 
 
 def _tk_window_human_shares(rows, experiments, hours=None):
@@ -22526,7 +22527,9 @@ def _tk_evidence_math(c):
         rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.2f}}}{{{c['a_pts']:.2f}}} = {c['pace']:.2f}\times$$",
         "Chart 1 starts here. The model's software doubling time at the 2024–25 pace, "
         f"{c['sw_base_months']:g} months (a prior: sidebar *Baseline software doubling "
-        f"time*), becomes {c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} "
+        "time*; Epoch's estimate for pretraining is 8.4 months, 95% CI 4.5–14.3, "
+        "and the ECI fits fix only its product with points per doubling), becomes "
+        f"{c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} "
         "months today.",
         "**2. Effective compute, the yardstick.** Effective compute is training compute "
         "times algorithmic efficiency. The evidence window is OpenAI's experiment series, "
@@ -24343,7 +24346,9 @@ def _render_takeoff(loading):
                    "measured as training compute saved at fixed quality, at the reference "
                    "40/40/20 compute split. Today's ECI growth above speeds it to today's "
                    "pace; that already includes today's AI assistance, which is not "
-                   "multiplied in again.")
+                   "multiplied in again. Epoch (Ho et al. 2024) puts pretraining "
+                   "efficiency at 8.4 months a doubling (95% CI 4.5–14.3); post-training "
+                   "gains are not in that figure.")
             st.markdown("**Research feedback**")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
                    "Default fitted from the staff survey above: the yearly growth in "

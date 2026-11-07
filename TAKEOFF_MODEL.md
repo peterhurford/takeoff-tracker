@@ -13,9 +13,12 @@ They no longer shift an otherwise identical post-coding simulation forward in ti
 
 Research is partially automated today. Initial human-hour shares (calibrated below),
 coding automation (70%), and the software progress rate behind the public ECI line
-(one doubling per nine months) are assumptions. Today's rate is that one sped up until
-modeled ECI growth equals `tk_eci_today` (26 points a year by default, 5.3 months a
-doubling); it already includes existing AI assistance. One full cycle (training plus validation, four
+(one doubling per nine months; Epoch's pretraining estimate is 8.4, 95% CI 4.5–14.3) are
+assumptions: ECI fixes only algorithms' points a year, not how many doublings they are.
+Today's rate is that one sped up until modeled ECI growth equals `tk_eci_today`, by
+default the trained US frontier's smoothed climb at its latest model (`_TK_ECI_TODAY`,
+read live; the math section shows it and the doubling it implies); it already includes
+existing AI assistance. One full cycle (training plus validation, four
 months) of undeployed discoveries initializes both the actual and same-compute reference
 pipelines, the steady state, so the next model ships at today's pace. Those discoveries must
 still pass validation; the model does not invent a pre-today trajectory.

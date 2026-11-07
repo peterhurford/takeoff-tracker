@@ -6672,6 +6672,14 @@ class TestEvidenceMathCoding:
             assert prior in md, prior
         assert "c['" not in md and "{T:" not in md  # no un-interpolated f-string
 
+    def test_the_yardstick_multiplies_out_as_shown(self):
+        """Step 2's algorithms factor is its own formula to the shown digits,
+        and compute times it is the window's effective compute."""
+        c = self._chain()
+        shown = 2 ** (c["years"] * 12 / c["sw_months"])
+        assert round(c["software"], 2) == round(shown, 2)
+        assert round(c["compute"] * round(c["software"], 2), 2) == c["cap"]
+
     def test_staff_and_returns_are_separate_boxes(self):
         """Staff growth feeds human researchers only; returns r feeds harder ideas."""
         c = self._chain()
