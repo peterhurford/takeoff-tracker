@@ -3483,6 +3483,9 @@ with st.sidebar:
                           type="primary" if _t == active_tab else "secondary",
                           on_click=st.session_state.__setitem__,
                           args=("_active_tab", _t))
+    # Share view (and the changed-settings badge) sit here, under the tab
+    # picker, though drawn at the end of the run once the URL is synced.
+    _sidebar_tools = st.container(key="_sidebar_tools")
 
 # Keep URL in sync with selected tab (omit when at default)
 if active_tab == _DEFAULT_TAB:
@@ -12906,7 +12909,7 @@ def render_data_centers():
                 key="dc_end_year", disabled=not include_future,
                 help="Planned buildout dated past this year is dropped, and "
                      "the by-country extrapolation runs to its end.")
-        if st.button("Reset", key="dc_reset"):
+        if st.button("Reset to defaults", key="dc_reset"):
             for k in _DC_RESET_KEYS:
                 st.session_state.pop(k, None)
             # Re-seed defaults so they win over URL re-hydration on the rerun.
@@ -16830,7 +16833,7 @@ def render_compute_capabilities():
                 "Project through", _CC_END_YEARS, horizontal=True,
                 index=_CC_END_YEARS.index(_CC_DEFAULTS["cc_end_year"]),
                 key="cc_end_year")
-        if st.button("Reset", key="cc_reset"):
+        if st.button("Reset to defaults", key="cc_reset"):
             for k in _CC_RESET_KEYS:
                 st.session_state.pop(k, None)
             st.session_state.update(_CC_DEFAULTS)
@@ -21153,7 +21156,7 @@ def render_pacing():
             index=_PC_END_YEARS.index(_PC_DEFAULTS["pc_end_year"]),
             key="pc_end_year",
             help="The year-end both charts and the crossing search run to.")
-        if st.button("Reset", key="pc_reset"):
+        if st.button("Reset to defaults", key="pc_reset"):
             for k in _PC_RESET_KEYS:
                 st.session_state.pop(k, None)
             for k in _SHIP_LAG_DEFAULTS:
@@ -24796,8 +24799,7 @@ if not os.environ.get("_VP_TESTING"):
     _render_anchor_links(_url_to, _SLUG_FOR_TAB[active_tab])
 
     # ── Share view: copy the (now state-synced) URL to the clipboard ──────
-    with st.sidebar:
-        st.markdown("---")
+    with _sidebar_tools:
         st.html(
             """
             <button id="share-view-btn" onclick="copyShareView(this)">

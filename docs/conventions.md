@@ -132,3 +132,10 @@ caption stays short.
 **Editing these blocks by script:** a naive paren-counter will not do — an
 f-string like `.split(' (')` puts an unbalanced paren inside a literal, and a
 scan that counts it runs on through thousands of lines. Tokenize, or edit by hand.
+
+## Sidebar tools
+
+*Share view* is drawn at the end of the run, once the URL is synced, into
+`_sidebar_tools`, a slot reserved right under the tab picker, so it sits above every
+tab's controls. Every tab's main reset reads *Reset to defaults*
+(`test_share_view_sits_under_the_tab_picker_on_every_tab`).

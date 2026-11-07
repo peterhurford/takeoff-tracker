@@ -3358,6 +3358,24 @@ class TestTodayForwardMode:
         assert at.checkbox(key="today_fwd").value is True
 
 
+class TestSidebarTools:
+    def test_share_view_sits_under_the_tab_picker_on_every_tab(self):
+        """Share view is drawn last (the URL must be synced first) into a slot
+        right under the tab picker, above every tab's own controls; and no
+        tab's reset button is a bare "Reset"."""
+        for tab in _SLUG_FOR_TAB.values():
+            at = _fresh_app()
+            at.query_params["tab"] = tab
+            at.run()
+            _assert_no_error(at, f"sidebar tools / {tab}")
+            kids = list(at.sidebar.children.values())
+            [i] = [i for i, k in enumerate(kids)
+                   if getattr(k, "key", None) == "_sidebar_tools"]
+            assert i <= 2, (tab, i)
+            assert any("share-view-btn" in h.body for h in kids[i].get("html")), tab
+            assert not [b for b in at.button if b.label == "Reset"], tab
+
+
 class TestSectionDeepLinks:
     """`?to=<anchor>` is how a section link survives a fresh load — a bare
     `#fragment` is dropped by the Community Cloud iframe and again by every
