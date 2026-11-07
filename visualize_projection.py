@@ -24257,8 +24257,9 @@ def _render_takeoff(loading):
                    "research pace, so it moves every date: pace = (this, less the ~3 "
                    "points a year compute adds) ÷ the ~13 algorithmic points a year of "
                    "the US frontier's 2024–25 average. The software doubling time below "
-                   "is sped up by that pace. Default: Anthropic's frontier on Epoch's "
-                   "scale, internal models included, smoothed, at the latest model "
+                   "is sped up by that pace. Default: the running best of every US lab's "
+                   "models on Epoch's scale, Anthropic's internal ones included, "
+                   "smoothed, at the latest model "
                    "(*Research pace so far*, section 1). The 2024–25 average, ~16.4, is 1×. "
                    "Changing it re-reads the evidence at that pace: the judgment and coding "
                    "elasticities and the calibration's capability growth reset.")
