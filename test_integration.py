@@ -286,6 +286,21 @@ class TestEciTab:
         spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
         assert "Projected median" in [t.get("name") for t in spec["data"]]
 
+    def test_piecewise_fits_the_reference_from_the_same_breakpoint(self):
+        # A piecewise subject against a whole-window reference line read the
+        # subject's recent pace against the reference's average one.
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.selectbox(key="eci_entity_b").set_value("China best").run()
+        at.radio(key="eci_proj_basis").set_value("Piecewise linear").run()
+        _assert_no_error(at, "ECI / China best / piecewise")
+        names = [t.get("name") or "" for t in
+                 json.loads(at.get("plotly_chart")[0].proto.spec)["data"]]
+        assert any(n.startswith("US trend since ") for n in names), names
+        assert any("trend since" in c.body for c in at.get("caption")
+                   if "takes one off per" in c.body)
+
 
 class TestModeSwitchingBehavior:
     """Verify that switching projection basis actually changes the UI —

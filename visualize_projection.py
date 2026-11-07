@@ -5010,8 +5010,34 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                             f"{subject_name or 'Subject'} proj. today {_proj_today_score:.1f}",
                             '#a569bd'))
 
+    # Piecewise: the last segment starts at the last breakpoint's date, and the
+    # overlay and the months-behind rate fit the reference from there too.
+    _eci_seg_start = None
+    if eci_proj_basis == "Piecewise linear" and eci_piecewise_n_segments >= 2:
+        _eci_used_names = [m['display_name'] for m in eci_frontier_used]
+        _bps = [b for b in eci_piecewise_breakpoints if b in _eci_used_names]
+        if _bps:
+            _eci_seg_start = eci_frontier_used[_eci_used_names.index(_bps[-1])]['date']
+
     # --- Overlay trendline (e.g., US trend on the China chart) ---
-    if overlay_frontier is not None and len(overlay_frontier) >= 2:
+    _ovl_seg = ([] if _eci_seg_start is None or overlay_frontier is None
+                else [m for m in overlay_frontier if m['date'] >= _eci_seg_start])
+    if len(_ovl_seg) >= 2:
+        _ovl_base = _ovl_seg[0]['date']
+        _ovl_params = fit_line(
+            np.array([(m['date'] - _ovl_base).days for m in _ovl_seg], dtype=float),
+            np.array([m['eci_score'] for m in _ovl_seg]))
+        _ovl_ppy = _ovl_params[1] * 365.25
+        _ovl_y_end = _ovl_params[0] + _ovl_params[1] * (proj_end_date - _ovl_base).days
+        fig.add_trace(go.Scatter(
+            x=[_ovl_base, proj_end_date], y=[_ovl_params[0], _ovl_y_end],
+            mode='lines',
+            line=dict(color='#1565c0', width=1.25, dash='dot'),
+            name=(f'{overlay_label or "Overlay"} since {_eci_seg_start:%b %Y} '
+                  f'({_ovl_ppy:.1f} pts/yr)'),
+            hoverinfo='skip',
+        ))
+    elif overlay_frontier is not None and len(overlay_frontier) >= 2:
         _ovl_base = overlay_frontier[0]['date']
         _ovl_days = np.array([(m['date'] - _ovl_base).days for m in overlay_frontier], dtype=float)
         _ovl_scores = np.array([m['eci_score'] for m in overlay_frontier])
@@ -5303,7 +5329,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         "ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year. "
         "These are projections, not forecasts.",
         ("projections, not forecasts", PROJ_DISCLAIMER.strip()))
-    return proj_dates, all_trajectories
+    return proj_dates, all_trajectories, _eci_seg_start
 
 
 
@@ -5529,8 +5555,9 @@ def _render_eci_views(entity_a, entity_b):
                 f"{entity_a} alone.")
         entity_b = _ECI_NONE_LABEL
     proj = _render_eci_projection(entity_a, entity_b)
-    _render_eci_gap_history(entity_a, entity_b, proj)
-    _render_eci_leaderboard(entity_a, entity_b)
+    since = proj[2] if proj else None
+    _render_eci_gap_history(entity_a, entity_b, proj[:2] if proj else None, since)
+    _render_eci_leaderboard(entity_a, entity_b, since)
 
 
 def _render_eci_projection(entity_a, entity_b):
@@ -5547,10 +5574,9 @@ def _render_eci_projection(entity_a, entity_b):
             st.warning(f"Not enough {_a_name} models on the ECI frontier to project.")
             return
         milestones = _ECI_US_MILESTONES if entity_a == "US best" else []
-        _render_eci_tab(
+        return _render_eci_tab(
             s_all, s_fr, s_names, "eci",
             f"{_a_name} ECI Projection", milestones)
-        return
 
     # Comparison view: project the subject (B), overlay the benchmark (A) trend.
     bench_all, bench_fr, bench_names = _eci_entity_data(entity_a)
@@ -11251,11 +11277,15 @@ def _eci_trend_rate(trend_fr):
     return slope * _ECI_MONTH_S / 86400
 
 
-def _eci_ref_rate(label):
+def _eci_ref_rate(label, since=None):
     """The reference's ECI a month as its own default projection's median: the
     fit, held inside its rate CI. The subject's band is centred the same way, so
-    A against B and B against A drift in opposite directions."""
+    A against B and B against A drift in opposite directions. With `since` (a
+    piecewise fit's last breakpoint), the fit through its frontier from then on."""
     fr = _eci_entity_data(label)[1]
+    seg = [m for m in fr if since is not None and m['date'] >= since]
+    if len(seg) >= 2:
+        return _eci_trend_rate(seg)
     rate = _eci_trend_rate(fr)
     gains = _eci_yearly_gain_range(fr)
     if gains is None:
@@ -11317,15 +11347,23 @@ def _fmt_gap_mo(months):
     return "<1mo" if months < 0.5 else f"{months:.0f}mo"
 
 
-def _render_eci_leaderboard(entity_a, entity_b):
-    """Every lab's best model, and how far it trails the reference entity."""
+def _eci_rate_phrase(ref, since):
+    """How a caption names the months-behind rate: the projection's median, or
+    on a piecewise fit its trend since the last breakpoint."""
+    return (f"{ref}'s trend since {since:%b %Y}, the piecewise fit's last segment"
+            if since is not None else f"the median rate of {ref}'s own projection")
+
+
+def _render_eci_leaderboard(entity_a, entity_b, since=None):
+    """Every lab's best model, and how far it trails the reference entity.
+    `since`: the projection's piecewise breakpoint, for the reference's rate."""
     ref_fr = _eci_gap_frontier(entity_a)
     if not ref_fr:
         return
     ref = _eci_ref_name(entity_a)
     today = datetime.now()
-    rate = _eci_ref_rate(entity_a)
     best = ref_fr[-1]
+    rate = _eci_ref_rate(entity_a, since)
     st.subheader("Where each lab stands")
     st.markdown(f"Measured against **{entity_a}**: ECI **{best['eci_score']:.1f}** "
                 f"({best['display_name']}, {best['date']:%b %d, %Y}).")
@@ -11358,7 +11396,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
                               "model at or above its score."),
         ("the gap now", f"The ECI points between the lab's best and {ref}'s best "
                         f"model, and in brackets the months {ref} takes to climb "
-                        f"them at {rate:.2f} ECI a month, its projection's median. Not the release column's months, "
+                        f"them at {rate:.2f} ECI a month, {_eci_rate_phrase(ref, since)}. Not the release column's months, "
                         "which would grow with the model's age while nothing new "
                         "ships."),
         ("best model", "Frontier models are one per release date, the best scoring, "
@@ -11366,7 +11404,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
                        "for its history below."))
 
 
-def _render_eci_gap_history(entity_a, entity_b, proj=None):
+def _render_eci_gap_history(entity_a, entity_b, proj=None, since=None):
     """The subject's months behind the reference at each of its frontier
     releases, then projected off the subject's sampled paths `proj` (dates,
     paths), which start at its latest release (`_eci_projected_gap`)."""
@@ -11379,7 +11417,7 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
         return
     a, b = _eci_ref_name(entity_a), _eci_entity_short(entity_b)
     today = datetime.now()
-    rate = _eci_ref_rate(entity_a)
+    rate = _eci_ref_rate(entity_a, since)
     pts = _eci_gap_history(ref_fr, subj_fr)
     now = _eci_gap_now(ref_fr, pts, today, rate)
     ref_pts = [(m['date'], m['eci_score']) for m in ref_fr]
@@ -11466,8 +11504,8 @@ def _render_eci_gap_history(entity_a, entity_b, proj=None):
                               "ones credits a level never shipped."),
         ("the band", f"Each sampled {b} path, weekly from its latest release's gap: "
                      f"every month adds a month, and the path's ECI gain since the "
-                     f"release takes one off per {rate:.2f} points, the median rate "
-                     f"of {a}'s own projection, which carries no uncertainty here, so the band "
+                     f"release takes one off per {rate:.2f} points, "
+                     f"{_eci_rate_phrase(a, since)}, which carries no uncertainty here, so the band "
                      f"is {b}'s spread in pace alone. It reads {b} as improving "
                      "between releases, so it can sit below a gap measured off "
                      "released models only. Below zero is ahead."))
