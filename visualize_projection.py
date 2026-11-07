@@ -24279,11 +24279,14 @@ def _render_takeoff(loading):
                 col.metric(label, "\u2014", help=help + " No scenario reaches the first "
                            f"milestone by {end_date:%b %Y}.")
                 return
-            g = gap[reached]
+            # A scenario reaching the second milestone first reads 0, not a
+            # negative span (`test_gap_cards_never_show_a_negative_span`).
+            g = np.maximum(gap[reached], 0.0)
             col.metric(label, _tk_span(takeoff.quantile(g, 0.5), end_date),
                        help=help + f" Among the {100 * np.mean(reached):.0f}% of scenarios "
                        f"reaching the first by {end_date:%b %Y}; one not reaching the second "
-                       "by then counts as longer, so late starters read long.")
+                       "by then counts as longer, so late starters read long, and one "
+                       "reaching the second first counts as 0.")
             for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
                 _tk_ci(col, level, label).caption(
                     f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"

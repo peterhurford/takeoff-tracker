@@ -1707,6 +1707,14 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / point estimates")
         assert ci80() != wide
 
+    def test_gap_cards_never_show_a_negative_span(self):
+        """A scenario whose ECI reaches ultraintelligence before its RSI date
+        reads 0 on the gap cards, never a negative interval edge."""
+        at = self._app()
+        cis = [c.value for c in at.caption if re.match(r"(80|90)% CI", c.value)]
+        assert cis
+        assert not any(re.search(r"(:|–)\s*-", t) for t in cis), cis
+
     def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
         """With no AI feedback (no transfer, and no post-RSI compute boost, a
         separate channel), research runs at the frozen-AI reference pace."""
