@@ -2619,13 +2619,13 @@ class TestUkCyberTargetEta:
 
 
 class TestTabChips:
-    """The sidebar picks tabs from grouped chip buttons over a hidden radio."""
+    """The style block hides the chips of the tabs under *More*; its hardcoded
+    nth-child cutoff must sit one past `_TAB_MAIN_N`."""
 
-    def test_groups_cover_every_tab_once(self):
-        grouped = [t for _, tabs in vp._TAB_GROUPS for t in tabs]
-        assert sorted(grouped) == sorted(vp._TAB_OPTIONS)
-        assert len(grouped) == len(set(grouped))
-        assert vp._TAB_GROUPS[0][1][0] == vp._DEFAULT_TAB
+    def test_css_cutoff_matches_main_count(self):
+        src = open(vp.__file__).read()
+        assert f':nth-child(n+{vp._TAB_MAIN_N + 1})' in src
+        assert "METR Horizon" in vp._TAB_OPTIONS[vp._TAB_MAIN_N:]
 
 
 class TestRsi:
