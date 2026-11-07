@@ -21852,13 +21852,19 @@ def _tk_evidence_window_growth(experiments, eci_today=None):
             round(float(np.exp((compute + software) * years)), 2))
 
 
+def _tk_window_human_shares(rows, experiments, hours=None):
+    """The automation index's human share at the experiment window's two ends
+    (the nearest ladder month to each)."""
+    def share(d):
+        return _tk_ladder_human_share(min(rows, key=lambda r: abs((r['date'] - d).days)), hours)
+    return share(experiments[0]['date']), share(experiments[-1]['date'])
+
+
 def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0, hours=None):
     """The Amdahl labor gain over the experiment evidence window, from the
     automation index's human share at its two ends, with AI's share sped up
     `copies_growth`x by the end (more copies as algorithms improved)."""
-    def share(d):
-        return _tk_ladder_human_share(min(rows, key=lambda r: abs((r['date'] - d).days)), hours)
-    h0, h1 = share(experiments[0]['date']), share(experiments[-1]['date'])
+    h0, h1 = _tk_window_human_shares(rows, experiments, hours)
     return float((h0 + (1 - h0) / ai_speed)
                  / (h1 + (1 - h1) / (ai_speed * copies_growth)))
 
@@ -22369,8 +22375,14 @@ def _tk_evidence_chain(params):
     hist = _tk_hist_compute_rate()
     rates = _tk_eci_rates(takeoff.DEFAULTS, hist)
     c_pts, a_pts = rates["compute"] * hist, rates["algo_ppy"]
+    pace_d, pace_v = _metr_pace_series()
+    e_raw = _metr_local_slope(pace_d, pace_v, [pace_d[-1]])[0][0]
+    pace_fr = _tk_trained_frontier()
+    base_rows = [m for m in _eci_entity_data("US best")[1]
+                 if _TK_PACE_BASE[0] <= m['date'] < _TK_PACE_BASE[1]]
     ex = load_rsi_experiments()
     yrs = (ex[-1]['date'] - ex[0]['date']).days / 365.25
+    h0, h1 = _tk_window_human_shares(load_rsi_automation(), ex, _TK_AL_HUMAN_HOURS)
     comp = float(ss("tk_cal_compute", _TK_DEFAULTS["tk_cal_compute"]))
     cap = float(ss("tk_cal_capability", _TK_DEFAULTS["tk_cal_capability"]))
     T_set = float(ss("tk_transfer", _TK_DEFAULTS["tk_transfer"])) / 100
@@ -22379,6 +22391,7 @@ def _tk_evidence_chain(params):
     _b, _i, slope = _rsi_dir_fit(rsi_dir_frontier_all)
     odds_y = float(np.exp(slope * 365.25))
     e_tv = _tk_tasteval_taste(ex, cap, T, E)
+    c_ns = _tk_nextstep_taste(rsi_dir_frontier_all, ex, cap, T)
     tv = [(per, 2 ** (E / per), 2 ** (_TK_TASTEVAL_TO_QUALITY * E / per), e)
           for per, e in zip(_TASTEVAL_ECI_PER_DOUBLING, e_tv)]
     rows = load_rsi_survey()
@@ -22407,7 +22420,7 @@ def _tk_evidence_chain(params):
         "transfer_off": T_set <= 0,
         "odds_y": odds_y, "value_y": odds_y ** _TK_ODDS_TO_JUDGMENT,
         "odds_power": _TK_ODDS_TO_JUDGMENT,
-        "e_ns": _tk_nextstep_taste(rsi_dir_frontier_all, ex, cap, T),
+        "e_ns": c_ns,
         "tv": tv, "tv_power": _TK_TASTEVAL_TO_QUALITY,
         "judgment_set": float(ss("tk_taste_slope", _TK_DEFAULTS["tk_taste_slope"])),
         "judgment_used": float(params["taste_slope"]),
@@ -22416,6 +22429,7 @@ def _tk_evidence_chain(params):
         "survey_last_name": rows[-1]['name'], "survey_n": len(rows),
         "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
         "cp_months": takeoff.DEFAULTS["software_months"],
+        "cp_copies": takeoff.DEFAULTS["ai_copies"],
         "coding_ev": float(np.log((survey_y / copies_y - 1 + T) / T) / np.log(cap ** (1 / yrs))),
         "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
         "cp_after": 1 / (cp_h + (1 - cp_h) / (cp_s * cp_g)),
@@ -22424,71 +22438,197 @@ def _tk_evidence_chain(params):
         "residual": cal["resource_adjusted_growth"] if cal else None,
         "automation": auto, "fitted": cal["quality_slope"] if cal else None,
         "cal_weight": float(ss("tk_cal_weight", _TK_DEFAULTS["tk_cal_weight"])),
+        # Where each input above comes from, for the math section.
+        "E_default": _TK_ECI_TODAY, "E_raw": e_raw, "E_last": pace_fr[-1],
+        "E_bw_months": 12 * _METR_PACE_BW_YEARS,
+        "hist_oom": hist / np.log(10), "hist_y": float(np.exp(hist)),
+        "dc_since": _DC_DEFAULTS["dc_cty_since"],
+        "dc_horizon_months": round(_DC_CTY_PLAN_HORIZON_DAYS / 30.44),
+        "per_oom": rates["compute"] * np.log(10), "fit_n": rates["fit_n"],
+        "fit_margin": rates["fit_margin"], "flop_margin": _CC_FG_FLOP_MARGIN,
+        "base_ppy": rates["ppy"], "base_n": len(base_rows),
+        "base_from": _TK_PACE_BASE[0], "base_to": _TK_PACE_BASE[1],
+        "ex_from": ex[0]['date'], "ex_to": ex[-1]['date'],
+        "ex_m0": ex[0]['mult'], "ex_m1": ex[-1]['mult'],
+        "ns_n": len(rsi_dir_frontier_all), "ns_from": rsi_dir_frontier_all[0]['date'],
+        "ns_to": rsi_dir_frontier_all[-1]['date'],
+        "ns_first": rsi_dir_frontier_all[0]['better'],
+        "ns_last": rsi_dir_frontier_all[-1]['better'],
+        "judgment_mean": float(np.exp(np.mean(np.log(np.maximum(
+            [c_ns, *e_tv], 1e-3))))),
+        "survey_from": rows[0]['date'],
+        "h0": h0, "h1": h1, "ai_speed": float(params["ai_speed"]),
+        "ai_copies": float(params["ai_copies"]),
+        "copies_growth": (cap / comp) ** params["ai_copies"],
+        "coding_factor": cal["coding_factor"] if cal else None,
+        "labor_part": cal["labor_part"] if cal else None,
+        "quality": cal["quality"] if cal else None,
+        "substitution": float(params["substitution"]),
+        "yield": float(ss("tk_cal_yield", 1.0)),
+        "stage_w": tuple(float(w) for w in takeoff.WORKFLOW_WEIGHTS),
     }
 
 
 def _tk_evidence_math(c):
     """Markdown with LaTeX: each step of `_tk_evidence_chain`, numbers filled in,
-    and what the result means."""
+    every input traced to its fit, source or sidebar prior, and what the result
+    means (`test_every_input_is_derived_or_named_as_a_prior`)."""
     (pre, pre_m, pre_q, pre_e), (post, post_m, post_q, post_e) = c["tv"]
-    T, cy = c["T"], c["cap_y"]
+    T, cy, yrs = c["T"], c["cap_y"], c["years"]
+
+    def mon(d):
+        return d.strftime("%b %Y")
+
+    def day(d):
+        return f"{d:%b} {d.day}, {d:%Y}"
+
+    def elas(g, e):
+        return (rf"$$e = \frac{{\ln(({g:.2f} - 1 + {T:g})/{T:g})}}{{\ln {cy:.1f}}} = "
+                rf"\frac{{\ln {(g - 1 + T) / T:.2f}}}{{\ln {cy:.1f}}} = {e:.2f}$$")
+
+    if c["fit_n"] is None:
+        per_oom_src = ("No compute regression gave a usable positive coefficient, so compute "
+                       "and algorithms are credited alike per unit of log effective compute: "
+                       f"{c['per_oom']:.2f} points per OOM.")
+    else:
+        sample = (f"{c['fit_n']} frontier-grade models (within {c['fit_margin']:g} ECI of the "
+                  f"frontier at release and {c['flop_margin']:g} OOM of the largest training "
+                  "run then)" if c["fit_margin"] else f"all {c['fit_n']} models with a known "
+                  "training compute (no frontier-grade subset was large enough)")
+        per_oom_src = ("the China tab's regression of ECI on log₁₀ training FLOP and release "
+                       f"date, fitted on {sample}, gives {c['per_oom']:.2f} ECI points per "
+                       "OOM. Release date is held fixed, so algorithms' gains go to the date "
+                       "term, not this one.")
     lines = (["*AI transfer is 0, so none of these readings reach the dynamics; they are "
               "shown at full transfer.*"] if c.get("transfer_off") else []) + [
-        "**1. Today's pace, from ECI.** The trained US frontier gains "
-        f"{c['E']:g} ECI points a year. Compute growth adds {c['c_pts']:.1f}; the rest is "
-        f"algorithms, compared with the 2024–25 average's {c['a_pts']:.1f}:",
-        rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.1f}}}{{{c['a_pts']:.1f}}} = {c['pace']:.2f}\times$$",
-        "Chart 1 starts here, and the model's software doubling time is the 2024–25 one "
-        "divided by it.",
+        "*Every number below is a fit to named data, a published figure, or a prior, named "
+        "by its sidebar setting where it enters. Priors have no measurement behind them.*",
+        "**1. Today's pace, from ECI.** Pace is today's algorithmic ECI growth over "
+        "2024–25's.",
+        f"*Today's ECI growth, E = {c['E']:g} points a year.* The trained US frontier is "
+        "the running best of every US lab's public models at release, plus METR's Anthropic "
+        "rows on Epoch's scale (internal models at first internal use). Its climb is "
+        f"smoothed by a local-linear fit with a {c['E_bw_months']:g}-month Gaussian kernel, "
+        f"read at the latest model ({c['E_last']['name']}, {day(c['E_last']['date'])}): "
+        f"{c['E_raw']:.2f} points a year, rounded to the nearest 0.5: {c['E_default']:g}."
+        + (f" The sidebar sets {c['E']:g} instead." if c['E'] != c['E_default'] else ""),
+        f"*Compute's share, {c['c_pts']:.1f} points a year,* is two fits multiplied. "
+        "Compute growth: the Data Centers tab's fit to the largest US training run "
+        f"(sites from {c['dc_since']}, announced plans through {c['dc_horizon_months']} "
+        f"months ahead) grows ×{c['hist_y']:.2f} a year, {c['hist_oom']:.2f} orders of "
+        f"magnitude (OOM). Points per OOM: {per_oom_src}",
+        rf"$${c['hist_oom']:.3f} \text{{ OOM a year}} \times {c['per_oom']:.2f} \text{{ points per OOM}} = {c['c_pts']:.2f} \text{{ points a year}}$$",
+        f"*The 2024–25 baseline, {c['a_pts']:.1f} points a year.* A straight line through "
+        f"the US frontier's {c['base_n']} ECI records from {mon(c['base_from'])} to "
+        f"{mon(c['base_to'] - timedelta(days=1))} climbs {c['base_ppy']:.2f} points a year. "
+        "Less compute's share at the same compute growth (no separate 2024–25 compute rate "
+        f"is fitted): {c['base_ppy']:.2f} − {c['c_pts']:.2f} = {c['a_pts']:.2f}.",
+        rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.2f}}}{{{c['a_pts']:.2f}}} = {c['pace']:.2f}\times$$",
+        "Chart 1 starts here. The model's software doubling time at the 2024–25 pace, "
+        f"{c['sw_base_months']:g} months (a prior: sidebar *Baseline software doubling "
+        f"time*), becomes {c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} "
+        "months today.",
         "**2. Effective compute, the yardstick.** Effective compute is training compute "
-        "times algorithmic efficiency. Over the evidence window (Jan–Aug 2026, "
-        f"{c['years']:.2f} years) training compute grew ×{c['compute']:.2f} (the Data Centers "
-        f"trend, ×{c['compute_y']:.1f} a year), and algorithms ×{c['software']:.2f} (doubling "
-        f"every {c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} months at "
-        "today's pace):",
-        rf"$$c = ({c['compute']:.2f} \times {c['software']:.2f})^{{1/{c['years']:.2f}}} = {c['cap']:.2f}^{{1/{c['years']:.2f}}} = {cy:.1f}\times \text{{ a year}}$$",
-        "**3. From a growth rate to an elasticity.** Only a share T = "
-        f"{T:.0%} of AI's gains carries into research, so a quantity growing g× a year "
-        "while effective compute grows c× a year has elasticity",
+        "times algorithmic efficiency. The evidence window is OpenAI's experiment series, "
+        f"{day(c['ex_from'])} to {day(c['ex_to'])}: {yrs:.2f} years. Over it, training "
+        "compute grows at step 1's Data Centers rate, and algorithms double every "
+        f"{c['sw_months']:.1f} months:",
+        rf"$$\text{{compute}} = {c['hist_y']:.2f}^{{{yrs:.2f}}} = {c['compute']:.2f}\times \qquad \text{{algorithms}} = 2^{{{yrs:.2f} \times 12/{c['sw_months']:.1f}}} = {c['software']:.2f}\times$$",
+        rf"$$c = ({c['compute']:.2f} \times {c['software']:.2f})^{{1/{yrs:.2f}}} = {c['cap']:.2f}^{{1/{yrs:.2f}}} = {cy:.1f}\times \text{{ a year}}$$",
+        f"**3. From a growth rate to an elasticity.** T = {T:.0%} is the share of AI's "
+        "gains that carries into research, a prior (sidebar *Extra AI research output that "
+        "transfers*); nothing measures it. The model makes a quantity AI drives equal to "
+        "1 − T + T·Xᵉ when effective compute is X× today's. A year on, X = c, so a quantity "
+        "seen growing g× a year satisfies g = 1 − T + T·cᵉ, which solves to",
         r"$$e = \frac{\ln\left((g - 1 + T)/T\right)}{\ln c}$$",
         "and 10× more effective compute makes that quantity about $10^e$ times bigger.",
         "**4. Judgment, three readings.**",
-        f"- *Next-step study:* the odds a model's next step beats the researcher's grow "
-        f"×{c['odds_y']:.2f} a year. Picking the better step more often is not "
-        f"proportionally more research, so take the square root: ×{c['value_y']:.2f}. "
-        rf"Then $e = \ln(({c['value_y']:.2f} - 1 + {T:g})/{T:g}) / \ln {cy:.1f} = {c['e_ns']:.2f}$.",
-        f"- *TasteVal:* the compute multiplier doubles every {pre:g} ECI points before "
-        f"GPT-5.2 and every {post:g} after. At {c['E']:g} points a year that is "
-        f"×{pre_m:.1f} and ×{post_m:.0f} a year; it saves experiment time, half the research "
-        f"input, so take the square root: ×{pre_q:.2f} and ×{post_q:.2f}, giving "
-        f"$e$ = {pre_e:.2f} and {post_e:.2f}.",
-        rf"$$\text{{judgment}} = \sqrt[3]{{{c['e_ns']:.2f} \times {pre_e:.2f} \times {post_e:.2f}}} = {c['judgment_set']:.2f}$$",
-        f"With 10× the effective compute, AI picks experiments about "
-        f"{10 ** c['judgment_set']:.1f}× more valuable.",
+        f"- *Next-step study (Anthropic):* at moments where a researcher's session went "
+        "off-track, a judge compared each model's next step with the researcher's. Over "
+        f"{c['ns_n']} frontier models, from winning {c['ns_first']:g}% of comparisons "
+        f"({mon(c['ns_from'])}) to {c['ns_last']:g}% ({mon(c['ns_to'])}), a line through the log-odds of that win "
+        f"rate against release date grows the odds ×{c['odds_y']:.2f} a year. Picking the "
+        "better step more often is not proportionally more research, so judgment is taken "
+        f"to grow as the odds to the power {c['odds_power']:g}, a prior halfway between "
+        "counting the odds in full (1) and ignoring them (0): "
+        f"{c['odds_y']:.2f}^{c['odds_power']:g} = ×{c['value_y']:.2f}.",
+        elas(c['value_y'], c['e_ns']),
+        "- *TasteVal (P-Zero Research, arXiv 2610.06824):* the compute multiplier, the "
+        "GPU hours the best human expert needs to reach a score over the hours the model "
+        f"needs, doubles every {pre:g} ECI points before GPT-5.2 and every {post:g} after "
+        "(the paper's Figure 11; the break is its Chow test). At E = "
+        f"{c['E']:g} points a year: $2^{{{c['E']:g}/{pre:g}}}$ = ×{pre_m:.2f} and "
+        f"$2^{{{c['E']:g}/{post:g}}}$ = ×{post_m:.1f} a year. The multiplier saves "
+        "experiment compute, which carries half the research input at today's balanced "
+        f"point, so take the power {c['tv_power']:g}: ×{pre_q:.2f} and ×{post_q:.2f}.",
+        elas(pre_q, pre_e),
+        elas(post_q, post_e),
+        "The three are combined by geometric mean with equal weights, so the steeper "
+        "post-break regime carries a third:",
+        rf"$$\text{{judgment}} = \sqrt[3]{{{c['e_ns']:.2f} \times {pre_e:.2f} \times {post_e:.2f}}} = {c['judgment_mean']:.2f}$$",
+        (f"With 10× the effective compute, AI picks experiments about "
+         f"{10 ** c['judgment_set']:.1f}× more valuable."
+         + (f" The sidebar sets {c['judgment_set']:.2f} instead."
+            if abs(c['judgment_set'] - c['judgment_mean']) > 0.005 else "")),
     ]
     if c["fitted"] is not None:
+        par, w = c["parallel"], c["cal_weight"]
+        rho = c["substitution"]
         lines += [
-            "**5. The experiment check.** OpenAI's experiments per researcher grew "
-            f"×{c['exp_growth']:.2f} over the window. Compute explains "
-            f"${c['compute']:.2f}^{{{c['parallel']:g}}} = {c['compute_part']:.2f}$ of it, "
-            f"leaving ×{c['residual']:.2f}; AI coding help and people's falling share of the "
-            f"work (×{c['automation']:.2f}) explain more, and the rest is credited to "
-            f"judgment: a fitted {c['fitted']:.2f}. Blended {100 - c['cal_weight']:g}/"
-            f"{c['cal_weight']:g} with the readings above, the run uses "
-            f"**{c['judgment_used']:.2f}**.",
+            "**5. The experiment check.** OpenAI's weekly experiments per active "
+            f"experimenter (four-week average) went from {c['ex_m0']:g}× the 2025 level to "
+            f"{c['ex_m1']:g}× over the window: ×{c['exp_growth']:.2f}"
+            + (f", times a yield change of ×{c['yield']:g}" if c["yield"] != 1 else "")
+            + ". The model's research equation splits that growth into compute, AI labor "
+            "and judgment, and judgment gets what the other two leave.",
+            "*Compute.* Experiment compute grows with training compute, ×"
+            f"{c['compute']:.2f} over the window, at returns set by the parallelization "
+            f"exponent ({par:g}, a prior: sidebar *Parallelization exponent*):",
+            rf"$$\text{{left after compute}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute']:.2f}^{{{par:g}}}}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute_part']:.2f}}} = {c['residual']:.2f}\times$$",
+            "*AI labor*, two parts, each through transfer T. Coding help grows with "
+            f"capability at step 6's elasticity, {c['coding']:.2f}: "
+            f"1 − T + T × {c['cap']:.2f}^{c['coding']:.2f}. People's falling share of the "
+            f"work: the automation index puts them at {c['h0']:.1%} of research hours at the "
+            f"window's start and {c['h1']:.1%} at its end. AI does its share "
+            f"{c['ai_speed']:g}× faster (a prior: sidebar *AI speed on automated work*), "
+            f"and by the end runs ×{c['copies_growth']:.2f} the copies (the window's "
+            f"algorithmic gain, {c['cap'] / c['compute']:.2f}, to the power "
+            f"{c['ai_copies']:g}, a prior: sidebar *More AI researchers as algorithms "
+            "improve*). By Amdahl's law:",
+            rf"$$\text{{automation}} = \frac{{{c['h0']:.3f} + {1 - c['h0']:.3f}/{c['ai_speed']:g}}}{{{c['h1']:.3f} + {1 - c['h1']:.3f}/({c['ai_speed']:g} \times {c['copies_growth']:.2f})}} = {c['automation']:.2f}\times$$",
+            rf"$$\text{{labor}} = \left[(1 - {T:g} + {T:g} \times {c['cap']:.2f}^{{{c['coding']:.2f}}}) \times (1 - {T:g} + {T:g} \times {c['automation']:.2f})\right]^{{{par:g}}} = {c['coding_factor']:.2f}\times$$",
+            "Labor and experiment compute combine as a CES mean with ρ = "
+            f"{rho:g} (a prior: sidebar *Labor–compute substitutability*); compute's part "
+            "was taken out above, so it enters at 1:",
+            (rf"$$\left(\frac{{{c['coding_factor']:.2f}^{{{rho:g}}} + 1}}{{2}}\right)^{{1/({rho:g})}} = {c['labor_part']:.2f}\times$$"
+             if abs(rho) > 1e-9 else
+             rf"$$\sqrt{{{c['coding_factor']:.2f} \times 1}} = {c['labor_part']:.2f}\times$$"),
+            "*Judgment* is the rest, read through T against the window's effective compute "
+            "growth (0 if the rest is below 1):",
+            rf"$$q = \frac{{{c['residual']:.2f}}}{{{c['labor_part']:.2f}}} = {c['quality']:.2f}\times, \qquad e = \frac{{\ln(({c['quality']:.2f} - 1 + {T:g})/{T:g})}}{{\ln {c['cap']:.2f}}} = {c['fitted']:.2f}$$",
+            f"Blended with step 4's reading at {w:g}% on this fit (sidebar *Weight on "
+            "empirical feedback estimate*):",
+            rf"$${1 - w / 100:g} \times {c['judgment_set']:.2f} + {w / 100:g} \times {c['fitted']:.2f} = \mathbf{{{c['judgment_used']:.2f}}}$$",
         ]
     lines += [
-        f"**6. Coding labor.** Staff surveys put their speedup with AI at "
+        f"**6. Coding labor.** Anthropic staff surveys put their speedup with AI at "
         f"~{c['survey_now']:.0f}× today on the trend through all {c['survey_n']} readings "
-        f"(the latest, {c['survey_last_name']}, {c['survey_last']:g}×). That speedup itself "
-        f"grows ×{c['survey_y']:.2f} a year, so a year on the trend reads "
+        f"since {mon(c['survey_from'])} (the latest, {c['survey_last_name']}, "
+        f"{c['survey_last']:g}×). A line through ln(speedup) against date has that speedup "
+        f"itself growing ×{c['survey_y']:.2f} a year, so a year on the trend reads "
         f"~{c['survey_now'] * c['survey_y']:.0f}×; ×{c['survey_y']:.2f} is the growth, not "
         "the speedup.",
-        "Part of that growth is just running more AI copies. People still do "
-        f"{c['cp_h']:.0%} of the work (the automation index); AI does the rest "
-        f"{c['cp_s']:g}× faster, and a year of algorithmic progress (doubling every "
-        f"{c['cp_months']:g} months) gives ×{c['cp_g']:.2f} the copies. By Amdahl's law the "
-        "speedup is one over the time the work still takes:",
+        "Part of that growth is just running more AI copies. The automation index, "
+        "projected to today, puts people at "
+        f"{c['cp_h']:.0%} of the work (its three stages weighted "
+        f"{c['stage_w'][0]:g}/{c['stage_w'][1]:g}/{c['stage_w'][2]:g}: direction, "
+        "experiments, verification; the hours each automation level leaves people are "
+        f"priors, in the human-share tables). AI does the rest {c['cp_s']:g}× faster (the default "
+        "of the sidebar's *AI speed on automated work*), and a year of algorithmic "
+        f"progress at the baseline doubling ({c['cp_months']:g} months) gives "
+        f"$2^{{12/{c['cp_months']:g} \\times {c['cp_copies']:g}}}$ = ×{c['cp_g']:.2f} the "
+        "copies (the default power of *More AI researchers as algorithms improve*). By "
+        "Amdahl's law the speedup is one over the time the work still takes:",
         rf"$$\frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/{c['cp_s']:g}}} = {c['cp_before']:.3f}\times \;\to\; \frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/({c['cp_s']:g} \times {c['cp_g']:.2f})}} = {c['cp_after']:.3f}\times$$",
         f"so more copies add ×{c['copies_y']:.3f} ({100 * (c['copies_y'] - 1):+.1f}%) a "
         f"year: AI's part is already fast, so people's {c['cp_h']:.0%} sets the pace. "
@@ -22895,16 +23035,19 @@ def _tk_eci_rates(params, hist=None, ppy=None):
     rows = load_eci_compute(mtime=_eci_mtime())
     full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
     pooled = _cc_decomp(rows)
-    fg = (_cc_frontier_grade_algo(rows, full, margin=3.0)
-          or _cc_frontier_grade_algo(rows, full))
+    fg3 = _cc_frontier_grade_algo(rows, full, margin=3.0)
+    fg = fg3 or _cc_frontier_grade_algo(rows, full)
     fit = fg or pooled
+    fit_margin = (3.0 if fg3 else 5.0) if fg else None
     per_compute = fit['a_partial'] / np.log(10) if fit and fit['a_partial'] > 0 else None
     algo_ppy = ppy - per_compute * compute_rate if per_compute is not None else None
     if algo_ppy is None or algo_ppy <= 0:
         # No usable fit: credit both parts alike, which still fits the climb.
         per_compute, algo_ppy = ppy / base_rate, ppy * software_rate / base_rate
+        fit = fit_margin = None
     return {"compute": per_compute, "software": algo_ppy / software_rate,
-            "algo_ppy": algo_ppy, "fg_b_time": fg['b_time'] if fg else None,
+            "algo_ppy": algo_ppy, "ppy": ppy, "fit_n": fit['n'] if fit else None,
+            "fit_margin": fit_margin, "fg_b_time": fg['b_time'] if fg else None,
             "pooled_b_time": pooled['b_time'] if pooled else None}
 
 

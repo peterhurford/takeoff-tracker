@@ -6653,6 +6653,25 @@ class TestEvidenceMathCoding:
         assert f"= {c['cp_before']:.3f}" in md and f"= {c['cp_after']:.3f}" in md
         assert "set in the sidebar" not in md
 
+    def test_every_input_is_derived_or_named_as_a_prior(self):
+        """No magic numbers: compute's ECI share is shown as OOM a year times
+        points per OOM, the baseline as the fitted climb less it, the
+        judgment blend and CES as equations, and every hand-set prior by its
+        sidebar name."""
+        c = self._chain()
+        assert c["hist_oom"] * c["per_oom"] == pytest.approx(c["c_pts"])
+        assert c["base_ppy"] - c["c_pts"] == pytest.approx(c["a_pts"])
+        assert c["judgment_mean"] == pytest.approx(c["judgment_set"], abs=0.005)
+        md = vp._tk_evidence_math(c)
+        assert f"{c['hist_oom']:.3f} \\text{{ OOM a year}} \\times {c['per_oom']:.2f}" in md
+        assert f"{c['base_ppy']:.2f} − {c['c_pts']:.2f} = {c['a_pts']:.2f}" in md
+        for prior in ("Baseline software doubling time", "Extra AI research output that "
+                      "transfers", "Parallelization exponent", "AI speed on automated work",
+                      "Labor–compute substitutability", "More AI researchers as algorithms "
+                      "improve", "Weight on empirical feedback estimate"):
+            assert prior in md, prior
+        assert "c['" not in md and "{T:" not in md  # no un-interpolated f-string
+
     def test_staff_and_returns_are_separate_boxes(self):
         """Staff growth feeds human researchers only; returns r feeds harder ideas."""
         c = self._chain()

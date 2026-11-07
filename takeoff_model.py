@@ -226,7 +226,9 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
     quality = residual / _ces(coding, 1.0, substitution)
     slope = np.log(max(1.0, (quality - 1 + transfer) / transfer)) / np.log(capability_growth)
     return dict(quality_slope=float(slope), resource_adjusted_growth=float(residual),
-                useful_growth=float(useful_growth), boundary=bool(quality < 1),
+                useful_growth=float(useful_growth), coding_factor=float(coding),
+                labor_part=float(_ces(coding, 1.0, substitution)), quality=float(quality),
+                boundary=bool(quality < 1),
                 basis="validated progress" if validated_growth is not None else "experiment proxy")
 
 
