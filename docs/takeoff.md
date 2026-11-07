@@ -356,11 +356,21 @@ CDF (`_tk_charts`).
 Under the headline cards, `_tk_render_jump_bar()` links every section (`_TK_JUMP_ROWS`) by
 its `?to=` id (`_heading_anchor`, Streamlit's own slug rule), scrolled in place by the
 anchor script (`test_jump_bar_targets_every_heading`). Each evidence section but the
-milestones and coder projection, the synthesis, is `_evidence_section()`: its heading
+milestones and coder projection (the synthesis) and METR's assessment (read in full) is
+`_evidence_section()`: its heading
 (shrunk under `ev_head_*` by the style block),
 then one collapsed expander labelled with the latest reading against its bar
 (`_rsi_evidence_summary`); the section's charts sit inside
 (`test_evidence_sections_fold_under_their_headings`).
+
+Inside the takeoff model, detail sits in expanders under each heading, in this order: the
+coder projection's milestone table (*Milestone weights and dates*, *Set your own weights*
+nested); after the evidence-to-pace diagram, *The math, step by step*, then *Why this isn't
+METR's ~2×* (`_tk_render_pace_vs_metr`), then *What moves the pace* with *The
+multiplication at …* nested (labelled from `tk_mult_at`, keyed so a slider move keeps it
+open); *Compute* (the three compute charts); the human-share tables; section 3, the
+workforce, which is an expander, not a heading, so the jump bar skips it; and the ECI pace
+pair. `test_default_render_and_stable_rerun` lists them.
 
 `render_rsi()` runs the R&D automation index, then CoBench,
 then the staff survey, then

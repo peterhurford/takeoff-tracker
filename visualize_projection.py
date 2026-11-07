@@ -6671,8 +6671,6 @@ def _rsi_evidence_summary(key):
     if key == "tasteval":
         r = max(load_tasteval(), key=lambda r: r['mult'])
         return reading(f"{r['mult']:g}×", f"expert compute, {r['name']}, {when(r)}")
-    if key == "metr":
-        return "METR's AECI beside Epoch's ECI, and the research pace it implies"
     return ""
 
 
@@ -6704,7 +6702,6 @@ _TK_JUMP_ROWS = (
     ("Model", (("What the evidence feeds in", "Inputs"),
                ("1. Research speeds up", "1 Research speeds up"),
                ("2. People step out of the loop", "2 Out of the loop"),
-               ("3. Anthropic's research workforce", "3 Workforce"),
                ("4. What it does to capability (ECI)", "4 Capability"),
                ("5. When it happens, and how fast", "5 When and how fast"))),
 )
@@ -6933,8 +6930,9 @@ def render_rsi(end_year):
                           end_year=rsi_end_year)
     # METR's assessment and the pace it implies close the evidence, just above
     # the takeoff model that reads that pace.
-    with _evidence_section("METR's acceleration assessment", "metr"):
-        _render_rsi_metr()
+    # Not folded: METR's assessment is read in full.
+    st.subheader("METR's acceleration assessment")
+    _render_rsi_metr()
 
 
 # The ladder's colours: a light-to-saturated ramp, so the rungs read as one
@@ -8179,7 +8177,12 @@ def _tk_render_pace_so_far(today):
          "Epoch's scale at first internal use. Anthropic alone climbs faster partly "
          "because it was catching up; the public line dates models at release and lags. *Today's ECI growth* in the sidebar sets "
          "the model's start; its default is the thick line at the latest model."))
-    st.markdown("**Why this isn't METR's ~2×**")
+
+
+def _tk_render_pace_vs_metr():
+    """The table walking METR's ~2× to the model's pace, under its own
+    expander below the evidence-to-pace diagram."""
+    eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
     # Markdown, not st.table: st.table caps a text cell's width, wrapping the
     # long first column while the table still fills the page.
     t = _tk_pace_comparison(eci_today)
@@ -17662,78 +17665,80 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
             "the model before this adjustment; the cards above use the "
             "adjusted blend. Individual milestone dates below are unchanged.")
 
-    _total = sum(weights.values()) or 1.0
-    _mix_total = sum(mix.values()) or 1.0
-    st.table([{
-        "Milestone": lab,
-        "Weight": (f"{weights[slug] / _total * 100:.3g}%" if survival is None
-                   else f"{weights[slug] / _total * 100:.3g}% \u2192 "
-                        f"{mix[slug] / _mix_total * 100:.0f}%"),
-        "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
-        "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
-    } for slug, lab, a, d in components])
-    if survival is not None:
-        _fn_caption(
-            "Weight reads prior \u2192 effective credence: a Bayesian update on not "
-            "seeing RSI by today. The dotted curve above is the blend before it.",
-            ("a Bayesian update", "Each weight is multiplied by the share of its "
-                                  "milestone's dates still possible, so a milestone "
-                                  "claiming RSI should already be here loses weight "
-                                  "in proportion."),
-            ("The dotted curve", "Its height at today is the mass the update "
-                                 "removed."))
+    with st.expander("Milestone weights and dates", key="pc_ex_weights"):
+        _total = sum(weights.values()) or 1.0
+        _mix_total = sum(mix.values()) or 1.0
+        st.table([{
+            "Milestone": lab,
+            "Weight": (f"{weights[slug] / _total * 100:.3g}%" if survival is None
+                       else f"{weights[slug] / _total * 100:.3g}% \u2192 "
+                            f"{mix[slug] / _mix_total * 100:.0f}%"),
+            "Median": _pc_eta_dates(a, d)[1].strftime('%b %Y'),
+            "80% CI": "{:%b %Y} \u2013 {:%b %Y}".format(*_pc_eta_dates(a, d)[::2]),
+        } for slug, lab, a, d in components])
+        if survival is not None:
+            _fn_caption(
+                "Weight reads prior \u2192 effective credence: a Bayesian update on not "
+                "seeing RSI by today. The dotted curve above is the blend before it.",
+                ("a Bayesian update", "Each weight is multiplied by the share of its "
+                                      "milestone's dates still possible, so a milestone "
+                                      "claiming RSI should already be here loses weight "
+                                      "in proportion."),
+                ("The dotted curve", "Its height at today is the mass the update "
+                                     "removed."))
 
-    with st.expander("Set your own weights"):
-        # Assign the defaults rather than popping the keys: a popped key is
-        # re-hydrated straight back out of the URL on the next run, so the
-        # reset would never take on a shared link.
-        st.button("Reset weights", key="reset_pc_rsiw",
-                  on_click=lambda: st.session_state.update(
-                      {_PC_RSI_W_KEY + s: _PC_RSI_WEIGHTS.get(s, 0.0)
-                       for s, _, _, _ in components}))
-        cols = st.columns(min(len(components), 4))
-        for i, (slug, lab, _, _) in enumerate(components):
-            _ss_number_input(
-                cols[i % len(cols)], lab, _PC_RSI_W_KEY + slug,
-                _PC_RSI_WEIGHTS.get(slug, 0.0),
-                min_value=0.0, max_value=100.0, step=5.0)
-        st.caption(f"Entered weights total {sum(weights.values()):.0f}; they are "
-                   "normalised, so any scale works. All zero falls back to the "
-                   "defaults above.")
-        _notyet = st.checkbox(
-            "Condition milestones on “not crossed yet”",
-            key="rsi_notyet",
-            help="Bayesian reality check: samples dating a milestone before "
-                 "today are dropped and the rest renormalized, and the blend "
-                 "down-weights each milestone by the mass it put in the past. "
-                 "Assumes a crossing would be known by now.")
-        st.number_input(
-            "Chance it has already happened, unseen (%)", min_value=0.0,
-            max_value=50.0, step=1.0, key="rsi_already_pct", disabled=not _notyet,
-            help="How much of each milestone's probability the reality check "
-                 "leaves at today, for a crossing already made inside a lab and "
-                 "not yet visible. From there the chance climbs on without a "
-                 "step. 0 is the hard cut: nothing crossed by today.")
-        st.number_input(
-            "Also discount the next … days", min_value=0.0, max_value=365.0,
-            step=5.0, key="rsi_notyet_ramp", disabled=not _notyet,
-            help="A crossing this close would already be visible in its "
-                 "run-up, so “no signs today” argues against it: a sample t "
-                 "days out is kept with probability t/N inside the window. "
-                 "On the release clock the window extends by 30 days — a "
-                 "model shipping that soon finished training ~a month "
-                 "earlier. 0 keeps only the hard cut at today.")
-        st.slider(
-            "All-things-considered penalty (%)", 0, 90, step=5,
-            key="rsi_atc_penalty",
-            help="0 is off. 50 turns the model's 10% chance by a date into "
-                 "5% by that date. Larger values shift more probability "
-                 "toward later dates. This is a subjective adjustment to "
-                 "the blended forecast, applied after the reality check.")
-        st.caption(
-            "The penalty reduces early probabilities most in relative terms. "
-            "It preserves eventual arrival in the model; it does not add "
-            "a chance that RSI never happens.")
+        with st.expander("Set your own weights"):
+            # Assign the defaults rather than popping the keys: a popped key is
+            # re-hydrated straight back out of the URL on the next run, so the
+            # reset would never take on a shared link.
+            st.button("Reset weights", key="reset_pc_rsiw",
+                      on_click=lambda: st.session_state.update(
+                          {_PC_RSI_W_KEY + s: _PC_RSI_WEIGHTS.get(s, 0.0)
+                           for s, _, _, _ in components}))
+            cols = st.columns(min(len(components), 4))
+            for i, (slug, lab, _, _) in enumerate(components):
+                _ss_number_input(
+                    cols[i % len(cols)], lab, _PC_RSI_W_KEY + slug,
+                    _PC_RSI_WEIGHTS.get(slug, 0.0),
+                    min_value=0.0, max_value=100.0, step=5.0)
+            st.caption(f"Entered weights total {sum(weights.values()):.0f}; they are "
+                       "normalised, so any scale works. All zero falls back to the "
+                       "defaults above.")
+            _notyet = st.checkbox(
+                "Condition milestones on “not crossed yet”",
+                key="rsi_notyet",
+                help="Bayesian reality check: samples dating a milestone before "
+                     "today are dropped and the rest renormalized, and the blend "
+                     "down-weights each milestone by the mass it put in the past. "
+                     "Assumes a crossing would be known by now.")
+            st.number_input(
+                "Chance it has already happened, unseen (%)", min_value=0.0,
+                max_value=50.0, step=1.0, key="rsi_already_pct", disabled=not _notyet,
+                help="How much of each milestone's probability the reality check "
+                     "leaves at today, for a crossing already made inside a lab and "
+                     "not yet visible. From there the chance climbs on without a "
+                     "step. 0 is the hard cut: nothing crossed by today.")
+            st.number_input(
+                "Also discount the next … days", min_value=0.0, max_value=365.0,
+                step=5.0, key="rsi_notyet_ramp", disabled=not _notyet,
+                help="A crossing this close would already be visible in its "
+                     "run-up, so “no signs today” argues against it: a sample t "
+                     "days out is kept with probability t/N inside the window. "
+                     "On the release clock the window extends by 30 days — a "
+                     "model shipping that soon finished training ~a month "
+                     "earlier. 0 keeps only the hard cut at today.")
+            st.slider(
+                "All-things-considered penalty (%)", 0, 90, step=5,
+                key="rsi_atc_penalty",
+                help="0 is off. 50 turns the model's 10% chance by a date into "
+                     "5% by that date. Larger values shift more probability "
+                     "toward later dates. This is a subjective adjustment to "
+                     "the blended forecast, applied after the reality check.")
+            st.caption(
+                "The penalty reduces early probabilities most in relative terms. "
+                "It preserves eventual arrival in the model; it does not add "
+                "a chance that RSI never happens.")
+
 
 
 def _pc_card_rows(n):
@@ -24472,64 +24477,70 @@ def _render_takeoff(loading):
     }), width="stretch")
     with st.expander("The math, step by step"):
         st.markdown(_tk_evidence_math(chain))
+    with st.expander("Why this isn't METR's ~2×"):
+        _tk_render_pace_vs_metr()
 
-    st.markdown("**What moves the pace**")
-    _fn_caption(
-        "Multiply the five factors and you get the dotted line.",
-        ("five factors",
-         "Compute: training and experiment compute with neither AI help nor more "
-         "staff. Experiment compute grows slower than the frontier run below (about "
-         "1.6\u00d7 a year against 3.1\u00d7), the rate that makes today's pace steady with "
-         "AI frozen, as history had it. Human researchers: what more staff add, as "
-         "headcount grows until RSI; they speed only the share of work people still "
-         "do, so they count for nothing on autopilot. AI capabilities: AI coding help "
-         "and AI taking over research hours, worth less when experiment compute is the "
-         "scarcer input. These three split the labor and experiment input exactly, "
-         "blended with OpenAI's experiment trend in year one. Research judgment rises with model capability. Harder ideas: each "
-         "improvement makes the next harder to find."))
-    st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
-    years_ = result["workflow_progress"]["years"]
-    meds = dict(medians)
+    with st.expander("What moves the pace", key="tk_ex_moves"):
+        _fn_caption(
+            "Multiply the five factors and you get the dotted line.",
+            ("five factors",
+             "Compute: training and experiment compute with neither AI help nor more "
+             "staff. Experiment compute grows slower than the frontier run below (about "
+             "1.6\u00d7 a year against 3.1\u00d7), the rate that makes today's pace steady with "
+             "AI frozen, as history had it. Human researchers: what more staff add, as "
+             "headcount grows until RSI; they speed only the share of work people still "
+             "do, so they count for nothing on autopilot. AI capabilities: AI coding help "
+             "and AI taking over research hours, worth less when experiment compute is the "
+             "scarcer input. These three split the labor and experiment input exactly, "
+             "blended with OpenAI's experiment trend in year one. Research judgment rises with model capability. Harder ideas: each "
+             "improvement makes the next harder to find."))
+        st.plotly_chart(_tf(_tk_to(_tk_factors_fig(result, today), view_end)), width="stretch")
+        years_ = result["workflow_progress"]["years"]
+        meds = dict(medians)
 
-    def when(t):
-        return f"{today + timedelta(days=float(t * 365.25)):%b %Y}"
-    # The date the multiplication is read at: today or any month's end through
-    # 2030 (`tk_mult_at`); until set, the month-end nearest the median RSI.
-    stops = [("Today", 0.0)]
-    m = datetime(today.year, today.month, 1)
-    while m.year <= 2030:
-        nxt = datetime(m.year + (m.month == 12), m.month % 12 + 1, 1)
-        end_of = nxt - timedelta(days=1)
-        t = (end_of - today).days / 365.25
-        if 0 < t <= years_[-1]:
-            stops.append((f"{end_of:%b %Y}", t))
-        m = nxt
-    labels = [lab for lab, _ in stops]
-    rsi_t = meds["RSI"]
-    auto = min(stops, key=lambda x: abs(x[1] - rsi_t))[0] \
-        if np.isfinite(rsi_t) else labels[-1]
-    # The URL omits the param while the slider sits at this computed start.
-    st.session_state.setdefault("_url_auto_defaults", {})["tk_mult_at"] = auto
-    if st.session_state.get("tk_mult_at") not in labels:
-        st.session_state["tk_mult_at"] = auto
-    pick = st.select_slider(
-        "Read the multiplication at", labels, key="tk_mult_at",
-        help="Today, or the end of any month to Dec 2030. Starts at the month nearest "
-             + (f"the median RSI ({when(meds['RSI'])})." if np.isfinite(meds["RSI"])
-                else "the median RSI, or the last month when RSI is not reached."))
-    at_t = dict(stops)[pick]
-    at_label = "today" if pick == "Today" else f"the end of {pick}"
-    mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
-    st.markdown(f"**The multiplication at {at_label}**")
-    _fn_caption(
-        f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
-        "on a log scale: each bar starts where the last ended.",
-        ("each factor's median change",
-         f"The steps multiply to {product:.3g}\u00d7; the last bar is the net pace's own "
-         f"median, {net:.3g}\u00d7, since medians of the factors don't multiply exactly "
-         "to the median of their product. Research judgment and harder ideas each run "
-         "to large multiples and largely cancel."))
-    st.plotly_chart(mult_fig, width="stretch")
+        def when(t):
+            return f"{today + timedelta(days=float(t * 365.25)):%b %Y}"
+        # The date the multiplication is read at: today or any month's end through
+        # 2030 (`tk_mult_at`); until set, the month-end nearest the median RSI.
+        stops = [("Today", 0.0)]
+        m = datetime(today.year, today.month, 1)
+        while m.year <= 2030:
+            nxt = datetime(m.year + (m.month == 12), m.month % 12 + 1, 1)
+            end_of = nxt - timedelta(days=1)
+            t = (end_of - today).days / 365.25
+            if 0 < t <= years_[-1]:
+                stops.append((f"{end_of:%b %Y}", t))
+            m = nxt
+        labels = [lab for lab, _ in stops]
+        rsi_t = meds["RSI"]
+        auto = min(stops, key=lambda x: abs(x[1] - rsi_t))[0] \
+            if np.isfinite(rsi_t) else labels[-1]
+        # The URL omits the param while the slider sits at this computed start.
+        st.session_state.setdefault("_url_auto_defaults", {})["tk_mult_at"] = auto
+        if st.session_state.get("tk_mult_at") not in labels:
+            st.session_state["tk_mult_at"] = auto
+        _at = st.session_state["tk_mult_at"]
+        with st.expander("The multiplication at "
+                         + ("today" if _at == "Today" else f"the end of {_at}"),
+                         key="tk_ex_mult"):
+            pick = st.select_slider(
+                "Read the multiplication at", labels, key="tk_mult_at",
+                help="Today, or the end of any month to Dec 2030. Starts at the month nearest "
+                     + (f"the median RSI ({when(meds['RSI'])})." if np.isfinite(meds["RSI"])
+                        else "the median RSI, or the last month when RSI is not reached."))
+            at_t = dict(stops)[pick]
+            at_label = "today" if pick == "Today" else f"the end of {pick}"
+            mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
+            _fn_caption(
+                f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
+                "on a log scale: each bar starts where the last ended.",
+                ("each factor's median change",
+                 f"The steps multiply to {product:.3g}\u00d7; the last bar is the net pace's own "
+                 f"median, {net:.3g}\u00d7, since medians of the factors don't multiply exactly "
+                 "to the median of their product. Research judgment and harder ideas each run "
+                 "to large multiples and largely cancel."))
+            st.plotly_chart(mult_fig, width="stretch")
+
     st.subheader("1. Research speeds up")
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)
     pace_note = "from today's ECI growth"
@@ -24556,45 +24567,47 @@ def _render_takeoff(loading):
     st.plotly_chart(_tf(_tk_to(_tk_pace_fig(
         result, today, markers, history=pace_history, today_note=pace_note), view_end)),
         width="stretch")
-    st.markdown("**Compute going in**")
-    _fn_caption(
-        "The compute each scenario trains and experiments with, as a multiple of today's. "
-        "Verticals mark milestone medians.",
-        ("compute each scenario",
-         "One growth rate per scenario: with the sidebar's data-center toggle on (the "
-         "default), the average over the next five years of one sampled US "
-         "largest-training-run path from the Data Centers tab; off, the flat rate set "
-         f"there. From the end of {_TK_COMPUTE_SLOW_YEAR} each keeps the sidebar's share "
-         "of its log growth, and from its own RSI date it grows at the sidebar's "
-         f"\u00d7{float(st.session_state['tk_rsi_compute_boost']):g} of its rate. Training, "
-         "experiments and agents split this one budget."))
-    st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
-        result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute"),
-        markers), view_end)), width="stretch")
-    st.markdown("**Where the compute goes**")
-    _fn_caption(
-        "Training, experiments and running AI researchers, stacked as multiples of "
-        "today's total compute: the chart above, split as the chart below.",
-        ("stacked as multiples",
-         "The median compute times the median split, so the top edge is the median "
-         "above. The hover gives each part's own middle 80% across scenarios. The axis "
-         "is log, so the upper bands look thinner than their share. Today's split is training "
-         f"{result['params']['training_share']:g}%, experiments "
-         f"{result['params']['experiment_share']:g}%, AI researchers the rest."))
-    st.plotly_chart(_tf(_tk_to(_tk_compute_split_fig(result, today, markers), view_end)),
-                    width="stretch")
-    st.markdown("**How the compute is split**")
-    _fn_caption(
-        "Training keeps its share; the rest goes to running AI researchers or to "
-        "experiments, re-split as AI changes what each is worth.",
-        ("re-split as AI changes",
-         "The labor-compute mean's first-order condition, anchored at today's split and "
-         "driven only by what AI changes. When AI labor is abundant and the two are "
-         "complements (most scenarios), compute moves to experiments, so the AI "
-         "researchers' share falls even as copies multiply. Sidebar: *Labs re-split "
-         "compute as AI changes* (off holds today's split)."))
-    st.plotly_chart(_tf(_tk_to(_tk_split_fig(result, today, markers), view_end)),
-                    width="stretch")
+    with st.expander("Compute", key="tk_ex_compute"):
+        st.markdown("**Compute going in**")
+        _fn_caption(
+            "The compute each scenario trains and experiments with, as a multiple of today's. "
+            "Verticals mark milestone medians.",
+            ("compute each scenario",
+             "One growth rate per scenario: with the sidebar's data-center toggle on (the "
+             "default), the average over the next five years of one sampled US "
+             "largest-training-run path from the Data Centers tab; off, the flat rate set "
+             f"there. From the end of {_TK_COMPUTE_SLOW_YEAR} each keeps the sidebar's share "
+             "of its log growth, and from its own RSI date it grows at the sidebar's "
+             f"\u00d7{float(st.session_state['tk_rsi_compute_boost']):g} of its rate. Training, "
+             "experiments and agents split this one budget."))
+        st.plotly_chart(_tf(_tk_to(_tk_compute_fig(
+            result, today, datetime(_TK_COMPUTE_SLOW_YEAR, 12, 31), result.get("hist_compute"),
+            markers), view_end)), width="stretch")
+        st.markdown("**Where the compute goes**")
+        _fn_caption(
+            "Training, experiments and running AI researchers, stacked as multiples of "
+            "today's total compute: the chart above, split as the chart below.",
+            ("stacked as multiples",
+             "The median compute times the median split, so the top edge is the median "
+             "above. The hover gives each part's own middle 80% across scenarios. The axis "
+             "is log, so the upper bands look thinner than their share. Today's split is training "
+             f"{result['params']['training_share']:g}%, experiments "
+             f"{result['params']['experiment_share']:g}%, AI researchers the rest."))
+        st.plotly_chart(_tf(_tk_to(_tk_compute_split_fig(result, today, markers), view_end)),
+                        width="stretch")
+        st.markdown("**How the compute is split**")
+        _fn_caption(
+            "Training keeps its share; the rest goes to running AI researchers or to "
+            "experiments, re-split as AI changes what each is worth.",
+            ("re-split as AI changes",
+             "The labor-compute mean's first-order condition, anchored at today's split and "
+             "driven only by what AI changes. When AI labor is abundant and the two are "
+             "complements (most scenarios), compute moves to experiments, so the AI "
+             "researchers' share falls even as copies multiply. Sidebar: *Labs re-split "
+             "compute as AI changes* (off holds today's split)."))
+        st.plotly_chart(_tf(_tk_to(_tk_split_fig(result, today, markers), view_end)),
+                        width="stretch")
+
 
     st.subheader("2. People step out of the loop")
     _fn_caption(
@@ -24606,118 +24619,122 @@ def _render_takeoff(loading):
          "level leaves people in each stage is assumed (table below)."))
     st.plotly_chart(_tf(_tk_to(_tk_humans_fig(result, today, load_rsi_automation(), markers),
                                view_end)), width="stretch")
-    latest = _tk_ladder_start_row()
-    hours = _tk_al_hours_now()
-    accel = float(st.session_state["tk_human_accel"])
-    st.markdown("**Where today's human share comes from**")
-    _fn_caption(
-        f"The R&D automation index's mix of tasks on its trend at {latest['date']:%B %Y}, "
-        "its latest rated month, times the human "
-        f"time each level still takes: people at {1 / _tk_ladder_human_share(latest, hours):.2f}"
-        "\u00d7 their unassisted speed.",
-        ("human time each level still takes",
-         "The index rates who leads a task, not how long people spend on it, so the time "
-         "per level and stage is a judgment: a prior, raised to one common power so the "
-         f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%. "
-         "Direction keeps the most: at AL4 AI works from a person's high-level prompt and "
-         "the person decides what ships (Anthropic's definition), so direction stays mostly "
-         "human until AL5, while experiments are handed over first (Epoch's researcher "
-         "interviews and Anthropic's staff studies rank the stages so; none gives numbers)."))
-    bands = _tk_al_bands(latest) + [0.0]
-    names = ["AL0", "AL1", "AL2", "AL3", "AL4 (AI leads, person supervises)", "AL5 (no human)"]
-    stages = _tk_stage_shares(latest, hours)
-    overall = _tk_overall_hours(hours)
-    st.dataframe(pandas.DataFrame({
-        "Level": names + ["Human share of each stage's work"],
-        "Share of tasks": [f"{100 * b:.1f}%" for b in bands] + [""],
-        **{f"{name}: human time (prior)": [f"{100 * v:.0f}% ({100 * p:.0f}%)"
-                                           for v, p in zip(row, prior)]
-           + [f"{100 * share:.1f}%"]
-           for name, row, prior, share in zip(takeoff.WORKFLOW_STAGES, hours,
-                                              _TK_AL_STAGE_HOURS_PRIOR, stages)},
-        "All stages, weighted": [f"{100 * v:.1f}%" for v in overall]
-                                + [f"{100 * _tk_ladder_human_share(latest, hours):.1f}%"],
-    }), hide_index=True, width="stretch")
-
-    path = _tk_activity_path(accel)
-    if path is not None:
-        act_hours, years, shares = path
-        total = shares.sum(axis=0)
-        human = shares[:, 0]
-
-        def on(y):
-            return latest['date'] + timedelta(days=365.25 * y)
-
-        def first_under(series, level):
-            hit = np.flatnonzero(series < level)
-            return f"{on(years[hit[0]]):%b %Y}" if hit.size else "not in view"
-        mid_2027 = float(np.interp((datetime(2027, 7, 1) - latest['date']).days / 365.25,
-                                   years, total))
-        st.markdown("**Where people's time goes, and when it stops being the bottleneck**")
+    with st.expander("Where today's human share comes from, and where people's time goes",
+                     key="tk_ex_human"):
+        latest = _tk_ladder_start_row()
+        hours = _tk_al_hours_now()
+        accel = float(st.session_state["tk_human_accel"])
+        st.markdown("**Where today's human share comes from**")
         _fn_caption(
-            f"In mid-2027 people still do {100 * mid_2027:.0f}% of the unassisted hours, so "
-            f"research can run at most {1 / mid_2027:.1f}\u00d7 however fast AI is; human time "
-            f"falls under 5% in {first_under(total, 0.05)} and under 1% in "
-            f"{first_under(total, 0.01)}, as AL5 arrives.",
-            ("at most",
-             "Amdahl's law: with AI infinitely fast on its part, research takes the human "
-             "hours left, so the ceiling is one over their share. A readout of the "
-             "automation index's projection at its median AL4-to-AL5 gap, on the calendar; "
-             "the model moves each scenario along it in capability time and draws its own "
-             "gap, and does not read this table."),
-            ("unassisted hours",
-             "Every column is people's hours as a share of an unassisted researcher's total. "
-             "No study measures how AI researchers split their time; the unassisted column "
-             "triangulates Epoch's researcher interviews (2024: direction takes \"relatively "
-             "little dedicated time, but crucial\"; engineering and debugging are the "
-             "time-consuming part) and Microsoft's developer time study (about half the day "
-             "on development, the rest coordination). The level columns follow Anthropic's "
-             "definitions and move time, not just cut it: at AL3 Claude writes the code under "
-             "close direction, so people write none and direct and review more. Each stage's "
-             "activities sum to the model's hours for it, fitted so the mix gives the "
-             f"sidebar's {accel:g}\u00d7."))
+            f"The R&D automation index's mix of tasks on its trend at {latest['date']:%B %Y}, "
+            "its latest rated month, times the human "
+            f"time each level still takes: people at {1 / _tk_ladder_human_share(latest, hours):.2f}"
+            "\u00d7 their unassisted speed.",
+            ("human time each level still takes",
+             "The index rates who leads a task, not how long people spend on it, so the time "
+             "per level and stage is a judgment: a prior, raised to one common power so the "
+             f"mix gives the sidebar's {accel:g}\u00d7 speed-up. AL0 and AL5 stay at 100% and 0%. "
+             "Direction keeps the most: at AL4 AI works from a person's high-level prompt and "
+             "the person decides what ships (Anthropic's definition), so direction stays mostly "
+             "human until AL5, while experiments are handed over first (Epoch's researcher "
+             "interviews and Anthropic's staff studies rank the stages so; none gives numbers)."))
+        bands = _tk_al_bands(latest) + [0.0]
+        names = ["AL0", "AL1", "AL2", "AL3", "AL4 (AI leads, person supervises)", "AL5 (no human)"]
+        stages = _tk_stage_shares(latest, hours)
+        overall = _tk_overall_hours(hours)
         st.dataframe(pandas.DataFrame({
-            "Activity": [a[0] for a in _TK_ACTIVITIES],
-            "Stage": [dict(zip(takeoff.WORKFLOW_KEYS, takeoff.WORKFLOW_STAGES))[a[1]]
-                      for a in _TK_ACTIVITIES],
-            "Unassisted": [f"{100 * h[0]:.1f}%" for h in act_hours],
-            "At AL3": [f"{100 * h[3]:.1f}%" for h in act_hours],
-            "At AL4": [f"{100 * h[4]:.1f}%" for h in act_hours],
-            "Today": [f"{100 * v:.1f}%" for v in human],
-            "Share of people's time today": [f"{100 * v / human.sum():.0f}%" for v in human],
+            "Level": names + ["Human share of each stage's work"],
+            "Share of tasks": [f"{100 * b:.1f}%" for b in bands] + [""],
+            **{f"{name}: human time (prior)": [f"{100 * v:.0f}% ({100 * p:.0f}%)"
+                                               for v, p in zip(row, prior)]
+               + [f"{100 * share:.1f}%"]
+               for name, row, prior, share in zip(takeoff.WORKFLOW_STAGES, hours,
+                                                  _TK_AL_STAGE_HOURS_PRIOR, stages)},
+            "All stages, weighted": [f"{100 * v:.1f}%" for v in overall]
+                                    + [f"{100 * _tk_ladder_human_share(latest, hours):.1f}%"],
         }), hide_index=True, width="stretch")
 
-    st.subheader("3. Anthropic's research workforce")
-    wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()
-    _fn_caption(
-        "How many researchers Anthropic has, human and AI, and what they add up to in "
-        "human full-time equivalents. Anchored on its S-1.",
-        ("Anchored on its S-1",
-         "Anthropic's S-1/A: ~5,300 employees at Sep 30, 2026, up ~170% in a year, \"a "
-         "majority\" in research, engineering and product; and staff's Claude usage, "
-         "valued at list price, grew over 250× from Jan to Sep 2026 and passed cash "
-         "payroll in April. List-price spend is not a count of agents; the 45,000 "
-         "copies default is a reported figure we could not confirm."),
-        ("How many researchers",
-         f"Human research staff start at {wf_humans:,.0f} (the S-1's majority of ~5,300), "
-         f"change {wf_hiring - 1:+.0%} a year while labs "
-         f"keep hiring and {wf_decline - 1:+.0%} a year after each scenario's "
-         "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
-         f"agents start at {wf_copies:,.0f} copies running today (an estimate) and grow "
-         "with the compute for running agents (total compute times the share labs give "
-         "them, which falls as they re-split toward experiments) and with more copies as "
-         "algorithms improve."),
-        ("human full-time equivalents",
-         "Today the copies together do the automation index's share of research work, so "
-         f"each is worth about {_tk_copy_worth_today(result, wf_humans, wf_copies):.2f} of a "
-         f"person. Each grows in worth as (ECI / today's)^{wf_power:g}: about "
-         f"{(200 / eci['now']) ** wf_power:.0f}\u00d7 at ECI 200, about "
-         f"{(eci['ultra_level'] / eci['now']) ** wf_power:.0f}\u00d7 at "
-         f"{eci['ultra_level']:g}. All set under Advanced. That "
-         "power is a stated judgment, not a fit; the model's research speed comes from its "
-         "own labor equations, not from this chart."))
-    st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
-                    width="stretch")
+        path = _tk_activity_path(accel)
+        if path is not None:
+            act_hours, years, shares = path
+            total = shares.sum(axis=0)
+            human = shares[:, 0]
+
+            def on(y):
+                return latest['date'] + timedelta(days=365.25 * y)
+
+            def first_under(series, level):
+                hit = np.flatnonzero(series < level)
+                return f"{on(years[hit[0]]):%b %Y}" if hit.size else "not in view"
+            mid_2027 = float(np.interp((datetime(2027, 7, 1) - latest['date']).days / 365.25,
+                                       years, total))
+            st.markdown("**Where people's time goes, and when it stops being the bottleneck**")
+            _fn_caption(
+                f"In mid-2027 people still do {100 * mid_2027:.0f}% of the unassisted hours, so "
+                f"research can run at most {1 / mid_2027:.1f}\u00d7 however fast AI is; human time "
+                f"falls under 5% in {first_under(total, 0.05)} and under 1% in "
+                f"{first_under(total, 0.01)}, as AL5 arrives.",
+                ("at most",
+                 "Amdahl's law: with AI infinitely fast on its part, research takes the human "
+                 "hours left, so the ceiling is one over their share. A readout of the "
+                 "automation index's projection at its median AL4-to-AL5 gap, on the calendar; "
+                 "the model moves each scenario along it in capability time and draws its own "
+                 "gap, and does not read this table."),
+                ("unassisted hours",
+                 "Every column is people's hours as a share of an unassisted researcher's total. "
+                 "No study measures how AI researchers split their time; the unassisted column "
+                 "triangulates Epoch's researcher interviews (2024: direction takes \"relatively "
+                 "little dedicated time, but crucial\"; engineering and debugging are the "
+                 "time-consuming part) and Microsoft's developer time study (about half the day "
+                 "on development, the rest coordination). The level columns follow Anthropic's "
+                 "definitions and move time, not just cut it: at AL3 Claude writes the code under "
+                 "close direction, so people write none and direct and review more. Each stage's "
+                 "activities sum to the model's hours for it, fitted so the mix gives the "
+                 f"sidebar's {accel:g}\u00d7."))
+            st.dataframe(pandas.DataFrame({
+                "Activity": [a[0] for a in _TK_ACTIVITIES],
+                "Stage": [dict(zip(takeoff.WORKFLOW_KEYS, takeoff.WORKFLOW_STAGES))[a[1]]
+                          for a in _TK_ACTIVITIES],
+                "Unassisted": [f"{100 * h[0]:.1f}%" for h in act_hours],
+                "At AL3": [f"{100 * h[3]:.1f}%" for h in act_hours],
+                "At AL4": [f"{100 * h[4]:.1f}%" for h in act_hours],
+                "Today": [f"{100 * v:.1f}%" for v in human],
+                "Share of people's time today": [f"{100 * v / human.sum():.0f}%" for v in human],
+            }), hide_index=True, width="stretch")
+
+
+    with st.expander("3. Anthropic's research workforce", key="tk_ex_workforce"):
+        wf_humans, wf_hiring, wf_decline, wf_copies, wf_power = _tk_workforce_settings()
+        _fn_caption(
+            "How many researchers Anthropic has, human and AI, and what they add up to in "
+            "human full-time equivalents. Anchored on its S-1.",
+            ("Anchored on its S-1",
+             "Anthropic's S-1/A: ~5,300 employees at Sep 30, 2026, up ~170% in a year, \"a "
+             "majority\" in research, engineering and product; and staff's Claude usage, "
+             "valued at list price, grew over 250× from Jan to Sep 2026 and passed cash "
+             "payroll in April. List-price spend is not a count of agents; the 45,000 "
+             "copies default is a reported figure we could not confirm."),
+            ("How many researchers",
+             f"Human research staff start at {wf_humans:,.0f} (the S-1's majority of ~5,300), "
+             f"change {wf_hiring - 1:+.0%} a year while labs "
+             f"keep hiring and {wf_decline - 1:+.0%} a year after each scenario's "
+             "RSI, once autopilot makes them unneeded; both rates are assumptions. AI research "
+             f"agents start at {wf_copies:,.0f} copies running today (an estimate) and grow "
+             "with the compute for running agents (total compute times the share labs give "
+             "them, which falls as they re-split toward experiments) and with more copies as "
+             "algorithms improve."),
+            ("human full-time equivalents",
+             "Today the copies together do the automation index's share of research work, so "
+             f"each is worth about {_tk_copy_worth_today(result, wf_humans, wf_copies):.2f} of a "
+             f"person. Each grows in worth as (ECI / today's)^{wf_power:g}: about "
+             f"{(200 / eci['now']) ** wf_power:.0f}\u00d7 at ECI 200, about "
+             f"{(eci['ultra_level'] / eci['now']) ** wf_power:.0f}\u00d7 at "
+             f"{eci['ultra_level']:g}. All set under Advanced. That "
+             "power is a stated judgment, not a fit; the model's research speed comes from its "
+             "own labor equations, not from this chart."))
+        st.plotly_chart(_tf(_tk_to(_tk_workforce_fig(result, today, eci, markers), view_end)),
+                        width="stretch")
+
 
     st.subheader("4. What it does to capability (ECI)")
     rates = result["eci_rates"]
@@ -24743,41 +24760,44 @@ def _render_takeoff(loading):
          "shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
                     width="stretch")
-    st.markdown("**How fast ECI climbs**")
-    _fn_caption(
-        "ECI points gained a year in each scenario, read over six months so single "
-        "model releases don't spike it. A rising line is superexponential growth.",
-        ("read over six months",
-         "Each scenario's ECI change over a centred six-month window, per year; then "
-         "the median and middle 80% across scenarios. The dashed line is today's "
-         "setting, the dotted one the 2024–25 average (1× pace)."))
-    st.plotly_chart(_tf(_tk_to(_tk_eci_rate_fig(result, today, eci, markers), view_end)),
-                    width="stretch")
-    st.markdown("**2025-level ECI progress in each year**")
-    _fn_caption(
-        f"How many years of ECI progress at {_TK_YEARLY_BASE_YEAR}'s pace each calendar year "
-        f"makes: {today.year - 1} measured, {today.year} measured to today, later years "
-        "projected. Not chart 1's \u00d7 2025, which counts experiments.",
-        ("Not chart 1's",
-         "Chart 1 measures research by OpenAI's experiments per researcher, about 2\u00d7 "
-         "2025 today. This chart measures capability (ECI) gained, which has not "
-         "doubled since: compare the measured bars. Research is also only part of capability "
-         "growth: algorithms are under half of it today, compute the rest, and most "
-         "research gains wait for a training run before they count."),
-        (f"{_TK_YEARLY_BASE_YEAR}'s pace",
-         f"The ECI points the US frontier gained over {_TK_YEARLY_BASE_YEAR}, "
-         f"{_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']:.1f}: a year "
-         "adding twice that made two years. That is below the frontier's fitted "
-         f"{eci['ppy']:.1f} points a year over 2024\u201326, which the ECI chart and the "
-         "ultraintelligence date use, so the projected years here read about "
-         f"{eci['ppy'] / (_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']):.2f}"
-         "\u00d7 what they would against that trend. One calendar year is lumpy: a release "
-         "landing just before Jan 1 moves it. Bars are the median "
-         "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
-         "years, Forethought's thresholds. A scenario whose research runs away counts as "
-         f"more than any number; the axis stops at {_TK_YEARLY_VIEW}."))
-    st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year),
-                                   today), width="stretch")
+    with st.expander("How fast ECI climbs, and 2025-level progress each year",
+                     key="tk_ex_eci_pace"):
+        st.markdown("**How fast ECI climbs**")
+        _fn_caption(
+            "ECI points gained a year in each scenario, read over six months so single "
+            "model releases don't spike it. A rising line is superexponential growth.",
+            ("read over six months",
+             "Each scenario's ECI change over a centred six-month window, per year; then "
+             "the median and middle 80% across scenarios. The dashed line is today's "
+             "setting, the dotted one the 2024–25 average (1× pace)."))
+        st.plotly_chart(_tf(_tk_to(_tk_eci_rate_fig(result, today, eci, markers), view_end)),
+                        width="stretch")
+        st.markdown("**2025-level ECI progress in each year**")
+        _fn_caption(
+            f"How many years of ECI progress at {_TK_YEARLY_BASE_YEAR}'s pace each calendar year "
+            f"makes: {today.year - 1} measured, {today.year} measured to today, later years "
+            "projected. Not chart 1's \u00d7 2025, which counts experiments.",
+            ("Not chart 1's",
+             "Chart 1 measures research by OpenAI's experiments per researcher, about 2\u00d7 "
+             "2025 today. This chart measures capability (ECI) gained, which has not "
+             "doubled since: compare the measured bars. Research is also only part of capability "
+             "growth: algorithms are under half of it today, compute the rest, and most "
+             "research gains wait for a training run before they count."),
+            (f"{_TK_YEARLY_BASE_YEAR}'s pace",
+             f"The ECI points the US frontier gained over {_TK_YEARLY_BASE_YEAR}, "
+             f"{_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']:.1f}: a year "
+             "adding twice that made two years. That is below the frontier's fitted "
+             f"{eci['ppy']:.1f} points a year over 2024\u201326, which the ECI chart and the "
+             "ultraintelligence date use, so the projected years here read about "
+             f"{eci['ppy'] / (_tk_year_gain(eci.get('trained') or eci['frontier'], _TK_YEARLY_BASE_YEAR) or eci['ppy']):.2f}"
+             "\u00d7 what they would against that trend. One calendar year is lumpy: a release "
+             "landing just before Jan 1 moves it. Bars are the median "
+             "scenario, whiskers the middle 80%; the hover gives the share making 3 and 10 "
+             "years, Forethought's thresholds. A scenario whose research runs away counts as "
+             f"more than any number; the axis stops at {_TK_YEARLY_VIEW}."))
+        st.plotly_chart(_tk_yearly_fig(_tk_yearly_progress(result, eci, today, view_end.year),
+                                       today), width="stretch")
+
 
     st.subheader("5. When it happens, and how fast")
     gap, reached = _tk_gap(rsi, eci["ultra"], horizon)

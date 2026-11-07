@@ -1292,8 +1292,8 @@ class TestTakeoffTab:
         naming its latest reading; the chart sits inside."""
         at = self._app()
         folds = [e for e in at.expander if e.label.endswith("*chart and details*")]
-        assert len(folds) == 8
-        assert all(e.label.startswith(("Latest **", "METR's")) for e in folds)
+        assert len(folds) == 7
+        assert all(e.label.startswith("Latest **") for e in folds)
         assert all(e.get("plotly_chart") for e in folds)
         heads = [h.value for h in at.subheader]
         for head in ("CoBench", "Research direction", "METR's acceleration assessment"):
@@ -1330,11 +1330,18 @@ class TestTakeoffTab:
                                                 "Inside the takeoff model"]
         subs = [s.value for s in at.subheader]
         assert subs.index("CoBench") < subs.index("Automated coder projection")
-        assert subs[subs.index("Automated coder projection") + 1:][:7] == [
+        # Section 3, the workforce, is an expander, not a heading.
+        assert subs[subs.index("Automated coder projection") + 1:][:6] == [
             "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
-            "3. Anthropic's research workforce", "4. What it does to capability (ECI)",
-            "5. When it happens, and how fast"]
+            "4. What it does to capability (ECI)", "5. When it happens, and how fast"]
+        folded = {e.label for e in at.expander}
+        for label in ("Milestone weights and dates", "Set your own weights",
+                      "Why this isn't METR's ~2×", "What moves the pace", "Compute",
+                      "3. Anthropic's research workforce",
+                      "How fast ECI climbs, and 2025-level progress each year"):
+            assert label in folded, label
+        assert any(l.startswith("The multiplication at ") for l in folded)
         import json
         dist = json.loads(_tk_charts(at)[14].proto.spec)
         # Density and cumulative share for RSI, ultraintelligence and the gap.
