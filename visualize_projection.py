@@ -80,6 +80,10 @@ st.markdown("""<style>
         font-weight: 600; }
     .st-key-tk_headline [data-testid="stCaptionContainer"],
     .st-key-tk_headline [data-testid="stCaptionContainer"] * { font-size: 1.15rem !important; }
+    /* Takeoff's evidence sections (`_evidence_section`): smaller headings,
+       each sitting tight over its one-line expander. */
+    [class*="st-key-ev_head_"] h3 { font-size: 1.2rem !important;
+        padding: 0.6rem 0 0 0 !important; }
     /* The 90% CI lines (`_tk_ci`) sit quieter under the 80% ones. */
     [class*="st-key-tk_ci90_"] [data-testid="stCaptionContainer"],
     [class*="st-key-tk_ci90_"] [data-testid="stCaptionContainer"] * {
@@ -6677,7 +6681,8 @@ def _evidence_section(title, key):
     """An evidence section as a heading over one collapsed line: the heading
     stays visible so `?to=` and the jump bar can reach it, the body opens on
     click (`test_evidence_sections_fold_under_their_headings`)."""
-    st.subheader(title)
+    with st.container(key=f"ev_head_{key}"):
+        st.subheader(title)
     with st.expander(_rsi_evidence_summary(key) + " · *chart and details*",
                      key=f"ev_{key}"):
         yield

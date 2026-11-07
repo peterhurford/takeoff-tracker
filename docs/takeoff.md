@@ -356,7 +356,8 @@ CDF (`_tk_charts`).
 Under the headline cards, `_tk_render_jump_bar()` links every section (`_TK_JUMP_ROWS`) by
 its `?to=` id (`_heading_anchor`, Streamlit's own slug rule), scrolled in place by the
 anchor script (`test_jump_bar_targets_every_heading`). Each evidence section but the
-milestones and coder projection, the synthesis, is `_evidence_section()`: its heading,
+milestones and coder projection, the synthesis, is `_evidence_section()`: its heading
+(shrunk under `ev_head_*` by the style block),
 then one collapsed expander labelled with the latest reading against its bar
 (`_rsi_evidence_summary`); the section's charts sit inside
 (`test_evidence_sections_fold_under_their_headings`).
