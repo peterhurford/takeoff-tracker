@@ -144,3 +144,13 @@ Above it, `_render_changed_badge` shows *N settings changed* when any tracked se
 off its default, counted as the URL's tracked keys (`_changed_settings`), so it counts
 exactly what *Share view* hands out. *Reset all* pops those keys, and each widget
 re-initialises to its default (`test_changed_badge_counts_and_resets`).
+
+## No backward compatibility for old links
+
+Tab slugs are `_SLUG_FOR_TAB` only, with no aliases for renamed or merged tabs.
+`_sync_session_to_url` deletes any query param that is neither a tracked setting nor in
+`_URL_DIRECT_PARAMS` (`tab`, `to`, `a`, `b`), so a retired setting in an old link is
+dropped on the first run and Share view never passes it on. When renaming a setting or
+slug, don't add a migration (`test_retired_links_get_no_special_handling`). The
+per-widget "not in options → pop" guards stay: they stop any malformed value from
+crashing a selectbox, not just old ones.

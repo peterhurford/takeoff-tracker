@@ -3463,15 +3463,9 @@ _TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff",
 _TAB_MAIN_N = 6
 _TAB_LABEL = {"ECI": "Epoch ECI"}
 _SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
+# Current slugs only: an unknown ?tab= opens the default tab
+# (`test_retired_links_get_no_special_handling`).
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
-# The RSI tab merged into Takeoff; its links still land there.
-_TAB_SLUG["rsi"] = _TAB_SLUG["takeoff"]
-# The China tab was Compute/capabilities/diffusion; old links still land.
-_TAB_SLUG["computecap"] = _TAB_SLUG["china"]
-# The ECI Company Gap tab merged into ECI; old links still land.
-_TAB_SLUG["ecigap"] = _TAB_SLUG["eci"]
-# The Pacing tab was Pausing; old links still land.
-_TAB_SLUG["pausing"] = _TAB_SLUG["pacing"]
 
 # Read ?tab= from URL for deep-linking; with none, the app opens on `_DEFAULT_TAB`.
 _DEFAULT_TAB = "Takeoff"
@@ -3500,9 +3494,9 @@ if active_tab == _DEFAULT_TAB:
 else:
     st.query_params["tab"] = _SLUG_FOR_TAB[active_tab]
 
-# a/b (and legacy region) are ECI-only params; drop them on any other tab
+# a/b are ECI-only params; drop them on any other tab
 if active_tab != "ECI":
-    for _p in ("a", "b", "region"):
+    for _p in ("a", "b"):
         if _p in st.query_params:
             del st.query_params[_p]
 
@@ -5510,16 +5504,6 @@ def render_eci():
     _b_opts = [_ECI_NONE_LABEL] + _ECI_ENTITY_OPTIONS
     _url_a = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("a", "").lower())
     _url_b = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("b", "").lower())
-    # Back-compat: the old ?region=china deep link maps to US benchmark / China.
-    if _url_a is None and st.query_params.get("region", "").lower() == "china":
-        _url_a, _url_b = "US best", "China best"
-    # Back-compat: the old ECI Company Gap tab measured against the frontier and
-    # picked its company with ?ecg_highlight=.
-    if _url_tab == "ecigap":
-        _url_a = _url_a or _ECI_FRONTIER_LABEL
-        _hl = st.query_params.get("ecg_highlight", "")
-        _url_b = _url_b or (_hl if _hl in _ECI_COMPANIES else None)
-    st.query_params.pop("ecg_highlight", None)
     _a_idx = _ECI_ENTITY_OPTIONS.index(_url_a) if _url_a in _ECI_ENTITY_OPTIONS else 0
     _b_idx = _b_opts.index(_url_b) if _url_b in _b_opts else 0
 
@@ -5545,7 +5529,6 @@ def render_eci():
         st.query_params.pop("b", None)
     else:
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
-    st.query_params.pop("region", None)  # superseded by ?a= / ?b=
 
     st.session_state[_ECI_INTERNAL_ON] = internal
     try:
@@ -17004,9 +16987,17 @@ def _render_changed_badge(slot):
                   help="Restore every setting off its default: " + ", ".join(changed))
 
 
+# Query params read directly rather than tracked as settings.
+_URL_DIRECT_PARAMS = ("tab", "to", "a", "b")
+
+
 def _sync_session_to_url():
     keys, defaults = _all_tracked()
     qp = st.query_params
+    # Anything else in the URL (a retired setting, a typo) is dropped, so it is
+    # never shared on (`test_retired_links_get_no_special_handling`).
+    for k in [k for k in qp.keys() if k not in _URL_DIRECT_PARAMS and k not in set(keys)]:
+        del qp[k]
     if "_url_baseline" not in st.session_state:
         st.session_state["_url_baseline"] = {}
     baseline = st.session_state["_url_baseline"]
@@ -23865,10 +23856,6 @@ def _render_takeoff(loading):
     # The evidence fans draw from numpy's global generator; the cached coding
     # dates and the simulator seed their own draws from the same value.
     np.random.seed(_tk_seed())
-    for key in ("tk_onset_low", "tk_onset_high", "tk_years", "tk_taste_at_onset"):
-        st.session_state.pop(key, None)
-        if key in st.query_params:
-            del st.query_params[key]
     for key, default in _TK_DEFAULTS.items():
         st.session_state.setdefault(key, default)
 

@@ -163,18 +163,6 @@ class TestEciTab:
     """The ECI tab carries the old ECI Company Gap tab: a leaderboard, the
     projection, then the subject's months behind the reference."""
 
-    def test_old_gap_links_land_on_the_merged_tab(self):
-        at = _fresh_app()
-        at.query_params["tab"] = "ecigap"
-        at.query_params["ecg_highlight"] = "OpenAI"
-        at.run()
-        _assert_no_error(at, "?tab=ecigap")
-        assert at.selectbox(key="eci_entity_a").value == "Frontier (any lab)"
-        assert at.selectbox(key="eci_entity_b").value == "OpenAI"
-        heads = [h.body for h in at.get("subheader")]
-        assert heads == ["Projection", "OpenAI: months behind Frontier (any lab)",
-                         "Where each lab stands"]
-
     def test_internal_models_toggle_adds_anthropic_internal_frontier(self):
         """Off by default; on, Anthropic's internal models (METR's AECI projected
         onto ECI) join US best's frontier, and only while the ECI tab renders."""
@@ -900,13 +888,6 @@ class TestDataCentersComputeEci:
         assert "Compute ⟷ ECI" not in heads and "ECI Forecasts" not in heads
         assert "China" in [str(h.value) for h in at.header]
 
-    def test_old_slug_lands_on_the_china_tab(self):
-        at = _fresh_app()
-        at.query_params["tab"] = "computecap"
-        at.run()
-        assert [r for r in at.radio if r.label == "Tab"][0].value == "China"
-
-
 class TestComputeVsCapabilities:
     """The China tab (was Compute/capabilities/diffusion)."""
 
@@ -1353,7 +1334,6 @@ class TestTakeoffTab:
         assert len(cdfs) == 3
         assert all(((0 <= y) & (y <= 100)).all() and (np.diff(y) >= -1e-9).all() for y in cdfs)
         assert at.number_input(key="tk_end_year").value == 2030
-        assert not _has_widget(at, "number_input", "tk_onset_low")
         evidence = json.loads(_tk_charts(at)[0].proto.spec)
         titles = " ".join(a["text"] for a in evidence["layout"]["annotations"])
         for name in ("Next-step + TasteVal", "Staff speedup", "Experiments/researcher"):
@@ -1608,7 +1588,7 @@ class TestTakeoffTab:
         at = _fresh_app()
         # Takeoff re-pairs every `_TK_DRAW_STRIDE`th of these dates with its
         # scenarios, so their CDF is the RSI tab's to within one full-sample draw.
-        at.query_params.update(tab="rsi", rsi_atc_penalty="50",
+        at.query_params.update(tab="takeoff", rsi_atc_penalty="50",
                                rsi_timing=timing, rsi_notyet=condition, rsi_notyet_ramp="180",
                                pc_rsiw_rli_90="70", tk_seed="9182")
         at.run()
@@ -3374,6 +3354,29 @@ class TestTodayForwardMode:
         assert at.checkbox(key="today_fwd").value is True
 
 
+class TestRetiredLinks:
+    def test_retired_links_get_no_special_handling(self):
+        """Old tab names open the default tab, and any URL param the app does
+        not track (a retired setting, ?region=, ?ecg_highlight=) is dropped on
+        the first run, so Share view never hands it on."""
+        for slug in ("rsi", "computecap", "ecigap", "pausing"):
+            at = _fresh_app()
+            at.query_params["tab"] = slug
+            at.run()
+            _assert_no_error(at, f"retired ?tab={slug}")
+            assert at.session_state["_active_tab"] == "Takeoff", slug
+        at = _fresh_app()
+        at.query_params.update(tab="eci", region="china", ecg_highlight="OpenAI",
+                               tk_human_accel="2.5", tk_onset_low="3")
+        at.run()
+        _assert_no_error(at, "retired params")
+        # ?region=china no longer picks US vs China.
+        assert at.selectbox(key="eci_entity_b").value == "\u2014"
+        for k in ("region", "ecg_highlight", "tk_human_accel", "tk_onset_low"):
+            assert k not in at.query_params, k
+        assert "tab" in at.query_params
+
+
 class TestSidebarTools:
     def test_share_view_sits_under_the_tab_picker_on_every_tab(self):
         """Share view is drawn last (the URL must be synced first) into a slot
@@ -3423,7 +3426,7 @@ class TestSectionDeepLinks:
 
     _SLUGS = {"datacenters": "per-company-does-the-buildout-predict-release-timing",
               "pacing": "compute-thresholds",
-              "rsi": "cobench"}
+              "takeoff": "co-bench"}
 
     def _script(self, at):
         [s] = [e.body for e in at.get("html") if e.body.lstrip().startswith("<script>")]
