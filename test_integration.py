@@ -1715,6 +1715,18 @@ class TestTakeoffTab:
         assert cis
         assert not any(re.search(r"(:|–)\s*-", t) for t in cis), cis
 
+    def test_the_gap_chart_starts_at_zero(self):
+        """The RSI-to-ultraintelligence panel plots no negative gap, matching
+        the cards."""
+        at = self._app()
+        dist = json.loads(_tk_charts(at)[-1].proto.spec)
+        gap = [tr for tr in dist["data"] if tr.get("legendgroup") == "gap"]
+        assert gap
+        def xs(x):
+            return (np.frombuffer(base64.b64decode(x["bdata"]), dtype=x["dtype"])
+                    if isinstance(x, dict) else np.asarray(x, float))
+        assert all(xs(tr["x"]).min() >= 0 for tr in gap)
+
     def test_zero_transfer_runs_at_the_reference_pace(self, monkeypatch):
         """With no AI feedback (no transfer, and no post-RSI compute boost, a
         separate channel), research runs at the frozen-AI reference pace."""

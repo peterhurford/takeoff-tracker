@@ -22835,8 +22835,11 @@ def _tk_dist_fig(rsi, ultra, gap, today, view_end, sim_end):
             hovertemplate="By %{x|%b %Y}: %{y:.0f}%<extra>" + name
                           + f" ({by_end:.0f}% by the chart's end)</extra>"),
             row=2, col=1)
+    # Ultraintelligence before RSI reads 0, as on the gap cards
+    # (`test_the_gap_chart_starts_at_zero`).
+    gap = np.maximum(gap, 0.0)
     finite = gap[np.isfinite(gap)]
-    lo = min(-0.5, np.floor(np.quantile(finite, 0.01) * 12) / 12) if finite.size else -0.5
+    lo = 0.0
     hi = max(1.0, np.ceil(np.quantile(finite, 0.99))) if finite.size else 5.0
     g_edges = np.arange(lo, hi + month, month)
     g_mids = (g_edges[:-1] + g_edges[1:]) / 2
@@ -24787,7 +24790,7 @@ def _render_takeoff(loading):
         ("time from RSI to ultraintelligence",
          f"Among the {100 * np.mean(reached):.0f}% of scenarios reaching RSI by "
          f"{end_date:%Y}; one not reaching ultraintelligence by then stays in the "
-         "denominator."))
+         "denominator, and one reaching it before RSI counts as 0."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
                                      end_date)), width="stretch")
 
