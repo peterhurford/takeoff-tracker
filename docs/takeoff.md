@@ -192,7 +192,7 @@ The static loop diagram and brakes line draw first, above the bar. A progress ba
 (`_tk_loading`, `_TK_LOADING_STEPS`), styled to the cards' height so they replace it without
 the page jumping, sits above that slot and steps through
 evidence, simulation, re-pairing and drawing; `render_takeoff` clears it in a `finally`
-once the last chart is drawn, so it outlasts every number. The cards' slot is `st.container(key="tk_headline")`; the
+once the last chart is drawn, so it outlasts every number. Each step also draws `_TK_FREEZE_CSS` into the bar's slot, so while the bar is up the page and sidebar dim and take no clicks (the main column still scrolls); clearing the slot lifts it. The cards' slot is `st.container(key="tk_headline")`; the
 global `<style>` block enlarges metrics and captions under `.st-key-tk_headline` only. Each
 90% CI line goes in its own `tk_ci90_*` container (`_tk_ci`), which that block dims.
 App-wide, `_BOOT_BAR` (right after the style block) shows a loading bar on a session's

@@ -96,10 +96,10 @@ st.markdown("""<style>
         display: flex; flex-direction: column; justify-content: center;
         border-radius: 1rem; background: rgba(41,128,185,0.10);
         border: 2px solid rgba(41,128,185,0.45); }
-    [data-testid="stProgress"] p { font-size: 1.75rem !important; line-height: 1.35;
-        text-align: center; margin-bottom: 1rem; }
+    [data-testid="stProgress"] p { font-size: 2.3rem !important; line-height: 1.3;
+        font-weight: 500; text-align: center; margin-bottom: 1.5rem; }
     [data-testid="stProgress"] div[role="progressbar"] div {
-        height: 4.5rem !important; border-radius: 2.25rem !important; }
+        height: 7rem !important; border-radius: 3.5rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
     .vp-fn, .vp-fn-a { position: relative; cursor: help; }
     /* Anchored: the note hangs off the words it qualifies. */
@@ -23703,12 +23703,28 @@ _TK_LOADING_STEPS = (
 )
 
 
+# Drawn in the loading bar's slot, so it lives exactly as long as the bar:
+# the page and sidebar take no clicks and dim, while the main column still
+# scrolls (its scroll box, `stMain`, keeps pointer events).
+_TK_FREEZE_CSS = """<style>
+    [data-testid="stMainBlockContainer"], [data-testid="stSidebar"] {
+        pointer-events: none !important; user-select: none; }
+    [data-testid="stSidebarContent"] { opacity: 0.4; }
+    [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"]
+        > :not(:has([data-testid="stProgress"])) { opacity: 0.35; }
+</style>"""
+
+
 def _tk_loading(slot, step):
-    """Show loading step `step` (0-based) of `_TK_LOADING_STEPS` in `slot`."""
+    """Show loading step `step` (0-based) of `_TK_LOADING_STEPS` in `slot`,
+    with `_TK_FREEZE_CSS` freezing the rest of the page until it is cleared."""
     share, text = _TK_LOADING_STEPS[step]
-    slot.progress(share, text=f"**Takeoff model loading, step {step + 1} of "
-                              f"{len(_TK_LOADING_STEPS)}:** "
-                  + text.format(n=N_SAMPLES // _TK_DRAW_STRIDE, end=_TK_SIM_END_YEAR) + "\u2026")
+    with slot.container():
+        st.markdown(_TK_FREEZE_CSS, unsafe_allow_html=True)
+        st.progress(share, text=f"**Takeoff model loading, step {step + 1} of "
+                                f"{len(_TK_LOADING_STEPS)}:** "
+                    + text.format(n=N_SAMPLES // _TK_DRAW_STRIDE, end=_TK_SIM_END_YEAR)
+                    + "\u2026")
 
 
 def _tk_run(today, progress=None):
