@@ -85,7 +85,9 @@ st.markdown("""<style>
     [class*="st-key-tk_ci90_"] [data-testid="stCaptionContainer"] * {
         font-size: 0.9rem !important; opacity: 0.6; }
     [class*="st-key-tk_ci90_"] { margin-top: -0.6rem; }
-    [data-testid="stProgress"] { min-height: 22rem; padding: 3rem 2.5rem;
+    /* Sized to the six headline cards it stands in for, so they replace it
+       without the page jumping. */
+    [data-testid="stProgress"] { min-height: 25.5rem; padding: 3rem 2.5rem;
         display: flex; flex-direction: column; justify-content: center;
         border-radius: 1rem; background: rgba(41,128,185,0.10);
         border: 2px solid rgba(41,128,185,0.45); }
@@ -12353,9 +12355,10 @@ def _dc_tick_label(v, kind):
 
 
 def _dc_log_ticks(y_range, kind=None):
-    """Explicit log-axis ticks that label every minor tick with its full value
-    (e.g. 20, 30, … in the 10-100 decade rather than Plotly's default 2, 3, …),
-    while keeping the powers of ten larger so the decade hierarchy stays clear.
+    """Explicit log-axis ticks: a tick at every 1–9 multiple, labelled with its
+    full value at 1, 2 and 5 only (20 and 50 in the 10-100 decade, not Plotly's
+    bare 2, 3, …), since 6–9 crowd into a few pixels. Powers of ten print larger
+    so the decade hierarchy stays clear (`test_log_ticks_label_one_two_five`).
     """
     lo = int(np.floor(y_range[0]))
     hi = int(np.ceil(y_range[1]))
@@ -12371,8 +12374,10 @@ def _dc_log_ticks(y_range, kind=None):
             label = _dc_tick_label(v, kind)
             if m == 1:
                 text.append(label)  # decade label at the axis tickfont size
-            else:
+            elif m in (2, 5):
                 text.append(f"<span style=\"font-size:9px\">{label}</span>")
+            else:
+                text.append("")
             vals.append(v)
     return vals, text
 
@@ -21209,7 +21214,8 @@ def render_pacing():
     pc_horizon = datetime(pc_end_year, 12, 1)
 
     st.header("Pacing")
-    st.warning("Warning: under construction, not final.")
+    st.badge("Under construction, not final", icon=":material/construction:",
+             color="orange")
 
     # ── Series shared by both halves of the tab ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
@@ -23883,10 +23889,24 @@ def _render_takeoff(loading):
                f"come from scenarios simulated through {_TK_SIM_END_YEAR}, whatever "
                f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
     st.header("Takeoff")
-    # The takeoff model's loop and headline cards lead the page, but they need
-    # the evidence's settings first: drawn into this slot once computed.
-    # The loading bar sits above the slot, so drawing the model's header and
-    # loop into the slot does not clear it; render_takeoff clears it at the end.
+    # The model's loop is static, so it draws at once; the headline cards need
+    # the evidence's settings first and draw into `top` once computed. The
+    # loading bar, sized to the cards (the `stProgress` style), holds their
+    # place meanwhile; render_takeoff clears it at the end.
+    st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
+    _fn_line(
+        "Brakes: **limited compute**, **ideas get harder to find**, and "
+        "**people still check the work**.",
+        ("limited compute",
+         "AI labor and experiment compute combine so the scarcer one limits: "
+         "more AI labor alone can at most double throughput. Better research "
+         "judgment is not capped this way."),
+        ("ideas get harder to find",
+         "Pace is divided down as algorithms improve. The loop speeds up only if "
+         "each model adds research capacity faster than difficulty rises."),
+        ("people still check the work",
+         "Direction, experiment design and verification each need a falling "
+         "share of human hours as models improve."))
     bar = st.empty()
     loading.append(bar)
     _tk_loading(bar, 0)
@@ -24279,20 +24299,6 @@ def _render_takeoff(loading):
                    "a number moves from sampling alone.")
 
     with top.container(key="tk_headline"):
-        st.markdown(_TK_LOOP_HTML, unsafe_allow_html=True)
-        _fn_line(
-            "Brakes: **limited compute**, **ideas get harder to find**, and "
-            "**people still check the work**.",
-            ("limited compute",
-             "AI labor and experiment compute combine so the scarcer one limits: "
-             "more AI labor alone can at most double throughput. Better research "
-             "judgment is not capped this way."),
-            ("ideas get harder to find",
-             "Pace is divided down as algorithms improve. The loop speeds up only if "
-             "each model adds research capacity faster than difficulty rises."),
-            ("people still check the work",
-             "Direction, experiment design and verification each need a falling "
-             "share of human hours as models improve."))
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = datetime(_TK_SIM_END_YEAR, 12, 31)
         horizon = (end_date - today).total_seconds() / (365.25 * 86400)

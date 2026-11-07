@@ -3462,6 +3462,13 @@ class TestDcAxisTicks:
         assert plain[vals.index(1e6)] == "1M"
         assert plain[vals.index(2e6)] == "2M"   # trimmed, not "2.00M"
 
+    def test_log_ticks_label_one_two_five(self):
+        vals, text = vp._dc_log_ticks([5.0, 7.0], 'h100')
+        plain = dict(zip(vals, self._plain(text)))
+        assert plain[5e5] == "500k" and plain[2e6] == "2M"
+        assert plain[3e6] == plain[7e6] == plain[9e5] == ""
+        assert 7e6 in vals   # the tick (and its gridline) stays
+
     def test_log_ticks_stay_plain_for_other_kinds(self):
         _, text = vp._dc_log_ticks([5.0, 6.0])
         assert self._plain(text)[0] == "100000"
