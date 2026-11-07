@@ -1,3 +1,9 @@
 [server]
 # The Takeoff tab sends ~4 MB of chart JSON; deflate cuts it ~4x on the wire.
 enableWebsocketCompression = true
+
+[theme]
+# Light only: every chart is drawn on white with dark ink, so a dark page would
+# frame each one in a bright box. `[theme]` alone (no `[theme.dark]`) removes the
+# appearance toggle (`test_the_app_is_locked_to_the_light_theme`).
+base = "light"

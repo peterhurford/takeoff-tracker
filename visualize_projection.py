@@ -48,9 +48,7 @@ N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 
 # Tighten default Streamlit padding, and style the inline hover footnotes
 # `_fn()` emits (see "Caveats belong on the thing they qualify" in docs/conventions.md).
-# The bubble is dark in both themes on purpose: it floats above the page, so
-# one colour reads correctly against either background and there is no
-# Streamlit variable that tracks the user's theme reliably.
+# The bubble is dark on purpose: it floats above the (light-only) page.
 st.markdown("""<style>
     .block-container { padding-top: 2rem !important; }
     /* The sidebar's tab list (`_active_tab`): small chips with no radio dots,
@@ -22479,7 +22477,7 @@ def _tk_flow_dot(v):
     pace factor -> net pace, every step showing its live number
     (`_tk_evidence_chain`, in `v["chain"]`), each row coloured as its factor."""
     def tint(color, keep=0.18):
-        # Opaque: a translucent fill shows the page through, dark in dark mode.
+        # Opaque: a translucent fill would show the page through.
         rgb = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
         return "#" + "".join(f"{round(255 - (255 - c) * keep):02x}" for c in rgb)
 

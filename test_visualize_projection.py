@@ -6617,3 +6617,16 @@ class TestFanFollowsTrend:
         base, icpt, slope = vp._rsi_dir_fit(fr)
         c, _ = vp._rsi_dir_start(fr)
         assert c == pytest.approx(icpt + slope * (fr[-1]['date'] - base).days)
+
+
+class TestTheme:
+    def test_the_app_is_locked_to_the_light_theme(self):
+        """Charts are drawn white-on-dark-ink, so the app offers no dark mode:
+        `[theme]` with base light and no per-mode section, which is what turns
+        Streamlit's appearance toggle off."""
+        import tomllib
+        from pathlib import Path
+        cfg = tomllib.loads(
+            (Path(vp.__file__).parent / ".streamlit" / "config.toml").read_text())
+        assert cfg["theme"]["base"] == "light"
+        assert "dark" not in cfg["theme"] and "light" not in cfg["theme"]

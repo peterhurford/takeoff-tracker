@@ -115,9 +115,15 @@ Three mechanisms, in order of preference:
 
 `_fn_span()` wraps the anchored phrase (dotted underline, `.vp-fn-a`); `_fn()` is
 the standalone fallback marker (`.vp-fn`). Their CSS lives in the global `<style>`
-block at the top of the file. The bubble is dark in both themes on purpose — it
-floats above the page, and no Streamlit variable reliably tracks the user's
-theme.
+block at the top of the file. The bubble is dark on purpose — it floats above the
+page.
+
+## Light theme only
+
+`.streamlit/config.toml` sets `[theme] base = "light"` and no `[theme.dark]`, which
+removes Streamlit's appearance toggle. Every chart hardcodes white paper and dark ink,
+so don't add a dark section without making them theme-aware first
+(`test_the_app_is_locked_to_the_light_theme`).
 
 `test_every_milestone_card_carries_its_caveats_on_hover` pins the split for the
 milestone row: every card has a hover naming its fit and its clock, and the
