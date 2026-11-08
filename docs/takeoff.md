@@ -389,7 +389,27 @@ The cards and lags are over those pairs. Headcount is not an input: China's ~10Ã
 researchers per lab (and its smaller experiment compute) are already in the measured
 innovation rate it is calibrated to, and AI labor runs on compute after automation; adding
 them would count them twice. `_tk_run_seeded` computes the US run once per rerun for Pacing
-and this section. `_cn_tk_simulate` caches the run (model digest in its key). Tests that capture
+and this section. `_cn_tk_simulate` caches the run (model digest in its key).
+
+**How the section reads**, top to bottom: a bold takeaway (`_fn_line`: the median gap to
+automated coding and ultraintelligence, and copying's share of China's ECI gain to
+end-2028); *Where each side starts today* (`_cn_tk_start_rows`), which is where internal
+models and release lags are explained, not left to hovers: each side's best release, the
+trained level the model starts from and how (the US's latest Anthropic internal model
+projected from METR's AECI and carried at the pace; China's highest candidate plus its ship
+lag), and the pace both as the model uses it and like for like on releases. That last
+column is the section's key caveat: on releases the two climb at nearly the same pace
+(+2.4 ECI/yr since 2024, +1.4 smoothed now); the model's US starts ~8 faster because its
+trained frontier counts Anthropic's internal models, which have no Chinese counterpart in
+the data. Then the cards, the chart (US releases and the trained frontier with internal
+models drawn in, and China's start as a marker with its range), and the sources table
+(all-zero rows dropped). `test_china_section_says_where_each_side_starts`.
+
+Automated coding is dated no later than ultraintelligence, on both sides (`_tk_run` caps
+`coding_at` at `eci["ultra"]`): the simulator checks the coding level on its own capability,
+the ECI path adds the early-trend floor, so a low threshold reached it first
+(`test_coding_is_never_dated_after_ultraintelligence`). Stolen weights top up China's
+*deployed* model, not its research stock, so ongoing theft keeps it level. Tests that capture
 `takeoff.simulate` keep only calls without `follower`, since China's run comes last.
 Guarded by `TestChinaTakeoff` (unit), the follower tests in `test_takeoff_model.py`, and
 `test_china_takeoff_lags_the_us_and_follows_its_settings` (integration).

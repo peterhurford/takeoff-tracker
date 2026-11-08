@@ -1719,6 +1719,34 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / China without copying")
         assert all(a > b for a, b in zip(lags(at), before))
 
+    def test_coding_is_never_dated_after_ultraintelligence(self):
+        """A model at the ultraintelligence threshold has automated coding, on
+        both sides, even with the threshold just above today's frontier."""
+        at = _fresh_app()
+        at.query_params.update(tab="takeoff", tk_ultra_eci="180")
+        at.run()
+        cards = {m.label: m.value for m in at.metric}
+
+        def month(v):
+            d = datetime.strptime(v, "%b %Y")
+            return d.year * 12 + d.month
+        assert month(cards["Full coding automation"]) <= month(cards["Ultraintelligence: ECI 180"])
+        assert month(cards["China: Automated coder"]) <= month(cards["China: Ultraintelligence"])
+
+    def test_china_section_says_where_each_side_starts(self):
+        """The starting table names the US's internal model and China's
+        unscored one, with the gap on releases and on trained models."""
+        at = self._app()
+        t = next(x.value for x in at.table if "How" in x.value.columns)
+        assert list(t[""]) == ["United States", "China", "Gap"]
+        assert "internal" in t["How"].iloc[0]
+        assert "unscored" in t["How"].iloc[1]
+        assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
+        names = [d.get("name", "") for el in at.get("plotly_chart")
+                 for d in json.loads(el.proto.spec)["data"]]
+        assert "US trained (internal models projected)" in names
+        assert "China today (trained, the model's start)" in names
+
     def test_gap_cards_never_show_a_negative_span(self):
         """A scenario whose ECI reaches ultraintelligence before its RSI date
         reads 0 on the gap cards, never a negative interval edge."""
@@ -3171,6 +3199,55 @@ class TestPacingTab:
                 for _, r in t.iterrows()]
         assert all(g > 0 for g in gaps)
         assert all(abs(g - b) <= 4 for g, b in zip(gaps, behind)), (gaps, behind)
+
+    def test_china_already_level_reads_so_not_a_negative_span(self):
+        """With an unscored Chinese model assumed above the US, or the US's
+        weights stolen every month, China is level before the pause: the cards
+        say so instead of dating a crossing in the past or a negative span, and
+        the breakdown, which times a catch-up, is left out."""
+        for params in (dict(tk_cn_kimi_lo="180", tk_cn_kimi_hi="180"),
+                       dict(pc_theft_weights="true", pc_wt_mode="Ongoing")):
+            at = _fresh_app()
+            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.run()
+            _assert_no_error(at, f"Pacing / China already level {params}")
+            cards = {m.label: m.value for m in at.metric}
+            assert cards["China reaches paused US frontier"] == "Before the pause", cards
+            assert cards["Time for China to surpass"] == "Already level"
+            assert not [t for t in at.table if "Source" in t.value.columns]
+
+    def test_malformed_china_settings_in_a_shared_link_are_held_in_range(self):
+        """Pacing reads Takeoff's China settings without drawing their inputs,
+        so a shared link's out-of-range or garbled value is clamped there."""
+        for params in (dict(tk_cn_theft="500", tk_cn_distill="-50"),
+                       dict(tk_cn_kimi_lo="abc", tk_cn_heldback="nan"),
+                       dict(tk_cn_compute="Bogus", tk_cn_unscored="false")):
+            at = _fresh_app()
+            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.run()
+            _assert_no_error(at, f"Pacing / malformed China settings {params}")
+            assert any("China" in m.label for m in at.metric)
+
+    def test_a_pause_after_the_horizon_says_so(self):
+        at = _fresh_app()
+        at.query_params.update(tab="pacing", pc_pace="0", pc_end_year="2027",
+                               pc_pause_mo="100")
+        at.run()
+        _assert_no_error(at, "Pacing / pause after the horizon")
+        cards = {m.label: m.value for m in at.metric}
+        assert cards["Time for China to surpass"] == "Pause after 2027"
+
+    def test_rates_at_a_pause_today_are_todays(self):
+        """China's channels run back before today at today's rates, so a pause
+        today reads real rates, not zero."""
+        at = _fresh_app()
+        at.query_params.update(tab="pacing", pc_pace="0", pc_pause_mo="0")
+        at.run()
+        why = next(t.value for t in at.table if "Source" in t.value.columns)
+        row = why[why["Source"].str.startswith("Innovation")].iloc[0]
+        assert float(row["China ECI/yr at US pause"]) > 1.0
+        dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
+        assert float(dist["China ECI/yr at US pause"]) > 1.0
 
     def test_milestone_table_follows_the_takeoff_threshold(self):
         """Takeoff's ultraintelligence threshold sets the Pacing milestone's ECI

@@ -19374,13 +19374,18 @@ def _pc_cn_on_grid(cn, draw, grid, t_day, cn_ship, anchor_eci, offset=None, ramp
     u = np.broadcast_to(u, (len(draw), u.shape[1]))
     rows = np.asarray(draw)
 
+    # Each channel's rate over its first half year, to run it back before
+    # today: a rate read at a pause today then reads today's, not nothing.
+    k_half = max(int(np.searchsorted(years, 0.5)), 1)
+
     def at(paths, back=None):
         x = np.clip(u, 0.0, years[-1]) / (years[1] - years[0])
         i = np.minimum(x.astype(int), len(years) - 2)
         f = x - i
         v = paths[rows[:, None], i] * (1 - f) + paths[rows[:, None], i + 1] * f
         if back is None:
-            return np.where(u < 0, 0.0, v)
+            back = (paths[:, k_half] - paths[:, 0]) / years[k_half]
+            return np.where(u < 0, back[rows, None] * u, v)
         return np.where(u < 0, paths[rows, :1] + back[rows, None] * u, v)
     traj = at(cn["paths"], cn["slope"])
     if offset is not None:
@@ -19398,14 +19403,16 @@ def _pc_cn_on_grid(cn, draw, grid, t_day, cn_ship, anchor_eci, offset=None, ramp
     own = at(src["Own research"])
     # Own research at today's rate is innovation; what AI adds past it is the
     # speed-up (a shortfall while models wait to deploy falls to `level`).
-    base = np.maximum(u, 0.0) * cn["inputs"]["innovation"][rows, None]
+    base = u * cn["inputs"]["innovation"][rows, None]
     chan = {"compute": at(src["Compute"]), "innovation": base,
-            "speedup": np.maximum(own - base, 0.0),
+            "speedup": np.where(u < 0, 0.0, np.maximum(own - base, 0.0)),
             "diffusion": at(src["US software leaked"]) + at(src["US software stolen"]),
             "distillation": at(src["Distillation"]), "theft": at(src["Weights stolen"])}
     if domestic is not None:
-        chan["compute_domestic"] = (
-            chan["compute"] * np.clip(at(np.asarray(domestic[1], dtype=float)), 0.0, 1.0))
+        share = np.asarray(domestic[1], dtype=float)
+        # Before today the share holds at today's.
+        chan["compute_domestic"] = chan["compute"] * np.clip(
+            at(share, back=np.zeros(len(share))), 0.0, 1.0)
     chan["level"] = traj - anchor_eci - sum(v for k, v in chan.items()
                                             if k != "compute_domestic")
     return traj, chan
@@ -19526,7 +19533,12 @@ def _pc_cn_takeoff_paths(today, tk, *, n_s, draw, t_day, cn_ship, anchor_eci, cn
     traj_free, _ = _pc_cn_on_grid(free, draw, grid, t_day, cn_ship, anchor_eci, offset, ramp)
     if theft_weights is None:
         chan.pop("theft")
-    crossed = _pc_cross_years(traj, grid, us_path_cn(grid)[0])
+    # A crossing can only happen from today on: before it China's path is its
+    # level today run back, and with an unscored model assumed above the US's
+    # it would otherwise "cross" on dates that already passed.
+    k0 = min(int(np.searchsorted(grid, t_day - 1e-9)), len(grid) - 1)
+    crossed = _pc_cross_years(traj[:, k0:], grid[k0:] - grid[k0],
+                              us_path_cn(grid)[0][:, k0:]) + grid[k0]
     return crossed, grid, traj, traj_free, chan
 
 
@@ -20659,6 +20671,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  + ("s" if len(pace_wins) > 1 else "") if pace_wins else "")
               + ". ")
     st.session_state.pop("_pc_surpass_mo", None)
+    _ahead = 0.0
     if crossed:
         d10, d50, d90 = (_pdate(q) for q in (10, 50, 90))
         # Milestone offsets came from the top of the function; the pause is
@@ -20673,6 +20686,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # uncertainties propagate: China's release lag nets out.
         _floor = np.maximum(t_pause_s * 365.25, (today - anchor_d).days)
         _delta_mo = ((yr_all * 365.25 - _floor) - cn_lag_d) / 30.44
+        # A sample already level before the pacing starts has nothing left to
+        # surpass: 0, not a negative span.
+        _ahead = float(np.mean(_delta_mo <= 0))
+        _delta_mo = np.maximum(_delta_mo, 0.0)
         s10, s50, s90 = (float(np.percentile(_delta_mo, p))
                          for p in (10, 50, 90))
         # Unrounded, for tests: the card reads to a tenth of a year.
@@ -20687,6 +20704,19 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              f"{_pc_span(s10)} – "
              + (_pc_span(s90) if np.isfinite(s90) else _past) + " (80%)",
              _method)]
+        if _ahead >= 0.5:
+            # China's trained frontier is already level with the US's when the
+            # pacing starts (an unscored model assumed high, a late pause):
+            # say so rather than date a catch-up that does not happen.
+            _cards = [
+                (_card1, f"Before the {_start}",
+                 f"{_ahead:.0%} of samples level by the {_start}",
+                 _setup + "China's trained frontier is already level with the US's "
+                 f"by the {_start} in most samples, so there is no catch-up to date: "
+                 "check China's level today under Takeoff's *China's takeoff* "
+                 "settings. " + _clock),
+                ("Time for China to surpass", "Already level",
+                 f"{_ahead:.0%} of samples", _method)]
     else:
         # Under half the samples cross inside the window: say so in the
         # cards themselves.
@@ -20698,6 +20728,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              f"by the end of {_yr_end}. " + _clock),
             ("Time for China to surpass", f"> {_pc_span(_left, 0)}",
              "pace the US harder or widen Project through", _method)]
+        if _left <= 0:
+            # The pacing starts after the projection ends: nothing to time.
+            _cards[1] = ("Time for China to surpass", f"{_start.title()} after {_yr_end}",
+                         "move the date earlier or widen Project through", _method)
     _run_note = None
     if crossed and cn_run_mo != us_run_mo:
         _both = np.isfinite(years) & np.isfinite(years_base)
@@ -21000,6 +21034,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
         text=[_hover(d, s, n) + _trend_note(_cn_obs) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
+    _cfg = _cn_tk_settings()
+    if _cnp is not None and _cfg["unscored"]:
+        # China's takeoff starts above its scored record when it counts an
+        # unscored model: draw that assumption where it applies.
+        _lo, _hi = sorted(_cfg["kimi"])
+        fig.add_trace(go.Scatter(
+            x=[_CN_TK_UNSCORED[1] + off_cn], y=[0.5 * (_lo + _hi)], mode='markers',
+            marker=dict(symbol='diamond-open', size=9, color='#D62728', line=dict(width=2)),
+            error_y=dict(type='data', array=[0.5 * (_hi - _lo)], color='#D62728'),
+            name='China, unscored (assumed)',
+            hovertemplate=f"{_CN_TK_UNSCORED[0]}: no ECI score yet, assumed "
+                          f"{_lo:g}\u2013{_hi:g} (Takeoff's China settings)<extra></extra>"))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
     # One 80% band, as the US gets: a nested 50% band read as a second cone.
@@ -21089,7 +21135,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    range=_y_rng,
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     _rank = {'US (actual)': 1, 'US, projected': 2, 'US, no pacing': 3,
-             'US, 80% range': 4, 'China (actual)': 5,
+             'US, 80% range': 4, 'China (actual)': 5, 'China, unscored (assumed)': 5.5,
              'China, projected': 6, 'China if the US kept going': 7,
              'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
              '80% crossing window': 11, 'Median crossing': 12}
@@ -21105,6 +21151,16 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     for _tr in fig.data:
         if _tr.name != ' ':
             _tr.legendrank = _rank.get(_tr.name, 99) * 10
+    _fn_caption(
+        "Both lines are each side's best trained model, not its best release.",
+        ("best trained model",
+         "The US's starts from Anthropic's latest internal model, its ECI projected from "
+         f"METR's AECI chart, carried to today; its releases trail by about "
+         f"{us_lag_d:.0f} days. China's starts from its releases plus {cn_lag_d:.0f} "
+         "days" + (", or an unscored or held-back model where higher (Takeoff, China's "
+                   "takeoff settings)" if _cnp is not None else "")
+         + ". The *actual* points are releases, shifted to the sidebar's "
+           "*Date points at*."))
     st.plotly_chart(_tf(fig), width="stretch")
 
     # Milestone dates for both sides, on the chart's own dating (the US's
@@ -21287,7 +21343,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _notes.append(f"Every row is scaled by the pace band "
                   f"(×{pace_lo:.2f}–{pace_hi:.2f}), the reality check "
                   "against China's own observed frontier slope.")
-    if 'level' in chan:
+    if 'level' in chan and _cnp is not None:
+        _notes.append(
+            f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} ECI of "
+            "release-step scatter, and starts from China's level today as Takeoff's "
+            "section 5 draws it (the scored frontier or an unscored or held-back "
+            "model, whichever is highest), which closes no gap on average and is "
+            "left out of the rows, as are the months models wait to deploy.")
+    elif 'level' in chan:
         _notes.append(
             f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} "
             "ECI of release-step scatter"
@@ -21297,7 +21360,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             + ", which closes no gap on average and is left out of the rows.")
     # The compute ratios and mix stand without a crossing: they then run to
     # *Project through* (`test_compute_ratios_show_without_a_crossing`).
-    if crossed:
+    if crossed and _ahead < 0.5:
         _pc_render_why(
             chan, grid0, traj0, target0, years, years_base,
             cn_gain=cn_gain, cn_extra=cn_extra, cn_run_mo=cn_run_mo,
@@ -24237,6 +24300,12 @@ def _tk_run(today, progress=None):
     result["eci_today"] = eci_today
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params, ultra)
+    # A model at the ultraintelligence threshold has automated coding. The
+    # simulator checks that on its own capability; the ECI path adds the
+    # early-trend floor, so with a low threshold the path can reach it first:
+    # date coding no later than that (RSI, which needs coding, is unmoved).
+    result["coding_at"] = np.minimum(np.asarray(result["coding_at"], dtype=float),
+                                     eci["ultra"])
     return {"params": params, "result": result, "eci": eci, "eci_base": eci_base,
             "experiment_starts": experiment_starts, "pace_today": pace_today,
             "pace_yield": pace_yield, "software_pace": software_pace}
@@ -24400,12 +24469,32 @@ def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, 
                                                      "software_realized_log", "follow_eci")}}
 
 
+# The China settings' accepted ranges, shared by the sidebar inputs and
+# `_cn_tk_settings`: the Pacing tab reads them without drawing those inputs,
+# so a value off a shared URL must be checked here too.
+_CN_TK_RANGES = {"tk_cn_kimi_lo": (140.0, 180.0), "tk_cn_kimi_hi": (140.0, 180.0),
+                 "tk_cn_heldback": (0.0, 10.0), "tk_cn_distill": (0.0, 300.0),
+                 "tk_cn_leak": (0.0, 300.0), "tk_cn_theft": (0.0, 100.0)}
+
+
 def _cn_tk_settings():
-    """The section's settings from session state (defaults where unset)."""
+    """The section's settings from session state: defaults where unset, and
+    where a value is malformed or outside `_CN_TK_RANGES`, held to it."""
     def ss(key):
-        return st.session_state.get(key, _TK_DEFAULTS[key])
+        value = st.session_state.get(key, _TK_DEFAULTS[key])
+        if key in _CN_TK_RANGES:
+            lo, hi = _CN_TK_RANGES[key]
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return _TK_DEFAULTS[key]
+            return min(max(value, lo), hi) if np.isfinite(value) else _TK_DEFAULTS[key]
+        return value
     compute = ss("tk_cn_compute")
-    return {"unscored": bool(ss("tk_cn_unscored")),
+    unscored = ss("tk_cn_unscored")
+    if isinstance(unscored, str):
+        unscored = unscored.lower() not in ("false", "0", "")
+    return {"unscored": bool(unscored),
             "kimi": (float(ss("tk_cn_kimi_lo")), float(ss("tk_cn_kimi_hi"))),
             "held_back": float(ss("tk_cn_heldback")),
             "compute": compute if compute in _CN_TK_COMPUTE_OPTIONS
@@ -24596,7 +24685,9 @@ def _cn_tk_run(today, run=None, pacing=None):
             "us_trained": trained[:, :len(years)],
             "rows": keep, "cycle_months": params["training_months"] + params["validation_months"],
             "level": level, "slope": slope, "source": source, "sources": sources, "cal": cal,
-            "when": {"automated coder": np.asarray(out["coding_at"], float),
+            # Coding no later than the ultraintelligence threshold, as for the US.
+            "when": {"automated coder": np.minimum(np.asarray(out["coding_at"], float),
+                                                   _tk_first_reach(paths, years, ultra)),
                      "RSI": np.asarray(out["events"]["RSI"], float),
                      "ultraintelligence": _tk_first_reach(paths, years, ultra)},
             "us_when": {"automated coder": ca,
@@ -24609,9 +24700,11 @@ def _cn_tk_run(today, run=None, pacing=None):
                        "w": (w_c, w_s), "settings": cfg}}
 
 
-def _cn_tk_fig(cn, today, view_end, ultra):
+def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
     """China's projected ECI against the US's (median, middle 80% each), with
-    China's measured frontier since 2024 and the unscored model's range."""
+    each side's measured frontier since 2024 (the US's released and, from
+    `eci`, trained with Anthropic's internal models) and the unscored model's
+    range."""
     years = cn["years"]
     keep = years <= (view_end - today).days / 365.25 + 1 / 12
     x = [today + timedelta(days=float(y) * 365.25) for y in years[keep]]
@@ -24628,10 +24721,26 @@ def _cn_tk_fig(cn, today, view_end, ultra):
             x=x, y=q[1], mode="lines", name=f"{name}: projected (median, trained)",
             line=dict(color=color, width=2.5),
             hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>" + name + ", median</extra>"))
+    if eci is not None:
+        us_rel = [m for m in eci["frontier"] if m['date'] >= datetime(2024, 1, 1)]
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in us_rel], y=[m['eci_score'] for m in us_rel],
+            mode="lines+markers", name="Measured: US releases",
+            line=dict(color="#333", width=1.2, shape="hv"), marker=dict(color="#333", size=5),
+            text=[m['name'] for m in us_rel],
+            hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f} (released)<extra></extra>"))
+        tr = [m for m in eci.get("trained", []) if m['date'] >= datetime(2024, 1, 1)]
+        if tr:
+            fig.add_trace(go.Scatter(
+                x=[m['date'] for m in tr] + [today], y=[m['eci_score'] for m in tr] + [eci["now"]],
+                mode="lines", name="US trained (internal models projected)",
+                line=dict(color="#d8774f", width=1.2, shape="hv", dash="dot"),
+                text=[m['name'] for m in tr] + ["today (carried on pace)"],
+                hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra></extra>"))
     past = [r for r in cn["cal"]["cn_fr"] if r[0] >= datetime(2024, 1, 1)]
     fig.add_trace(go.Scatter(
         x=[r[0] for r in past], y=[r[1] for r in past], mode="lines+markers",
-        name="Measured: China frontier", line=dict(color="#7d5a0b", width=1.5, shape="hv"),
+        name="Measured: China releases", line=dict(color="#7d5a0b", width=1.5, shape="hv"),
         marker=dict(color="#7d5a0b", size=6), text=[r[2] for r in past],
         hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
     cfg = cn["inputs"]["settings"]
@@ -24644,6 +24753,14 @@ def _cn_tk_fig(cn, today, view_end, ultra):
             error_y=dict(type="data", array=[0.5 * (hi - lo)], color="#7d5a0b"),
             hovertemplate=f"{_CN_TK_UNSCORED[0]}: no ECI score; assumed {lo:g}–{hi:g}"
                           "<extra></extra>"))
+    lvl = np.quantile(cn["level"], [.1, .5, .9])
+    fig.add_trace(go.Scatter(
+        x=[today], y=[lvl[1]], mode="markers", name="China today (trained, the model's start)",
+        marker=dict(color=_CN_TK_COLOR, symbol="diamond", size=10),
+        error_y=dict(type="data", symmetric=False, array=[lvl[2] - lvl[1]],
+                     arrayminus=[lvl[1] - lvl[0]], color=_CN_TK_COLOR),
+        hovertemplate=f"China's trained frontier today: {lvl[1]:.1f} "
+                      f"(80% {lvl[0]:.1f}–{lvl[2]:.1f})<extra></extra>"))
     fig.add_vline(x=today, line_color="#555", line_width=1.5)
     fig.add_hline(y=ultra, line_dash="dash", line_color="#c0392b", line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {ultra:g}",
@@ -24670,7 +24787,7 @@ def _cn_tk_source_rows(cn, today, horizon_year):
             cols.append((f"By end-{year}", min(int(np.searchsorted(years, t)), len(years) - 1)))
     rows = []
     for name, values in cn["sources"].items():
-        if name == "US software stolen" and not cn["inputs"]["theft"]:
+        if name in ("US software stolen", "Weights stolen") and not np.any(values > 1e-9):
             continue
         if name == "Early trend floor" and all(
                 abs(np.median(values[:, k])) < 0.05 for _l, k in cols):
@@ -24681,6 +24798,77 @@ def _cn_tk_source_rows(cn, today, horizon_year):
                  **{label: f"{np.median(cn['paths'][:, k] - cn['level']):+.1f}"
                     for label, k in cols}})
     return rows
+
+
+def _cn_tk_start_rows(cn, eci, today):
+    """The *Where each side starts* table: per side, its best released model,
+    the trained level the takeoff model starts from today, how one becomes
+    the other, and the pace it climbs at. Every number is the live one."""
+    cal, cfg = cn["cal"], cn["inputs"]["settings"]
+    us_rel = eci["frontier"][-1]
+    trained = eci.get("trained") or []
+    last_tr = trained[-1] if trained else None
+    internal = {r['model'] for r in _metr_on_eci() if r['kind'] == 'internal'}
+    us_how = (f"Anthropic's internal {last_tr['name']} ({last_tr['date']:%b %d}), projected "
+              f"onto Epoch's scale from METR's AECI ({last_tr['eci_score']:.1f}), carried "
+              f"to today at the pace" if last_tr and last_tr['name'] in internal else
+              f"The latest release plus {_ship_lag('us'):.0f} days of climb, the US's "
+              "trained-to-release lag")
+    lvl = np.quantile(cn["level"], [.1, .5, .9])
+    d, mid, half, name = cal["anchor"]
+    parts = [f"the scored frontier's anchor ({mid:.1f} ± {half:.1f})"]
+    if cfg["unscored"]:
+        parts.append(f"{_CN_TK_UNSCORED[0]} (unscored, assumed {min(cfg['kimi']):g}–"
+                     f"{max(cfg['kimi']):g})")
+        if cal["held_back"] is not None:
+            parts.append(f"{_CN_TK_HELD_BACK_ORG}'s held-back best (its "
+                         f"{cal['held_back'][1]:.1f} + up to {cfg['held_back']:g})")
+    cn_how = ("Highest of " + ", ".join(parts) + f", each carried to today on China's "
+              f"slope, plus its {_ship_lag('cn'):.0f}-day trained-to-release lag")
+    sl = np.quantile(cn["slope"], [.1, .5, .9])
+    # Like with like: each side's releases since the window opened, and the
+    # smoothed climb at its latest release, beside the pace the model uses.
+    def recent(fr):
+        try:
+            return float(_metr_local_slope([r[0] for r in fr], [r[1] for r in fr],
+                                           [fr[-1][0]])[0][0])
+        except Exception:
+            return None
+    full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
+    us_fr = _cc_country_frontier(full, 'United States of America')
+    us_now_rel, cn_now_rel = recent(us_fr), recent(_cc_country_frontier(full, 'China'))
+    fmt = lambda v: f"{v:.1f}" if v is not None else "—"
+    return [
+        {"": "United States",
+         "Best released": f"{us_rel['eci_score']:.1f}, {us_rel.get('name', '')} "
+                          f"({us_rel['date']:%b %d})",
+         "Where the model starts (trained, today)": f"{eci['now']:.1f}",
+         "How": us_how,
+         "Pace (ECI/yr)": f"Model: {eci['ppy']:g}, the trained frontier's smoothed climb "
+                          f"(internal models included). Releases: {cal['us_obs']:.1f} since "
+                          f"{_CC_CALIB_SINCE:%b %Y}, {fmt(us_now_rel)} smoothed now"},
+        {"": "China",
+         "Best released": f"{cal['cn_fr'][-1][1]:.1f}, {cal['cn_fr'][-1][2]} "
+                          f"({cal['cn_fr'][-1][0]:%b %d})",
+         "Where the model starts (trained, today)": f"{lvl[1]:.1f} ({lvl[0]:.1f}–{lvl[2]:.1f})",
+         "How": cn_how,
+         "Pace (ECI/yr)": f"Model: {sl[1]:.1f}, releases since {_CC_CALIB_SINCE:%b %Y} "
+                          f"(higher with an unscored model counted), "
+                          f"{cal['ch']['innovation']:.1f} of it China's own research. "
+                          f"Releases: {cal['ch']['obs']:.1f} since {_CC_CALIB_SINCE:%b %Y}, "
+                          f"{fmt(cn_now_rel)} smoothed now"},
+        {"": "Gap",
+         "Best released": f"{us_rel['eci_score'] - cal['cn_fr'][-1][1]:.1f} points",
+         "Where the model starts (trained, today)": f"{eci['now'] - lvl[1]:.1f} points",
+         "How": "The trained gap is wider: the US's internal models run months ahead of "
+                "its releases, China's labs ship within weeks",
+         "Pace (ECI/yr)": f"Releases, like for like: {cal['us_obs'] - cal['ch']['obs']:+.1f} "
+                          "for the US since the window opened"
+                          + (f", {us_now_rel - cn_now_rel:+.1f} now" if us_now_rel is not None
+                             and cn_now_rel is not None else "")
+                          + f". The models' starting paces differ by {eci['ppy'] - sl[1]:+.1f}, "
+                            "mostly the US's internal models"},
+    ]
 
 
 def _tk_render_china(run, today, view_end, end_date, horizon):
@@ -24748,6 +24936,38 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
          "the Pacing tab's leak uses too), so a US speeding up leaks faster"
          + (f"; {100 * inp['theft']:.0f}% more is stolen as it happens" if inp["theft"]
             else "; software theft is off") + ". Weight theft is not modeled."))
+    # The takeaway first, in words: how far behind, and what carries China.
+    gaps = {}
+    for key in ("automated coder", "RSI", "ultraintelligence"):
+        g, r = _tk_gap(cn["us_when"][key], cn["when"][key], horizon)
+        gaps[key] = takeoff.quantile(g[r], 0.5) if r.any() else np.inf
+    k27 = min(int(np.searchsorted(cn["years"], (datetime(2028, 12, 31) - today).days
+                                  / 365.25)), len(cn["years"]) - 1)
+    copied = sum(np.median(cn["sources"][k][:, k27]) for k in
+                 ("Distillation", "US software leaked", "US software stolen", "Weights stolen"))
+    gained = float(np.median(cn["paths"][:, k27] - cn["level"]))
+    _fn_line(
+        f"**China trails the US by about {_tk_span(gaps['automated coder'], end_date)} "
+        f"to automated coding and {_tk_span(gaps['ultraintelligence'], end_date)} to "
+        f"ultraintelligence**, and copying carries it: about "
+        f"{100 * min(copied / max(gained, 1e-9), 1):.0f}% of its gains to end-2028 come "
+        "from US models and software.",
+        ("trails the US", "Median of each scenario's own gap to its US twin; the cards "
+                          "below give the ranges."),
+        ("copying carries it", "Distillation plus US software leaked or stolen, over "
+                               "China's total ECI gain in the median scenario (medians "
+                               "need not add up). Without either, China's own takeoff "
+                               "lags by years: set both to 0 below."))
+    st.markdown("**Where each side starts today**")
+    st.table(_cn_tk_start_rows(cn, run["eci"], today))
+    _fn_caption(
+        "Every date on this tab compares trained models, not releases.",
+        ("trained models",
+         "A lab's best model exists before it ships. The US's trained frontier includes "
+         "Anthropic's internal models, whose ECI is projected from METR's AECI chart "
+         "(Takeoff's METR section); China's adds its trained-to-release lag (sidebar) "
+         "to its releases, and any unscored or held-back models above. Distillation "
+         "learns from what the US has released, a lag behind its trained frontier."))
     cols = st.columns(3)
     labels = (("automated coder", "Automated coder"), ("RSI", "RSI"),
               ("ultraintelligence", "Ultraintelligence"))
@@ -24766,7 +24986,8 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
             col.caption(f"Behind the US: {_tk_span(takeoff.quantile(g, 0.5), end_date)} "
                         f"(80%: {_tk_span(takeoff.quantile(g, 0.1), end_date)} – "
                         f"{_tk_span(takeoff.quantile(g, 0.9), end_date)})")
-    st.plotly_chart(_tf(_cn_tk_fig(cn, today, view_end, run["eci"]["ultra_level"])),
+    st.plotly_chart(_tf(_cn_tk_fig(cn, today, view_end, run["eci"]["ultra_level"],
+                                   run["eci"])),
                     width="stretch")
     _fn_caption(
         "Where China's ECI gains come from, in the median scenario.",
@@ -24786,12 +25007,12 @@ def _tk_cn_sidebar(number):
                          "ECI score yet) at a score drawn from the range below, and "
                          f"{_CN_TK_HELD_BACK_ORG}'s best, which its Flash releases are "
                          "deliberately not. Off: the scored frontier alone.")
-        number(f"{_CN_TK_UNSCORED[0]} ECI, low", "cn_kimi_lo", 140.0, 180.0, 0.5,
+        number(f"{_CN_TK_UNSCORED[0]} ECI, low", "cn_kimi_lo", *_CN_TK_RANGES["tk_cn_kimi_lo"], 0.5,
                "Low end of the assumed score, drawn uniformly.")
-        number(f"{_CN_TK_UNSCORED[0]} ECI, high", "cn_kimi_hi", 140.0, 180.0, 0.5,
+        number(f"{_CN_TK_UNSCORED[0]} ECI, high", "cn_kimi_hi", *_CN_TK_RANGES["tk_cn_kimi_hi"], 0.5,
                "High end of the assumed score.")
         number(f"{_CN_TK_HELD_BACK_ORG}'s best over its top release (ECI, up to)",
-               "cn_heldback", 0.0, 10.0, 0.5,
+               "cn_heldback", *_CN_TK_RANGES["tk_cn_heldback"], 0.5,
                "Drawn uniformly from 0 to this. V4 Pro led V4 Flash by 2.9 points; the "
                "0813 Pro the 0731 Flash by 0.9.")
         st.selectbox("China's training-compute growth", list(_CN_TK_COMPUTE_OPTIONS),
@@ -24800,14 +25021,14 @@ def _tk_cn_sidebar(number):
                           "the export-control band (×1.4–2.0/yr) or the band with "
                           "China's rented sites abroad (×1.6–2.2/yr). Experiments "
                           "use China's whole installed compute either way.")
-        number("Distillation (% of today's measured rate)", "cn_distill", 0.0, 300.0, 10.0,
+        number("Distillation (% of today's measured rate)", "cn_distill", *_CN_TK_RANGES["tk_cn_distill"], 10.0,
                "Scales the share of the gap to the US's released frontier China closes a "
                "year. 0 stops distillation.")
-        number("US software leaking (% of the measured share)", "cn_leak", 0.0, 300.0, 10.0,
+        number("US software leaking (% of the measured share)", "cn_leak", *_CN_TK_RANGES["tk_cn_leak"], 10.0,
                "Scales the share of US algorithmic progress that reaches China a year late "
                "through papers, people and vendors: China's measured diffusion over the "
                "US's algorithmic progress on the same window. Pacing uses the same share.")
-        number("US software stolen (% of US algorithmic progress)", "cn_theft", 0.0, 100.0, 5.0,
+        number("US software stolen (% of US algorithmic progress)", "cn_theft", *_CN_TK_RANGES["tk_cn_theft"], 5.0,
                "Copied as it happens, on top of the leak. Weight theft is not modeled.")
 
 

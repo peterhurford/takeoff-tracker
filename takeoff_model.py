@@ -1221,7 +1221,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             if fol["weight_theft"] is not None \
                     and np.all(end >= fol["weight_theft"][0] - 1e-12) \
                     and (fol["weight_theft"][1] or not weights_taken):
-                flows["weights"] = np.maximum(fol["trained"](end) - standing
+                # Stolen weights are a model China deploys at once: top its
+                # deployed model (not its undeployed research) up to the
+                # leader's trained one.
+                deployed_eci = fol["eci_now"] + fol["w"][0] * now[0] + fol["w"][1] * (
+                    now[1] + follow_log)
+                flows["weights"] = np.maximum(fol["trained"](end) - deployed_eci
                                               - sum(flows.values()), 0)
                 weights_taken = True
             for key, flow in flows.items():

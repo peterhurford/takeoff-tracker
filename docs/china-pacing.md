@@ -314,7 +314,15 @@ crossing itself distillation and the leak read *Dried up* (tests read their aver
 `test_the_leak_follows_the_us_ai_speed_up`, `test_methods_toggle_keeps_diffusion_running`);
 and leaked or stolen ideas close on the US's *trained* frontier, so a release freeze stops
 distillation but not them. With no lever moved the paced run is Takeoff's own (cached); with
-one it reruns to the panel's horizon only (~5 s at production samples). Under the chart a table dates automated coder, RSI and
+one it reruns to the panel's horizon only (~5 s at production samples). Crossings count from
+today on: before today a path is China's level today run back, which with an unscored model
+assumed above the US would "cross" on past dates. When half the samples are level before the
+pacing starts the cards read *Before the pause* / *Already level* and the breakdown is left
+out (`test_china_already_level_reads_so_not_a_negative_span`); a pause after *Project
+through* reads *Pause after <year>* (`test_a_pause_after_the_horizon_says_so`). Channels run
+back before today at their first half-year's rates, so rates read at a pause today are
+today's (`test_rates_at_a_pause_today_are_todays`). The chart's caption says both lines are
+best *trained* models, and China's unscored-model assumption is drawn as a marker. Under the chart a table dates automated coder, RSI and
 ultraintelligence (Takeoff's `tk_ultra_eci`, via `_pc_takeoff_us`'s `ultra`) for both sides from `ms_years`, the same per-sample first
 crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`, `test_milestone_table_follows_the_takeoff_threshold`); the chart's top sits `_PC_ECI_VIEW_PAST_ULTRA` above that level
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
