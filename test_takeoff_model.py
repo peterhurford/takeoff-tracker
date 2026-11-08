@@ -849,3 +849,166 @@ def test_a_model_at_the_coding_capability_has_automated_coding():
     assert np.isfinite(early["coding_at"][0])
     assert early["events"]["RSI"][0] >= early["coding_at"][0]
     assert np.isinf(early["onset"][0])           # the inherited date is kept as given
+
+
+# ── Followers: a country behind the frontier (`simulate(follower=...)`) ──
+
+def _leader_and_follower(n=40, years=6, gap=14.0, **follower):
+    """A leader run and the follower dict a country `gap` ECI behind it
+    needs, at the app's ECI weights (2.7 / 13.5 per unit log compute /
+    software, ~22 ECI a year today)."""
+    params = dict(years=years, seed=5)
+    lead = tk.simulate(params, n=n)
+    wp = lead["workflow_progress"]
+    grid = wp["years"]
+    wc, ws, now = 2.7, 13.5, 176.0
+    eci = now + wc * (wp["capability_log"] - wp["software_realized_log"]) \
+        + ws * wp["software_realized_log"]
+    soft = ws * wp["software_realized_log"]
+    fol = dict(years=grid, eci=np.maximum.accumulate(eci, axis=1),
+               capability=wp["capability_log"], rate=lead["capability_rate"], ppy=22.0,
+               teacher=eci, software_eci=soft, software_ppy=19.0,
+               eci_now=np.full(n, now - gap), weights=(4.8, ws),
+               distill=0.6, leak=0.2, theft=0.0, absorb=1.0)
+    fol.update(follower)
+    return params, lead, eci, fol
+
+
+def _follow(params, lead, eci, fol, n=40, **kw):
+    coder = np.where(np.isfinite(lead["coding_at"]),
+                     np.array([np.interp(c, fol["years"], row) if np.isfinite(c) else 250.0
+                               for c, row in zip(lead["coding_at"], eci)]), 250.0)
+    args = dict(onset_years=np.full(n, np.inf), software_scale=np.full(n, 0.15),
+                coding_capability=np.maximum(coder - fol["eci_now"], 0.1),
+                coding_weights=fol["weights"], follower=fol)
+    args.update(kw)
+    return tk.simulate(params, n=n, **args)
+
+
+def test_defaults_are_unchanged_by_the_follower_inputs():
+    """Experiment compute growing with the frontier on its own history, and a
+    software scale of 1, reproduce the plain run."""
+    params = dict(years=4, seed=2)
+    plain = tk.simulate(params, n=30)
+    rate = plain["compute"]["rate"]
+    same = tk.simulate(params, n=30, compute_rates=rate, experiment_rates=rate,
+                       software_scale=np.ones(30))
+    again = tk.simulate(params, n=30, compute_rates=rate)
+    np.testing.assert_allclose(same["workflow_progress"]["capability_log"],
+                               again["workflow_progress"]["capability_log"], rtol=1e-9)
+    assert plain["workflow_progress"]["follow_eci"] == {}
+
+
+def test_workflow_hours_run_back_up_below_todays_capability():
+    """Behind today's capability, hours rise at each stage's halving time, to
+    at most all of them; at or past it they are the forward curve's."""
+    starts = np.array([[0.6, 0.4, 0.2]])
+    halves = np.array([[12.0, 6.0, 3.0]])
+    back = tk.workflow_state(np.array([-0.25]), 1.0, starts, halves, 0.0, backward=True)
+    np.testing.assert_allclose(back, [[0.6 * 2 ** 0.25, 0.4 * 2 ** 0.5, 0.4]])
+    far = tk.workflow_state(np.array([-1.0]), 1.0, starts, halves, 0.0, backward=True)
+    np.testing.assert_allclose(far, [[1.0, 1.0, 1.0]])
+    for cap in (0.0, 0.7):
+        np.testing.assert_allclose(
+            tk.workflow_state(np.array([cap]), 1.0, starts, halves, 0.0, backward=True),
+            tk.workflow_state(np.array([cap]), 1.0, starts, halves, 0.0))
+
+
+def test_a_follower_at_the_leaders_level_starts_with_its_hours():
+    """Hours are read by ECI: a follower level with the leader today starts
+    with the leader's hours; one behind starts with more."""
+    params, lead, eci, fol = _leader_and_follower(gap=0.0)
+    level = _follow(params, lead, eci, fol)
+    np.testing.assert_allclose(level["outcomes"]["Today"]["human_direction"],
+                               lead["outcomes"]["Today"]["human_direction"], rtol=1e-6)
+    params, lead, eci, fol = _leader_and_follower(gap=14.0)
+    behind = _follow(params, lead, eci, fol)
+    assert np.all(behind["outcomes"]["Today"]["human_experiments"]
+                  > lead["outcomes"]["Today"]["human_experiments"])
+
+
+def test_follower_inflow_tracks_its_channels_and_never_passes_the_leader():
+    """Each channel's cumulative ECI is kept; with no channels there is none;
+    copying never closes more than the gap to the leader's frontier (its own
+    compute and research still can carry it past)."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    none = _follow(params, lead, eci, fol)
+    assert all(np.all(v == 0) for v in none["workflow_progress"]["follow_eci"].values())
+    params, lead, eci, fol = _leader_and_follower(distill=50.0, leak=1.0, theft=1.0)
+    fast = _follow(params, lead, eci, fol, software_scale=np.full(40, 1e-3))
+    wp = fast["workflow_progress"]
+    flows = wp["follow_eci"]
+    assert set(flows) == set(tk.FOLLOW_CHANNELS)
+    assert all(np.all(np.diff(v, axis=1) >= -1e-9) for v in flows.values())
+    copied = sum(flows.values())
+    assert np.all(copied <= eci - fol["eci_now"][:, None] + 1e-6)
+    assert np.all(copied[:, -1] > 0.5 * (eci[:, 0] - fol["eci_now"]))
+
+
+def test_more_copying_brings_a_follower_sooner():
+    """Distillation and leaked software only ever speed a follower."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    alone = _follow(params, lead, eci, fol)
+    params, lead, eci, fol = _leader_and_follower(distill=0.6, leak=0.2)
+    helped = _follow(params, lead, eci, fol)
+    a, h = alone["events"]["RSI"], helped["events"]["RSI"]
+    assert np.all(np.where(np.isfinite(h), h, 1e9) <= np.where(np.isfinite(a), a, 1e9) + 1e-9)
+    assert np.median(np.where(np.isfinite(h), h, 99)) < np.median(np.where(np.isfinite(a), a, 99))
+
+
+def test_a_follower_needs_its_inputs():
+    params, lead, eci, fol = _leader_and_follower()
+    with pytest.raises(ValueError, match="needs"):
+        _follow(params, lead, eci, {k: v for k, v in fol.items() if k != "teacher"})
+    with pytest.raises(ValueError, match="coding is automated"):
+        _follow(params, lead, eci, fol, coding_capability=None)
+
+
+def test_a_compute_path_reproduces_constant_growth():
+    """A log-compute path rising at each draw's constant rate runs as those
+    rates do (with no slowdown, which a path carries itself)."""
+    params = dict(years=4, seed=3, compute_slowdown=100.0)
+    rates = np.full(20, np.log(2.5))
+    grid = np.linspace(0, 4, 49)
+    plain = tk.simulate(params, n=20, compute_rates=rates)
+    path = tk.simulate(params, n=20, compute_rates=rates,
+                       compute_path=(grid, rates[:, None] * grid[None, :]))
+    # The path integrates the training budget at each step's midpoint, the
+    # rates exactly; runaways amplify that, so compare the median scenario.
+    np.testing.assert_allclose(np.median(path["workflow_progress"]["capability_log"], axis=0),
+                               np.median(plain["workflow_progress"]["capability_log"], axis=0),
+                               rtol=0.01, atol=0.05)
+
+
+def test_a_leak_cut_fades_over_the_absorption_window():
+    """Cutting the leak today stops ideas leaving the leader from today: those
+    already on their way keep arriving, spread over the absorption years, so
+    the leak fades rather than stops; with no cut it keeps flowing."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.3, absorb=1.0)
+    grid = fol["years"]
+    flows = {}
+    for label, keep in (("cut", 0.0), ("open", 1.0)):
+        run = _follow(params, lead, eci, dict(fol, leak_scale=np.full(len(grid), keep),
+                                              trained=eci))
+        flows[label] = np.median(run["workflow_progress"]["follow_eci"]["leak"], axis=0)
+    at = lambda v, t: np.interp(t, grid, v)
+    cut, open_ = flows["cut"], flows["open"]
+    assert at(cut, 0.25) > 0                                   # still arriving
+    assert at(cut, 0.5) - at(cut, 0.25) < at(cut, 0.25)        # but fading
+    assert at(cut, 3.0) - at(cut, 1.5) < 1e-6                  # gone after the window
+    assert at(open_, 3.0) - at(open_, 1.5) > 0.5
+
+
+def test_weight_theft_lifts_a_follower_to_the_trained_leader():
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    run = _follow(params, lead, eci, dict(fol, trained=eci, weight_theft=(0.5, False)))
+    wp = run["workflow_progress"]
+    stolen = wp["follow_eci"]["weights"]
+    k = np.searchsorted(fol["years"], 0.6)
+    assert np.all(stolen[:, :np.searchsorted(fol["years"], 0.4)] == 0)
+    level = fol["eci_now"][:, None] + fol["weights"][0] * (
+        wp["capability_log"] - wp["software_realized_log"]) + fol["weights"][1] * wp["software_realized_log"]
+    before = np.searchsorted(fol["years"], 0.4)
+    # Just after, within the US's month of climb since; before, the full gap.
+    assert np.median(eci[:, k] - level[:, k]) < 2.5
+    assert np.median(eci[:, before] - level[:, before]) > 5.0

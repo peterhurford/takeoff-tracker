@@ -136,6 +136,98 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Effect (2,000 draws, through 2035):** racing, China at ultraintelligence goes from 11 months behind to 1 month ahead with software theft today. With a US pause today, China reaches the frozen frontier in Apr 2027 instead of Nov 2027; a one-time weight theft, in Nov 2026. With no pacing, a one-time weight theft today narrows the ultraintelligence lag from 11 months to 6.
 - **Revisit when:** evidence on Chinese exfiltration of US code or weights, or on Chinese labs' training share of compute.
 
+### 11. China's level today and its takeoff inputs (`_cn_tk_*`, Takeoff section 5)
+
+- **Value:** China's trained frontier today is the highest of three candidates per
+  scenario: the scored frontier's blended anchor; Kimi K3.1 Pro (released Oct 23 2026, no
+  ECI score yet) at ~161 (uniform 160–162); and an internal DeepSeek model about 3 points
+  over its top release (V4.1 Flash 1017, 158.8; uniform +2 to +4). Released candidates are
+  carried to today on China's slope plus China's internal lead before release (21 days,
+  `cn_ship_lag`, one setting on both tabs); DeepSeek's model is already internal, so takes
+  no lead. Median ~163.1 (80% 162.4–163.5); DeepSeek's internal model sets it in ~47% of
+  scenarios, Kimi in ~31%. All three are the user's judgments (Nov 2026), and the app says
+  so in the body: the DeepSeek model has never been seen and Kimi has no score. Measured
+  models alone start China at ~162.
+- **Why:** DeepSeek's releases are Flash models, deliberately not its best: V4 Pro led V4
+  Flash by 2.9 points, the 0813 Pro the 0731 Flash by 0.9. Chinese labs mostly ship open
+  weights within weeks of a run ending, hence the short internal lead; the US's is longer
+  and its trained frontier counts Anthropic's internal models, an asymmetry the Takeoff
+  section's starting table states. The Kimi range is a user
+  judgment pending Epoch's score. A higher level also implies a faster slope; the extra
+  goes to China's own research, the residual it was measured as.
+- **Effect:** small. Distillation is proportional to the gap, so a higher start mostly
+  means less distillation; the milestone lags move by about a week.
+- **Other inputs:** experiments grow with China's total installed AI compute
+  (×1.9 over 2025–26, projected ×1.54/yr to 2030), training on the export-control band.
+  The 2025–26 history is the judgment: from 2024 the stock (which counts no chips bought
+  before 2022) grows ×2.45/yr, which would read today's pace as needing more input growth.
+- **Leak share, one definition:** China's measured diffusion (3.7 ECI/yr) over the US
+  frontier's algorithmic climb on the same window (~11 ECI/yr: its slope less compute's
+  share), ~33%, on both the Takeoff and Pacing tabs (`_cn_tk_leak`). An earlier draft divided
+  by Takeoff's pace today (~19 ECI/yr), mixing windows, and read 19%.
+- **Headcount is not a separate input.** Moonshot has ~300 staff (401 credited on Kimi K3),
+  DeepSeek ~160–420 and doubling, against ~3,000 in research, engineering and product at
+  Anthropic alone. That gap, like experiment compute, is already in China's measured
+  innovation rate (2.4 ECI/yr), which the model calibrates to; after automation AI labor
+  runs on compute, not heads.
+- **Revisit when:** Epoch scores Kimi K3.1 Pro or a DeepSeek Pro/V5, or China's compute
+  sources are revised.
+
+### 12. China's own innovation rate (`_cc_cn_channels`'s residual, ~2.4 ECI/yr)
+
+- **Value:** a residual, not a measurement. China's frontier slope since Jan 2024 (14.1
+  ECI/yr) less compute (3.6: Pacing's default payoff, 11.1 ECI per 10×, × log10 of the
+  ×2.12/yr largest-site growth), distillation (4.4: the pooled iso-compute bands, 14.4 / 13.6
+  / 9.1 ECI/yr at 10^23.5 / 24.5 / 25.5 FLOP, median band less the top band) and diffusion
+  (3.7: the no-external-teacher band's midpoint, 9.1–9.8, less the pure-innovation band's,
+  Epoch's 0.4 OOM/yr prior × 6.3 = 2.5 up to 9.1). China's takeoff calibrates its own
+  research to it.
+- **Why it is weak:** distillation and diffusion come from all labs pooled and from priors,
+  not China's own models. A China-specific check partly cuts against the split: at China's
+  median compute, Chinese and US models improve at the same fixed-compute rate (12.3 vs
+  11.8 ECI/yr, `_cc_iso_compute_rate`), with China's edge a level (+5.1 ECI at matched
+  compute and date, `_cc_cn_level_offset`), not a faster rate. (US small models distill
+  too, so this is not decisive.) It moves with the payoff: 3.6 at our fit (7.3 per 10×),
+  2.4 at the average, ~1.2 at IFP's (~14.8); and with the fit window, which starts before
+  DeepSeek-R1's Jan 2025 jump. Honest range ~1–5.
+- **The US on the same arithmetic:** slope 16.5 less compute ~5.4 leaves ~11 ECI/yr
+  algorithmic; distillation ~0 (it is the teacher), diffusion from China unmeasured (0–2),
+  so own innovation ~9–11. The frontier-grade fixed-compute rate (9.1–9.8) agrees. Today's
+  trained US frontier climbs ~22, ~19 of it algorithmic. China is ~4–5× below on the same
+  window, ~8× below today's US.
+- **Cross-check:** ~10× fewer researchers per lab (Moonshot ~300, DeepSeek ~160–420,
+  Anthropic ~3,000 in research, engineering and product) and maybe 5–10× less experiment
+  compute predict ~a third of the US rate under the model's square-root returns, ~3–4
+  ECI/yr: 2.4 is within a factor of 2.
+- **Revisit when:** a China-specific distillation measurement appears, or a refresh moves
+  the iso-compute bands or China's slope.
+
+### 13. Distillation grows with the gap, unsaturated (`FOLLOWER_KEYS["distill"]`)
+
+- **Value:** China's takeoff gains a fixed share of the ECI gap to the US's released
+  frontier a year (~63%, today's measured 4.4 ECI/yr over today's gap), with no cap. The
+  channel sim it replaced capped the flow at today's rate (`min(1, gap/gap₀)`).
+- **Evidence it has not saturated (Nov 2026, ECI records from 2024):** China's ECI gain
+  over the next 12 months rises with the gap, 13.0 ECI/yr at gaps under 6, 14.0 at 6–9,
+  21.5 at 9–12 (rate ≈ 8 + 1.1 × gap; the gap term holds controlling for the US's own
+  climb). China's time lag held at ~8 months (sd 1.5) while the US pace ranged 14–20 ECI/yr:
+  from mid-2025 to mid-2026 the US sped up ~36% and the gap widened ~42% (5.9 to 8.4), the
+  proportional pattern. Saturation would have stalled China's rate and grown the lag.
+- **What it cannot show:** monthly samples overlap (~4 independent years); release-step
+  noise biases the slope up; and there is one observation above a 12-point gap, while the
+  US takeoff opens gaps of 40+. The capacity-gap literature (Mirzadeh et al. 2019, students
+  learn worse from much larger teachers; Li et al. 2025, small models gain less from strong
+  reasoners) and access limits (IFP: ~25% less per 10× less data) suggest it eventually
+  saturates; judgment ~70%, untested at frontier scale.
+- **Effect of a cap (scratch run, defaults):** capping the flow at a 20-ECI gap moves the
+  coder / RSI / ultraintelligence lags from 0.95 / 0.88 / 0.91 yr to 0.97 / 0.92 / 0.97; at
+  the data's 13-ECI edge to 1.05 / 1.00 / 1.08, the gap at two years from 36 to 40, a Jul
+  2027 US pause's crossing not at all. Small, because China reaches its ECI milestones
+  before the gap opens, on its own AI speed-up; a cap mainly matters for how far behind it
+  falls after the US's RSI. Left linear; a cap setting would be the place to put it.
+- **Revisit when:** a Chinese model trails the US frontier by well over 12 points and its
+  catch-up rate can be read, or a distillation study at frontier scale.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

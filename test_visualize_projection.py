@@ -6713,3 +6713,68 @@ class TestEvidenceMathCoding:
                                "compute_growth": 2.0, "hiring": 30.0, "returns": 1.0})
         assert "pn -> fh" in dot and "pr -> fd" in dot
         assert "pn -> fd" not in dot
+
+
+class TestChinaTakeoff:
+    """Section 5's inputs: China's level today and what it calibrates to."""
+
+    def _cal(self):
+        cal = vp._cn_tk_calibration(vp._eci_mtime(), vp._cn_src_mtime())
+        assert cal is not None
+        return cal
+
+    def test_unscored_models_only_ever_raise_chinas_level(self):
+        """Each scenario's level is the highest of its candidates, so counting
+        the unscored and held-back models never lowers it, and an unscored
+        score above the rest sets it."""
+        cal, today = self._cal(), datetime(2026, 11, 8)
+        off, _s, src_off = vp._cn_tk_levels(cal, 300, 42, today, 21.0, unscored=False)
+        on, _s, _src = vp._cn_tk_levels(cal, 300, 42, today, 21.0)
+        assert set(src_off) == {cal["anchor"][3]}
+        assert np.all(on >= off - 1e-9) and np.median(on) > np.median(off)
+        high, slope, src = vp._cn_tk_levels(cal, 300, 42, today, 21.0, kimi=(170.0, 171.0))
+        assert set(src) == {vp._CN_TK_UNSCORED[0]}
+        assert np.all(high > 170.0)
+        assert np.all(slope > cal["ch"]["obs"])
+
+    def test_a_higher_record_lifts_the_slope(self):
+        cal = self._cal()
+        when = vp._CN_TK_UNSCORED[1]
+        base = vp._cn_tk_slope(cal["cn_fr"], when, 100.0)
+        assert base == pytest.approx(cal["ch"]["obs"])
+        assert vp._cn_tk_slope(cal["cn_fr"], when, 162.0) > base
+
+    def test_experiments_run_on_the_whole_installed_compute(self):
+        """China's experiment compute grows with its total installed stock:
+        decelerating from the latest stored year to the projection."""
+        cal = self._cal()
+        assert 0 < cal["exp_fwd"] < cal["exp_hist"]
+
+    def test_settings_have_defaults_and_parse(self):
+        keys = [k for k in vp._TK_DEFAULTS if k.startswith("tk_cn_")]
+        assert len(keys) == 8
+        cfg = vp._cn_tk_settings()
+        assert cfg["compute"] in vp._CN_TK_COMPUTE_OPTIONS
+        assert cfg["distill"] == cfg["leak"] == 1.0 and cfg["theft"] == 0.0
+
+    def test_deepseeks_held_back_model_is_about_its_setting_and_already_internal(self):
+        """DeepSeek's internal model sits about `held_back` points over its top
+        release, within the spread, and takes no further internal lead: a
+        longer lead moves the released candidates but not it."""
+        cal, today = self._cal(), datetime(2026, 11, 8)
+        held = f"{vp._CN_TK_HELD_BACK_ORG}'s held-back best"
+        top = cal["held_back"][1]
+        lvl, slope, src = vp._cn_tk_levels(cal, 400, 3, today, 21.0, kimi=(140.0, 140.0),
+                                           held_back=8.0)
+        assert set(src) == {held}
+        carry = slope * (today - cal["held_back"][0]).days / 365.25
+        base = lvl - carry - top
+        assert base.min() >= 7.0 - 1e-9 and base.max() <= 9.0 + 1e-9
+        lvl2, _s, src2 = vp._cn_tk_levels(cal, 400, 3, today, 200.0, kimi=(140.0, 140.0),
+                                          held_back=8.0)
+        # Where it still sets the level, its value is unmoved; elsewhere a
+        # released candidate, lifted by the longer lead, has overtaken it.
+        still = src2 == held
+        assert still.any() and not still.all()
+        np.testing.assert_allclose(lvl[still], lvl2[still])
+        assert np.all(lvl2[~still] > lvl[~still])

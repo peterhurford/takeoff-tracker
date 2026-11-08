@@ -22,7 +22,9 @@ from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
 from streamlit.testing.v1 import AppTest
 
 SCRIPT = "visualize_projection.py"
-TIMEOUT = 30
+# A hang guard, not a speed test: a Takeoff rerun runs the US and China's
+# takeoff models, and the suite runs on every core at once.
+TIMEOUT = 60
 
 
 def _qp(at, key):
@@ -1302,8 +1304,8 @@ class TestTakeoffTab:
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, capability pace, net pace, pace factors, their multiplication,
-        # compute, people, ECI, yearly progress and the distributions.
-        assert len(_tk_charts(at)) == 15
+        # compute, people, ECI, yearly progress, the distributions and China's takeoff.
+        assert len(_tk_charts(at)) == 16
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -1316,6 +1318,8 @@ class TestTakeoffTab:
             "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
+        # China's takeoff closes the model, after section 4.
+        assert subs.index("5. China's takeoff") == subs.index("4. When it happens, and how fast") + 1
         folded = {e.label for e in at.expander}
         for label in ("Milestone weights and dates", "Set your own weights",
                       "Why this isn't METR's ~2×", "What moves the pace", "Compute",
@@ -1482,7 +1486,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 15
+        assert len(_tk_charts(at)) == 16
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1491,7 +1495,8 @@ class TestTakeoffTab:
 
         def capture(params, **kwargs):
             result = original(params, **kwargs)
-            captured.append(result)
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(result)
             return result
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1581,7 +1586,8 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            captured.append(kwargs["onset_years"].copy())
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(kwargs["onset_years"].copy())
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1652,7 +1658,8 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            seen.append(kwargs.get("compute_rates"))
+            if kwargs.get("follower") is None:     # the US run, not China's
+                seen.append(kwargs.get("compute_rates"))
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1691,6 +1698,78 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / point estimates")
         assert ci80() != wide
 
+    def test_china_takeoff_lags_the_us_and_follows_its_settings(self):
+        """Section 5 runs China as a follower of the US scenarios: its three
+        milestones read behind the US's, and cutting distillation and the leak
+        pushes them further behind."""
+        at = self._app()
+        assert [m.label for m in at.metric if m.label.startswith("China: ")] == [
+            "China: Automated coder", "China: RSI", "China: Ultraintelligence"]
+
+        def lags(app):
+            out = [_span_mo(re.match(r"Behind the US: ([^(]+)", c.value).group(1))
+                   for c in app.caption if c.value.startswith("Behind the US: ")]
+            assert len(out) == 3
+            return out
+        before = lags(at)
+        assert all(v > 0 for v in before)
+        assert "Distillation" in str(at.table[-1].value)
+        at.number_input(key="tk_cn_distill").set_value(0.0)
+        at.number_input(key="tk_cn_leak").set_value(0.0).run()
+        _assert_no_error(at, "Takeoff / China without copying")
+        assert all(a > b for a, b in zip(lags(at), before))
+
+    def test_coding_is_never_dated_after_ultraintelligence(self):
+        """A model at the ultraintelligence threshold has automated coding, on
+        both sides, even with the threshold just above today's frontier."""
+        at = _fresh_app()
+        at.query_params.update(tab="takeoff", tk_ultra_eci="180")
+        at.run()
+        cards = {m.label: m.value for m in at.metric}
+
+        def month(v):
+            d = datetime.strptime(v, "%b %Y")
+            return d.year * 12 + d.month
+        assert month(cards["Full coding automation"]) <= month(cards["Ultraintelligence: ECI 180"])
+        assert month(cards["China: Automated coder"]) <= month(cards["China: Ultraintelligence"])
+
+    def test_china_section_says_where_each_side_starts(self):
+        """The starting table names the US's internal model and China's
+        unscored one, with the gap on releases and on trained models."""
+        at = self._app()
+        t = next(x.value for x in at.table if "How" in x.value.columns)
+        assert list(t[""]) == ["United States", "China", "Gap"]
+        assert "internal" in t["How"].iloc[0]
+        assert "ASSUMED" in t["How"].iloc[1]
+        assert "measured models alone" in t["Where the model starts (trained, today)"].iloc[1]
+        # The made-up part is said in the body, not left to a hover, and goes
+        # with the assumptions.
+        assert any("partly made up" in str(m.value) for m in at.markdown)
+        assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
+        names = [d.get("name", "") for el in at.get("plotly_chart")
+                 for d in json.loads(el.proto.spec)["data"]]
+        assert "US trained (internal models projected)" in names
+        assert "China today (trained; partly assumed)" in names
+        at.checkbox(key="tk_cn_unscored").uncheck().run()
+        assert not any("partly made up" in str(m.value) for m in at.markdown)
+        t = next(x.value for x in at.table if "How" in x.value.columns)
+        assert "measured models only" in t["Where the model starts (trained, today)"].iloc[1]
+
+    def test_chinas_internal_lead_is_one_setting_on_both_tabs(self):
+        """Takeoff's China settings carry the internal lead Pacing uses (the
+        shared `cn_ship_lag`); a longer lead raises China's starting level."""
+        at = self._app()
+
+        def start(app):
+            t = next(x.value for x in app.table if "How" in x.value.columns)
+            return float(t["Where the model starts (trained, today)"].iloc[1].split()[0])
+        before = start(at)
+        at.number_input(key="cn_ship_lag").set_value(84).run()
+        _assert_no_error(at, "Takeoff / China internal lead 84 days")
+        assert start(at) > before
+        _switch_tab(at, "Pacing")
+        assert at.number_input(key="cn_ship_lag").value == 84
+
     def test_gap_cards_never_show_a_negative_span(self):
         """A scenario whose ECI reaches ultraintelligence before its RSI date
         reads 0 on the gap cards, never a negative interval edge."""
@@ -1703,7 +1782,7 @@ class TestTakeoffTab:
         """The RSI-to-ultraintelligence panel plots no negative gap, matching
         the cards."""
         at = self._app()
-        dist = json.loads(_tk_charts(at)[-1].proto.spec)
+        dist = json.loads(_tk_charts(at)[14].proto.spec)
         gap = [tr for tr in dist["data"] if tr.get("legendgroup") == "gap"]
         assert gap
         def xs(x):
@@ -1719,8 +1798,10 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            captured.append(original(*args, **kwargs))
-            return captured[-1]
+            result = original(*args, **kwargs)
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(result)
+            return result
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
@@ -2248,8 +2329,10 @@ class TestPacingTab:
     def test_methods_toggle_keeps_diffusion_running(self):
         """At 15% pace, with the leak only half cut, diffusion keeps part of
         its rate and China crosses sooner; uncut, it runs at the US's pace,
-        sooner still. (15%, not a quarter: the US now starts from its trained
-        frontier, and at a quarter China no longer crosses before 2032.)"""
+        sooner still. Read on its average rate: China's takeoff closes every
+        copying channel on the gap, so at the crossing itself the leak has
+        nothing left to add. (15%, not a quarter: the US now starts from its
+        trained frontier, and at a quarter China no longer crosses before 2032.)"""
         at = self._app()
         # The public ECI line's own rate, so the paced US is still caught
         # before 2032 and the leak has a crossing to move.
@@ -2269,8 +2352,7 @@ class TestPacingTab:
         assert diffusion(at)["China ECI/yr at US/China cross"] == "Dried up"
         self._paired(at.slider(key="pc_leak_cut").set_value(50))
         _assert_no_error(at, "Pacing / methods leak half cut")
-        half, half_rate = surpass(at), float(
-            diffusion(at)["China ECI/yr at US/China cross"])
+        half, half_rate = surpass(at), float(diffusion(at)["Overall China ECI/yr"])
         assert half < base
         self._paired(at.slider(key="pc_leak_cut").set_value(0))
         _assert_no_error(at, "Pacing / methods leak not cut")
@@ -2282,7 +2364,7 @@ class TestPacingTab:
         self._paired(at.slider(key="pc_leak_cut").set_value(0))
         row = diffusion(at)
         assert "leak not cut" in row["Source"]
-        assert float(row["China ECI/yr at US/China cross"]) > half_rate
+        assert float(row["Overall China ECI/yr"]) > half_rate
 
     def test_defenses_that_tighten_only_ever_slow_china(self):
         """At quarter pace with no other lever, the defense schedule delays
@@ -2355,9 +2437,11 @@ class TestPacingTab:
         assert surpass(at) < covered
 
     def test_the_leak_follows_the_us_ai_speed_up(self):
-        """At 45% pace from Jan 2027 the leak at the crossing runs above 45%
-        of its rate at pacing start: it follows the paced US's ECI/yr, which
-        Takeoff's AI speed-up raises, not today's pace alone."""
+        """At 45% pace from Jan 2027 the leak's average to the crossing runs
+        above 45% of its rate at pacing start: it follows the paced US's
+        ECI/yr, which Takeoff's AI speed-up raises, not today's pace alone.
+        (On average: at the crossing itself China's takeoff has closed every
+        copying channel on the gap.)"""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
@@ -2367,8 +2451,8 @@ class TestPacingTab:
         t = next(x.value for x in at.table if "Source" in x.value.columns)
         row = t[t["Source"].str.startswith("US software")].iloc[0]
         start = float(row["China ECI/yr at US pacing start"])
-        cross = float(row["China ECI/yr at US/China cross"])
-        assert cross > 1.2 * 0.45 * start
+        overall = float(row["Overall China ECI/yr"])
+        assert overall > 1.2 * 0.45 * start
 
     def test_a_pause_dries_up_diffusion_without_the_leak_lever(self):
         """A paused US leaks no new methods: with the leak lever off,
@@ -2534,10 +2618,12 @@ class TestPacingTab:
 
     def test_chinese_run_length_trades_compute_against_wall_clock(self):
         """A longer Chinese run lifts the path (more compute in one model)
-        and shifts it right (the run takes longer), so the crossing is a
-        U-curve in run length: a few extra months beat both matching and a
-        year (which about ties matching on the Takeoff tab's US bar).
-        Matching the bar's length is the default and changes nothing."""
+        and shifts it right (the run takes longer), so it helps while the lift
+        is worth more of China's climb than the months it costs. Near the
+        crossing China's takeoff climbs slowly (copying has dried up), so at
+        the defaults every stretch up to a year beats matching, each by more
+        than the last's run of months alone would lose. Matching the bar's
+        length is the default and changes nothing."""
         at = self._app()
 
         def _surpass_mo(at):
@@ -2560,8 +2646,10 @@ class TestPacingTab:
         self._paired(at.slider(key="pc_cn_run").set_value(12))
         _assert_no_error(at, "Pacing / 12-month Chinese run")
         long_run = _surpass_mo(at)
-        # Some moderate stretch beats both ends.
-        assert min(mids.values()) < min(base, long_run), (mids, base, long_run)
+        # Every stretch beats matching, and a few months already buys most of
+        # what a year does.
+        assert max(mids.values()) < base and long_run < base, (mids, base, long_run)
+        assert base - mids[6] > 0.5 * (base - long_run), (mids, base, long_run)
 
     def test_duvi_levers_compound_with_the_domestic_slider(self):
         """Each DUVi lever is named in the settings hover even when its cut
@@ -3086,25 +3174,103 @@ class TestPacingTab:
         own Takeoff date (the coder's `coding_at`, as the card) through its
         clock rather than re-finding the ECI, which landed early wherever ECI
         is flat before the event. Paced to 40%, every US date moves later.
-        At production samples: under Takeoff's draw count, Pacing reads only
-        a subset of its scenarios."""
+        Within a month, not to it: Pacing's samples cycle through the
+        scenarios China's takeoff is twinned with (`_cn_tk_rows`), a subset
+        of Takeoff's at production samples."""
         monkeypatch.setenv("_VP_SAMPLES", "5000")
-        at = _fresh_app().run()
+        at = AppTest.from_file(SCRIPT, default_timeout=180).run()
         cards = {m.label.split(":")[0]: m.value for m in at.metric}
         ci80 = [c.value for c in at.caption if c.value.startswith("80% CI: ")][:3]
         _switch_tab(at, "Pacing")
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
                  and "Gap" in x.value.columns)
         us = list(t["US (median, 80%)"])
+
+        def months(text):
+            d = datetime.strptime(text.strip(), "%b %Y")
+            return d.year * 12 + d.month
         for i, card in enumerate(("Full coding automation", "RSI", "Ultraintelligence")):
             lo, hi = ci80[i].removeprefix("80% CI: ").split(" \u2013 ")
-            assert us[i] == f"{cards[card]} ({lo} \u2013 {hi})", (card, us[i])
+            got = re.match(r"(\w{3} \d{4}) \((\w{3} \d{4}) \u2013 (\w{3} \d{4})\)", us[i])
+            assert got, us[i]
+            for want, have in zip((cards[card], lo, hi), got.groups()):
+                assert abs(months(want) - months(have)) <= 1, (card, us[i])
         at.select_slider(key="pc_pace").set_value(40).run()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
                  and "Gap" in x.value.columns)
         for before, after in zip(us, t["US (median, 80%)"]):
             assert (datetime.strptime(after[:8], "%b %Y")
                     > datetime.strptime(before[:8], "%b %Y"))
+
+    def test_china_runs_its_own_takeoff(self):
+        """China's path is China's takeoff, twinned with the US scenarios: the
+        method hover says so, and unpaced China dates each milestone after the
+        US, by about what Takeoff's section 5 says (a year, give or take)."""
+        at = _fresh_app().run()
+        behind = [_span_mo(re.match(r"Behind the US: ([^(]+)", c.value).group(1))
+                  for c in at.caption if c.value.startswith("Behind the US: ")]
+        _switch_tab(at, "Pacing")
+        helps = " ".join(str(m.help) for m in at.metric)
+        assert "China runs the Takeoff tab's model too" in helps
+        t = next(x.value for x in at.table if "Milestone" in x.value.columns
+                 and "Gap" in x.value.columns)
+
+        def month(text):
+            d = datetime.strptime(text[:8], "%b %Y")
+            return d.year * 12 + d.month
+        gaps = [month(r["China (median, 80%)"]) - month(r["US (median, 80%)"])
+                for _, r in t.iterrows()]
+        assert all(g > 0 for g in gaps)
+        assert all(abs(g - b) <= 4 for g, b in zip(gaps, behind)), (gaps, behind)
+
+    def test_china_already_level_reads_so_not_a_negative_span(self):
+        """With an unscored Chinese model assumed above the US, or the US's
+        weights stolen every month, China is level before the pause: the cards
+        say so instead of dating a crossing in the past or a negative span, and
+        the breakdown, which times a catch-up, is left out."""
+        for params in (dict(tk_cn_kimi_lo="180", tk_cn_kimi_hi="180"),
+                       dict(pc_theft_weights="true", pc_wt_mode="Ongoing")):
+            at = _fresh_app()
+            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.run()
+            _assert_no_error(at, f"Pacing / China already level {params}")
+            cards = {m.label: m.value for m in at.metric}
+            assert cards["China reaches paused US frontier"] == "Before the pause", cards
+            assert cards["Time for China to surpass"] == "Already level"
+            assert not [t for t in at.table if "Source" in t.value.columns]
+
+    def test_malformed_china_settings_in_a_shared_link_are_held_in_range(self):
+        """Pacing reads Takeoff's China settings without drawing their inputs,
+        so a shared link's out-of-range or garbled value is clamped there."""
+        for params in (dict(tk_cn_theft="500", tk_cn_distill="-50"),
+                       dict(tk_cn_kimi_lo="abc", tk_cn_heldback="nan"),
+                       dict(tk_cn_compute="Bogus", tk_cn_unscored="false")):
+            at = _fresh_app()
+            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.run()
+            _assert_no_error(at, f"Pacing / malformed China settings {params}")
+            assert any("China" in m.label for m in at.metric)
+
+    def test_a_pause_after_the_horizon_says_so(self):
+        at = _fresh_app()
+        at.query_params.update(tab="pacing", pc_pace="0", pc_end_year="2027",
+                               pc_pause_mo="100")
+        at.run()
+        _assert_no_error(at, "Pacing / pause after the horizon")
+        cards = {m.label: m.value for m in at.metric}
+        assert cards["Time for China to surpass"] == "Pause after 2027"
+
+    def test_rates_at_a_pause_today_are_todays(self):
+        """China's channels run back before today at today's rates, so a pause
+        today reads real rates, not zero."""
+        at = _fresh_app()
+        at.query_params.update(tab="pacing", pc_pace="0", pc_pause_mo="0")
+        at.run()
+        why = next(t.value for t in at.table if "Source" in t.value.columns)
+        row = why[why["Source"].str.startswith("Innovation")].iloc[0]
+        assert float(row["China ECI/yr at US pause"]) > 1.0
+        dist = why[why["Source"].str.startswith("Distillation")].iloc[0]
+        assert float(dist["China ECI/yr at US pause"]) > 1.0
 
     def test_milestone_table_follows_the_takeoff_threshold(self):
         """Takeoff's ultraintelligence threshold sets the Pacing milestone's ECI
@@ -3323,16 +3489,16 @@ class TestTodayForwardMode:
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
     def test_takeoff_converts_its_projections_not_the_evidence(self):
-        """The RSI projection's CDF and the eleven takeoff projections (the
-        ECI growth chart included) go forward; the evidence charts above them
-        keep their history."""
+        """The RSI projection's CDF and the twelve takeoff projections (the
+        ECI growth chart and China's takeoff included) go forward; the evidence
+        charts above them keep their history."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Takeoff")
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 12
+        assert len(fwd) == 13
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > len(fwd)
 

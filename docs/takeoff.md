@@ -4,7 +4,7 @@ The Takeoff scenario explorer and its evidence half (the former RSI tab). Read b
 
 ## Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v31-direction-waits-for-coding`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v32-followers`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -255,7 +255,8 @@ clipped at Dec 31 may end a day before Jan 1 and still keeps that year's bar
 (`test_a_grid_ending_on_dec_31_keeps_that_year`); and
 its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
-dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
+dates and the gap between them), then **5. China's takeoff** (below).
+`test_default_render_and_stable_rerun` pins the order.
 
 Today's human share comes from the automation index's latest mix of AL levels times the
 human time each level still takes in each stage: `_TK_AL_STAGE_HOURS_PRIOR` (stages x
@@ -340,6 +341,88 @@ frontier and the two public lines, ending at the model's start. Each draw keeps 
 around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
+
+## 5. China's takeoff (`_tk_render_china`, `_cn_tk_*`)
+
+The last section runs China through the same model as a **follower** of the US scenarios
+(`TAKEOFF_MODEL.md`, *Followers*): `_cn_tk_run(today, run)` takes `_tk_run`'s result, so
+draw *i* of every structural setting is the US's draw *i*, and the three cards' *Behind the
+US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). Load-bearing:
+
+1. **China's level today is uncertain on purpose** (`_cn_tk_levels`): the highest of the
+   scored frontier's blended anchor (`_cc_frontier_anchor`, uniform over its spread),
+   `_CN_TK_UNSCORED` (Kimi K3.1 Pro, unscored, uniform over `tk_cn_kimi_lo`–`_hi`, ~161)
+   and `_CN_TK_HELD_BACK_ORG`'s internal model (DeepSeek releases Flash models: about
+   `tk_cn_heldback`, default 3, over its top score, ± `_CN_TK_HELD_BACK_SPREAD`), each
+   carried to today on its own slope; the released ones also get China's internal lead
+   before release (`cn_ship_lag`, 21 days, drawn in China's settings here and in Pacing's
+   sidebar, one key; `test_chinas_internal_lead_is_one_setting_on_both_tabs`), the
+   internal DeepSeek model none
+   (`test_deepseeks_held_back_model_is_about_its_setting_and_already_internal`). A higher
+   record lifts the slope (`_cn_tk_slope` refits the frontier with it), and the extra slope
+   goes to China's own research. `tk_cn_unscored` off leaves the scored anchor alone; the
+   base draw comes first, so on can only raise a scenario
+   (`test_unscored_models_only_ever_raise_chinas_level`).
+2. **Every rate is the China tab's split** (`_cn_tk_calibration`, `_cc_cn_channels` at
+   Pacing's default payoff): own research is the innovation residual (floored at
+   `_CN_TK_INNOVATION_FLOOR`); distillation is calibrated as today's measured rate over
+   today's gap to the US *released* frontier (the Takeoff path a ship lag back). The leak
+   share is `_cn_tk_leak`, one definition for both tabs: China's diffusion over the US
+   frontier's algorithmic climb on the *same* window (its slope since `_CC_CALIB_SINCE` less
+   compute's share), ~33%, not over Takeoff's faster pace today, which mixed windows and read
+   19%. Before today the US software path runs back at that window rate, so the leak today
+   is the measured flow and grows as the US's faster climb arrives. Each leaked idea arrives
+   spread evenly over `absorb` years (`takeoff.LEAK_POINTS`), so a cut fades rather than
+   steps. The sliders scale those (`tk_cn_distill`, `tk_cn_leak`, % of the measured),
+   theft is a share of US algorithmic progress (`tk_cn_theft`, default 0); weight theft is
+   not modeled here (Pacing has it). Distillation closes on the released frontier, leaked
+   and stolen ideas on the trained one.
+3. **Training and experiments grow apart**: training on `_CN_TK_COMPUTE_OPTIONS`
+   (`tk_cn_compute`, the export-control band by default) against ×2.12 history;
+   experiments on China's total installed compute from `china_compute_sources.csv`
+   (`_CN_TK_EXP_HIST_YEARS` history, `_CN_TK_EXP_FWD_YEARS` projection, lognormal
+   `_CN_TK_EXP_SPREAD`).
+4. **The ECI path is floored like the US's** (China's own slope for
+   `_TK_ECI_FLOOR_YEARS`, fading), and the source table (`_cn_tk_source_rows`) quotes
+   each source's median gain, which need not add to the median total.
+
+China runs on every k-th US scenario only (`_cn_tk_rows`, at most `_CN_TK_DRAWS` = 625),
+each with its twin's exact draws (`simulate(draw_rows=…)` draws for the full run and keeps
+those rows): a run's cost is per loop iteration, set by the most event-dense scenario, so
+this cuts it from ~14 s to ~5 s at production samples while the lags move by under a week.
+The cards and lags are over those pairs. Headcount is not an input: China's ~10× fewer
+researchers per lab (and its smaller experiment compute) are already in the measured
+innovation rate it is calibrated to, and AI labor runs on compute after automation; adding
+them would count them twice. `_tk_run_seeded` computes the US run once per rerun for Pacing
+and this section. `_cn_tk_simulate` caches the run (model digest in its key).
+
+**How the section reads**, top to bottom: a bold takeaway (`_fn_line`: the median gap to
+automated coding and ultraintelligence, and copying's share of China's ECI gain to
+end-2028); *Where each side starts today* (`_cn_tk_start_rows`), which is where internal
+models and release lags are explained, not left to hovers: each side's best release, the
+trained level the model starts from and how (the US's latest Anthropic internal model
+projected from METR's AECI and carried at the pace; China's highest candidate plus its ship
+lag), and the pace both as the model uses it and like for like on releases. That last
+column is the section's key caveat: on releases the two climb at nearly the same pace
+(+2.4 ECI/yr since 2024, +1.4 smoothed now); the model's US starts ~8 faster because its
+trained frontier counts Anthropic's internal models, which have no Chinese counterpart in
+the data. Then the cards, the chart (US releases and the trained frontier with internal
+models drawn in, and China's start as a marker with its range), and the sources table
+(all-zero rows dropped). `test_china_section_says_where_each_side_starts`. The assumed parts
+of China's start are said in the body, not left to hovers: the table marks Kimi's score and
+the DeepSeek internal model ASSUMED and gives the measured-models-only level beside the
+assumed one, a bold body line under it (not an `st.warning`: the tab carries none) says
+China's start is partly made up (gone with `tk_cn_unscored` off), and the chart's China marker and Pacing's caption and marker say
+"assumed".
+
+Automated coding is dated no later than ultraintelligence, on both sides (`_tk_run` caps
+`coding_at` at `eci["ultra"]`): the simulator checks the coding level on its own capability,
+the ECI path adds the early-trend floor, so a low threshold reached it first
+(`test_coding_is_never_dated_after_ultraintelligence`). Stolen weights top up China's
+*deployed* model, not its research stock, so ongoing theft keeps it level. Tests that capture
+`takeoff.simulate` keep only calls without `follower`, since China's run comes last.
+Guarded by `TestChinaTakeoff` (unit), the follower tests in `test_takeoff_model.py`, and
+`test_china_takeoff_lags_the_us_and_follows_its_settings` (integration).
 
 ## RSI tab (now the evidence half of Takeoff)
 

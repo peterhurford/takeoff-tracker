@@ -26,7 +26,7 @@ pytest -v -n0                                # serial — needed for --pdb / liv
 _VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
 ```
 
-Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tests use a fake Streamlit module (`_FakeStreamlit` / `_Noop`) so the app imports without a server; `_VP_TESTING=1` skips rendering at module level. Integration tests use Streamlit's `AppTest` headless runtime (30s timeout).
+Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tests use a fake Streamlit module (`_FakeStreamlit` / `_Noop`) so the app imports without a server; `_VP_TESTING=1` skips rendering at module level. Integration tests use Streamlit's `AppTest` headless runtime (60s timeout, a hang guard).
 
 ## Project Structure
 
@@ -57,7 +57,7 @@ it, so most surprising-looking code is deliberate. Update the file in the same c
 
 | If you touch… | Read first |
 |---|---|
-| `render_takeoff`, `takeoff_model.py` wiring, any `_tk_*`; `render_rsi` and every `_rsi_*`, `_render_rsi_*`, `_tasteval_*`, `load_rsi_*`; the *Capabilities Milestones* cards and *Automated coder projection* blend (`_pc_render_milestones`, `_pc_render_rsi_blend`, `_pc_rsi_*`, `_pc_*_eta`, `_pc_condition_on_today`, `_PC_RSI_WEIGHTS`) | `docs/takeoff.md` (equations: `TAKEOFF_MODEL.md`) |
+| `render_takeoff`, `takeoff_model.py` wiring, any `_tk_*`; China's takeoff (`_cn_tk_*`, `_tk_render_china`, `simulate(follower=…)`); `render_rsi` and every `_rsi_*`, `_render_rsi_*`, `_tasteval_*`, `load_rsi_*`; the *Capabilities Milestones* cards and *Automated coder projection* blend (`_pc_render_milestones`, `_pc_render_rsi_blend`, `_pc_rsi_*`, `_pc_*_eta`, `_pc_condition_on_today`, `_PC_RSI_WEIGHTS`) | `docs/takeoff.md` (equations: `TAKEOFF_MODEL.md`) |
 | `load_data_centers`, any `_dc_*` (company aliases, tenant/operator, hidden companies, network clusters, by-country panel), the buildout-vs-release panel and Compute ⟷ ECI (`_cc_company_buildout`, `_cc_forward_match`, `_cc_lab_*`, `_cc_frontier_grade_algo`, `_cc_rate_calibration`, `_render_compute_eci`), world shares (`_wc_*`, `_WC_*`) | `docs/data-centers.md` |
 | `render_compute_capabilities`, `_duv_*`, `_cn_src_*`, `_cc_cn_*` (crossing sim, channels, pace band), `render_pacing` and the pause/race/lever code (`_pc_render_us_pause`, `_pc_projection`, `_pc_crossing_idx`, `_pc_capacity_at`, `_pc_render_why`, `_pc_render_compute_*`, every `pc_*` widget) | `docs/china-pacing.md` (judgments: `CHINA_COMPUTE_JUDGMENTS.md`) |
 | `_ship_lag*`, `_anchor_slug`, `_render_anchor_links`, `?to=` links, `today_fwd` / `_tf` / `_today_forward`, `_fn_caption` / `_fn_line` / `_fn_span`, any caption or hover | `docs/conventions.md` |
@@ -161,6 +161,10 @@ that back; the first two live in `conftest.py`.
    percentiles and go visibly ragged well before 5000.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight
    multiple. It costs the unit-test-only run a little worker startup, hence `-n0`.
+
+China's takeoff (a second simulation behind every Takeoff and Pacing rerun) roughly doubled the
+suite, to ~8 minutes on a cloud container; `_CN_TK_DRAWS` and Pacing's horizon-cut runs are
+what keep it there (`docs/takeoff.md`, section 5).
 
 Adding an `AppTest` case is cheap (~0.1s per `.run()`), so prefer one to skipping coverage.
 What is *not* cheap is defeating the shared cache — a test that mutates

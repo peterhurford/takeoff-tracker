@@ -290,14 +290,39 @@ Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead;
 marks when the paced US reaches automated coding and RSI (`us_ms`): each scenario's own
 Takeoff date (`_pc_takeoff_us`'s `when`) run through the pacing clock, so unpaced they are
 Takeoff's cards to the month, not where the path re-reaches that ECI, which lands early
-wherever ECI is flat before the event (`test_unpaced_us_milestones_match_takeoff`; the coder is `coding_at` on both). Without a Takeoff run the compute-derived straight climb stands in. China gets automated coding and RSI
-at the same ECI: `_pc_speedup_table` reads each scenario's ECI/yr where its path first stands
-at an ECI, over today's trend (floored at 1), and `_cc_cn_crossing_sim(speedup=…)` multiplies
-China's whole rate by it at China's current ECI, the extra kept as its own `speedup` channel
-(a breakdown row) so the channels still sum to the path; `pc_tk_follow` (default 0.8, *Advanced*) sets how much of that extra is the US's own AI-driven ECI/yr at that level rather than a multiple of China's slower rate, `speedup_follow` in the sim (`test_full_tracking_gives_china_the_us_extra_in_eci_a_year`). The extra then scales by China's installed compute under the chip levers over the
-no-lever path, to the Takeoff parallelization exponent (`tk_parallelization`, 0.5), since
-AI researchers run on compute (`_cn_src_compute_ratio`, `speedup_scale`;
-`test_less_compute_shrinks_only_the_speedup_channel`). Under the chart a table dates automated coder, RSI and
+wherever ECI is flat before the event (`test_unpaced_us_milestones_match_takeoff`; the coder is `coding_at` on both). Without a Takeoff run the compute-derived straight climb stands in. **China's path is China's takeoff** (`_pc_cn_takeoff_paths`, with a Takeoff run; the channel
+sim below is the fallback without one): Takeoff's follower model (`_cn_tk_run`, section 5 of
+`docs/takeoff.md`) under this panel's levers, put on the sim's grid and channel names by
+`_pc_cn_on_grid`, so the cards, the *Why* breakdown, the state of play and the milestone table
+read it unchanged. Each sample follows one of the US scenarios China's takeoff is twinned with
+(`_cn_tk_rows`, at most `_CN_TK_DRAWS`), so its China shares that scenario's structural draws;
+the US column therefore matches Takeoff's cards to within a month, not exactly
+(`test_unpaced_us_milestones_match_takeoff`). Levers map as: the paced clock moves the teacher
+(released) and the leak (algorithmic ECI); `pc_withhold` caps the teacher; the distillation
+cut and the defense schedule scale distillation (`distill_scale`), the leak cut and the
+schedule the leak by the month an idea left the US (`leak_scale`), so a cut fades over the
+absorption window; software theft is a share of US algorithmic progress from its date plus
+the one-off jump (`theft_jump`), weight theft a lift to the trained US (`weight_theft`); the
+training band, `comp_slow`, `comp_dead` and the supply cuts bend China's training compute
+(`compute_rate` → a log path), the compute mix its experiment compute (`experiment_offset`).
+AI's speed-up is the model's own, so `pc_tk_follow` and `_pc_speedup_table`'s use here are
+gone. Channels: own research at today's rate is *innovation*, what AI adds past it *AI
+speed-up*; compute and own research are smoothed over one training-plus-validation cycle,
+since models deploy in steps and a rate read at an instant would read 0 between them. Two
+consequences the old sim did not have: every copying channel closes on the gap, so at the
+crossing itself distillation and the leak read *Dried up* (tests read their average instead,
+`test_the_leak_follows_the_us_ai_speed_up`, `test_methods_toggle_keeps_diffusion_running`);
+and leaked or stolen ideas close on the US's *trained* frontier, so a release freeze stops
+distillation but not them. With no lever moved the paced run is Takeoff's own (cached); with
+one it reruns to the panel's horizon only (~5 s at production samples). Crossings count from
+today on: before today a path is China's level today run back, which with an unscored model
+assumed above the US would "cross" on past dates. When half the samples are level before the
+pacing starts the cards read *Before the pause* / *Already level* and the breakdown is left
+out (`test_china_already_level_reads_so_not_a_negative_span`); a pause after *Project
+through* reads *Pause after <year>* (`test_a_pause_after_the_horizon_says_so`). Channels run
+back before today at their first half-year's rates, so rates read at a pause today are
+today's (`test_rates_at_a_pause_today_are_todays`). The chart's caption says both lines are
+best *trained* models, and China's unscored-model assumption is drawn as a marker. Under the chart a table dates automated coder, RSI and
 ultraintelligence (Takeoff's `tk_ultra_eci`, via `_pc_takeoff_us`'s `ultra`) for both sides from `ms_years`, the same per-sample first
 crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`, `test_milestone_table_follows_the_takeoff_threshold`); the chart's top sits `_PC_ECI_VIEW_PAST_ULTRA` above that level
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
@@ -379,8 +404,10 @@ paid for with L−L_us months of wall clock, so China's whole deliverable path l
 channels don't speed up because a run is longer); the lift is applied by re-reading
 the *same* sampled paths against a bar lowered by `cn_gain` via `_pc_cross_years`,
 which must reproduce the sim's own interpolated crossings exactly — that pairing is
-what makes the stated net free of MC noise. Live the answer is a U-curve with an
-interior optimum (a few months beat both matching and a year), which is the point of the control.
+what makes the stated net free of MC noise. Live, every stretch up to a year beats matching:
+near the crossing China's takeoff climbs slowly (copying has dried up), so a level lift is
+worth more months than it costs (`test_chinese_run_length_trades_compute_against_wall_clock`);
+with a faster late climb the answer turns into a U-curve, which is the point of the control.
 A dated remote cut
 must not slow the years *before* it: the band stays on the export-control default
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
