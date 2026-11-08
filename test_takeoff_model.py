@@ -956,6 +956,21 @@ def test_more_copying_brings_a_follower_sooner():
     assert np.median(np.where(np.isfinite(h), h, 99)) < np.median(np.where(np.isfinite(a), a, 99))
 
 
+def test_distill_and_leak_may_differ_by_draw():
+    """A share per draw runs each draw at its own: draws given the scalar
+    shares match the scalar run, and doubled ones copy more."""
+    params, lead, eci, fol = _leader_and_follower()
+    flat = _follow(params, lead, eci, fol)["workflow_progress"]["follow_eci"]
+    twice = np.where(np.arange(40) < 20, 1.0, 2.0)
+    params, lead, eci, fol = _leader_and_follower(distill=0.6 * twice, leak=0.2 * twice)
+    each = _follow(params, lead, eci, fol)["workflow_progress"]["follow_eci"]
+    for ch in ("distillation", "leak"):
+        np.testing.assert_allclose(each[ch][:20], flat[ch][:20], rtol=1e-9)
+    # A year in: later, a draw that copied faster has less gap left to copy.
+    for ch in ("distillation", "leak"):
+        assert np.median(each[ch][20:, 12]) > np.median(flat[ch][20:, 12])
+
+
 def test_a_follower_needs_its_inputs():
     params, lead, eci, fol = _leader_and_follower()
     with pytest.raises(ValueError, match="needs"):

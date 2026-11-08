@@ -24400,6 +24400,14 @@ def _cn_tk_calibration(mtime, src_mtime, payoff=None):
             "exp_fwd": float(np.log(total(f1) / total(f0)) / (f1 - f0))}
 
 
+def _cn_tk_lift(ch, slope):
+    """Per draw, what multiplies China's own research, distillation and the
+    leak so the three carry the drawn `slope`'s gap to the measured one in
+    proportion to their measured rates; compute, measured apart, takes none."""
+    copied = ch["innovation"] + ch["diffusion"] + ch["distillation"]
+    return np.maximum(1.0 + (np.asarray(slope, dtype=float) - ch["obs"]) / copied, 0.0)
+
+
 def _cn_tk_slope(cn_fr, date, score):
     """China's frontier slope since `_CC_CALIB_SINCE` were a model at `score`
     released on `date` on it (it joins the running max only if it beats it)."""
@@ -24577,9 +24585,11 @@ def _cn_tk_run(today, run=None, pacing=None):
                                          cfg["kimi"], cfg["held_back"])
     rates = res["eci_rates"]
     w_c, w_s = cal["a_partial"] / np.log(10), rates["software"]
-    # China's own research: the channel split's innovation, lifted by any
-    # extra slope the drawn level implies, in the US run's software units.
-    innovation = np.maximum(ch["innovation"] + slope - ch["obs"], _CN_TK_INNOVATION_FLOOR)
+    # Any extra slope the drawn level implies (`slope` over the measured) is
+    # split across own research, distillation and the leak in today's
+    # proportions (`k`); compute is measured apart, so it takes none.
+    k = _cn_tk_lift(ch, slope)
+    innovation = np.maximum(ch["innovation"] * k, _CN_TK_INNOVATION_FLOOR)
     software_scale = innovation / (w_s * np.log(2) * 12 / params["software_months"])
     rng = np.random.default_rng(seed + 11)
     lo, hi = pc.get("band") or _CN_TK_COMPUTE_OPTIONS[cfg["compute"]]
@@ -24591,9 +24601,9 @@ def _cn_tk_run(today, run=None, pacing=None):
     # depend on how many there are.
     full_n, keep = n, _cn_tk_rows(n)
     n = len(keep)
-    level, slope, source, innovation, software_scale, oom, compute_rates, experiment_rates = (
+    level, slope, source, innovation, software_scale, oom, compute_rates, experiment_rates, k = (
         v[keep] for v in (level, slope, source, innovation, software_scale, oom, compute_rates,
-                          experiment_rates))
+                          experiment_rates, k))
     us_paths, us_model = eci["paths"][keep], eci["model"][keep]
     us_cap, us_soft = wp["capability_log"][keep], wp["software_realized_log"][keep]
     hist_us = res.get("hist_compute")
@@ -24630,7 +24640,8 @@ def _cn_tk_run(today, run=None, pacing=None):
         "capability": us_cap, "rate": res["capability_rate"][keep], "ppy": ppy,
         "teacher": released, "software_eci": soft_released, "software_ppy": us_algo,
         "eci_now": level, "weights": (w_c, w_s),
-        "distill": distill * cfg["distill"], "leak": min(leak * cfg["leak"], 1.0),
+        "distill": distill * cfg["distill"] * k,
+        "leak": np.minimum(leak * cfg["leak"] * k, 1.0),
         "theft": pc.get("theft", cfg["theft"]), "absorb": pc.get("absorb", _CC_DIFF_ABSORB_YRS)}
     for key in ("distill_scale", "leak_scale", "theft_scale", "theft_jump", "weight_theft"):
         if pc.get(key) is not None:
@@ -24948,14 +24959,16 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
          f"{ch['distillation']:.1f}, US software diffusing {ch['diffusion']:.1f} and its own "
          f"innovation {ch['innovation']:.1f} (the China tab's split). Only that last is "
          f"China's research, which AI then speeds up (median {np.median(inp['innovation']):.1f}"
-         " ECI/yr today after any lift from the level). It is a residual, so uncertain."),
+         " ECI/yr today: a level above the measured frontier lifts the slope, and the lift "
+         "is shared with distillation and the leak in proportion). It is a residual, so "
+         "uncertain."),
         ("distilling US models",
-         f"Closes {100 * inp['distill']:.0f}% of the gap to the US's released frontier a "
+         f"Closes {100 * np.median(inp['distill']):.0f}% of the gap to the US's released frontier a "
          f"year ({cfg['distill']:.0%} of today's measured {ch['distillation']:.1f} ECI/yr at "
          "today's gap), so it grows as a racing US pulls ahead and dries up as China closes "
          "in. It never carries China past the US's released frontier."),
         ("absorbing US software",
-         f"{100 * inp['leak']:.0f}% of the US's algorithmic ECI gains reach China "
+         f"{100 * np.median(inp['leak']):.0f}% of the US's algorithmic ECI gains reach China "
          f"{_CC_DIFF_ABSORB_YRS:g} year later ({cfg['leak']:.0%} of the measured share: "
          f"China's {ch['diffusion']:.1f} ECI/yr of diffusion over the US frontier's "
          f"{inp['us_algo']:.1f} ECI/yr of algorithmic progress on the same window, the share "

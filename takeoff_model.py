@@ -311,9 +311,9 @@ FOLLOWER_KEYS = {
     "software_ppy": "the leader's algorithmic ECI a year before today",
     "eci_now": "the follower's ECI today, per draw",
     "weights": "(ECI per unit log compute, per unit log software) for the follower",
-    "distill": "share of the ECI gap distillation closes a year",
+    "distill": "share of the ECI gap distillation closes a year (or one per draw)",
     "leak": "share of the leader's algorithmic progress that leaks, each idea "
-            "arriving spread evenly over `absorb` years",
+            "arriving spread evenly over `absorb` years (or one per draw)",
     "theft": "share of the leader's algorithmic progress stolen at once",
     "absorb": "years over which a leaked idea reaches the follower, evenly",
 }
@@ -388,10 +388,15 @@ def _follower_inputs(follower, n, step=1.0, span=600.0):
                 for k in ("rate", "eci_now")}
     ppy = float(follower["ppy"])
     w = tuple(float(v) for v in follower["weights"])
-    shares = [float(follower[k]) for k in ("distill", "leak", "theft", "absorb")]
+    # Distillation and the leak may be one share per draw.
+    shares = [np.broadcast_to(np.asarray(follower[k], dtype=float), (n,)).copy()
+              if k in ("distill", "leak") else float(follower[k])
+              for k in ("distill", "leak", "theft", "absorb")]
     if not all(np.isfinite(v).all() for v in per_draw.values()) or (per_draw["rate"] <= 0).any() \
-            or not ppy > 0 or len(w) != 2 or not min(w) > 0 or min(shares) < 0 \
-            or not shares[1] <= 1 or not shares[2] <= 1:
+            or not ppy > 0 or len(w) != 2 or not min(w) > 0 \
+            or not all(np.isfinite(v).all() for v in shares[:2]) \
+            or min(float(np.min(v)) for v in shares) < 0 \
+            or not (shares[1] <= 1).all() or not shares[2] <= 1:
         raise ValueError("Follower rates, weights and ECI must be positive and finite; "
                          "shares must be in [0, 1].")
     lead_eci = np.maximum.accumulate(np.minimum(shaped["eci"], 1e5), axis=1)

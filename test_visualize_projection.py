@@ -6744,6 +6744,17 @@ class TestChinaTakeoff:
         assert base == pytest.approx(cal["ch"]["obs"])
         assert vp._cn_tk_slope(cal["cn_fr"], when, 162.0) > base
 
+    def test_a_higher_slope_lifts_every_copying_channel_in_proportion(self):
+        """Extra slope over the measured is shared by own research,
+        distillation and the leak at their measured rates, so the share that
+        dries up in a US pause is unchanged; the measured slope lifts none."""
+        ch = self._cal()["ch"]
+        copied = ch["innovation"] + ch["diffusion"] + ch["distillation"]
+        k = vp._cn_tk_lift(ch, np.array([ch["obs"], ch["obs"] + 4.0]))
+        assert k[0] == pytest.approx(1.0)
+        assert copied * (k[1] - 1.0) == pytest.approx(4.0)
+        assert ch["distillation"] * (k[1] - 1.0) > 0.5
+
     def test_experiments_run_on_the_whole_installed_compute(self):
         """China's experiment compute grows with its total installed stock:
         decelerating from the latest stored year to the projection."""

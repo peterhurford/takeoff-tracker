@@ -359,8 +359,10 @@ US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). 
    sidebar, one key; `test_chinas_internal_lead_is_one_setting_on_both_tabs`), the
    internal DeepSeek model none
    (`test_deepseeks_held_back_model_is_about_its_setting_and_already_internal`). A higher
-   record lifts the slope (`_cn_tk_slope` refits the frontier with it), and the extra slope
-   goes to China's own research. `tk_cn_unscored` off leaves the scored anchor alone; the
+   record lifts the slope (`_cn_tk_slope` refits the frontier with it), and `_cn_tk_lift`
+   splits the extra across own research, distillation and the leak in proportion to their
+   measured rates (per draw; compute, measured apart, takes none), not all to own research,
+   the one channel that survives a US pause (`test_a_higher_slope_lifts_every_copying_channel_in_proportion`). `tk_cn_unscored` off leaves the scored anchor alone; the
    base draw comes first, so on can only raise a scenario
    (`test_unscored_models_only_ever_raise_chinas_level`).
 2. **Every rate is the China tab's split** (`_cn_tk_calibration`, `_cc_cn_channels` at
