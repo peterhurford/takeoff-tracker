@@ -351,9 +351,14 @@ US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). 
 
 1. **China's level today is uncertain on purpose** (`_cn_tk_levels`): the highest of the
    scored frontier's blended anchor (`_cc_frontier_anchor`, uniform over its spread),
-   `_CN_TK_UNSCORED` (Kimi K3.1 Pro, unscored, uniform over `tk_cn_kimi_lo`–`_hi`) and
-   `_CN_TK_HELD_BACK_ORG`'s best (DeepSeek releases Flash models: its top score plus up to
-   `tk_cn_heldback`), each carried to today on its own slope plus China's ship lag. A higher
+   `_CN_TK_UNSCORED` (Kimi K3.1 Pro, unscored, uniform over `tk_cn_kimi_lo`–`_hi`, ~161)
+   and `_CN_TK_HELD_BACK_ORG`'s internal model (DeepSeek releases Flash models: about
+   `tk_cn_heldback`, default 3, over its top score, ± `_CN_TK_HELD_BACK_SPREAD`), each
+   carried to today on its own slope; the released ones also get China's internal lead
+   before release (`cn_ship_lag`, 21 days, drawn in China's settings here and in Pacing's
+   sidebar, one key; `test_chinas_internal_lead_is_one_setting_on_both_tabs`), the
+   internal DeepSeek model none
+   (`test_deepseeks_held_back_model_is_about_its_setting_and_already_internal`). A higher
    record lifts the slope (`_cn_tk_slope` refits the frontier with it), and the extra slope
    goes to China's own research. `tk_cn_unscored` off leaves the scored anchor alone; the
    base draw comes first, so on can only raise a scenario
@@ -403,7 +408,12 @@ column is the section's key caveat: on releases the two climb at nearly the same
 trained frontier counts Anthropic's internal models, which have no Chinese counterpart in
 the data. Then the cards, the chart (US releases and the trained frontier with internal
 models drawn in, and China's start as a marker with its range), and the sources table
-(all-zero rows dropped). `test_china_section_says_where_each_side_starts`.
+(all-zero rows dropped). `test_china_section_says_where_each_side_starts`. The assumed parts
+of China's start are said in the body, not left to hovers: the table marks Kimi's score and
+the DeepSeek internal model ASSUMED and gives the measured-models-only level beside the
+assumed one, a bold body line under it (not an `st.warning`: the tab carries none) says
+China's start is partly made up (gone with `tk_cn_unscored` off), and the chart's China marker and Pacing's caption and marker say
+"assumed".
 
 Automated coding is dated no later than ultraintelligence, on both sides (`_tk_run` caps
 `coding_at` at `eci["ultra"]`): the simulator checks the coding level on its own capability,

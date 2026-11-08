@@ -140,10 +140,19 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 
 - **Value:** China's trained frontier today is the highest of three candidates per
   scenario: the scored frontier's blended anchor; Kimi K3.1 Pro (released Oct 23 2026, no
-  ECI score yet) uniform over 160–162; DeepSeek's top score (V4.1 Flash 1017, 158.8) plus
-  0–3 points. Median ~162.9 (80% 162.1–163.4); Kimi sets it in about half the scenarios.
+  ECI score yet) at ~161 (uniform 160–162); and an internal DeepSeek model about 3 points
+  over its top release (V4.1 Flash 1017, 158.8; uniform +2 to +4). Released candidates are
+  carried to today on China's slope plus China's internal lead before release (21 days,
+  `cn_ship_lag`, one setting on both tabs); DeepSeek's model is already internal, so takes
+  no lead. Median ~163.1 (80% 162.4–163.5); DeepSeek's internal model sets it in ~47% of
+  scenarios, Kimi in ~31%. All three are the user's judgments (Nov 2026), and the app says
+  so in the body: the DeepSeek model has never been seen and Kimi has no score. Measured
+  models alone start China at ~162.
 - **Why:** DeepSeek's releases are Flash models, deliberately not its best: V4 Pro led V4
-  Flash by 2.9 points, the 0813 Pro the 0731 Flash by 0.9. The Kimi range is a user
+  Flash by 2.9 points, the 0813 Pro the 0731 Flash by 0.9. Chinese labs mostly ship open
+  weights within weeks of a run ending, hence the short internal lead; the US's is longer
+  and its trained frontier counts Anthropic's internal models, an asymmetry the Takeoff
+  section's starting table states. The Kimi range is a user
   judgment pending Epoch's score. A higher level also implies a faster slope; the extra
   goes to China's own research, the residual it was measured as.
 - **Effect:** small. Distillation is proportional to the gap, so a higher start mostly

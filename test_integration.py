@@ -1740,12 +1740,35 @@ class TestTakeoffTab:
         t = next(x.value for x in at.table if "How" in x.value.columns)
         assert list(t[""]) == ["United States", "China", "Gap"]
         assert "internal" in t["How"].iloc[0]
-        assert "unscored" in t["How"].iloc[1]
+        assert "ASSUMED" in t["How"].iloc[1]
+        assert "measured models alone" in t["Where the model starts (trained, today)"].iloc[1]
+        # The made-up part is said in the body, not left to a hover, and goes
+        # with the assumptions.
+        assert any("partly made up" in str(m.value) for m in at.markdown)
         assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
         assert "US trained (internal models projected)" in names
-        assert "China today (trained, the model's start)" in names
+        assert "China today (trained; partly assumed)" in names
+        at.checkbox(key="tk_cn_unscored").uncheck().run()
+        assert not any("partly made up" in str(m.value) for m in at.markdown)
+        t = next(x.value for x in at.table if "How" in x.value.columns)
+        assert "measured models only" in t["Where the model starts (trained, today)"].iloc[1]
+
+    def test_chinas_internal_lead_is_one_setting_on_both_tabs(self):
+        """Takeoff's China settings carry the internal lead Pacing uses (the
+        shared `cn_ship_lag`); a longer lead raises China's starting level."""
+        at = self._app()
+
+        def start(app):
+            t = next(x.value for x in app.table if "How" in x.value.columns)
+            return float(t["Where the model starts (trained, today)"].iloc[1].split()[0])
+        before = start(at)
+        at.number_input(key="cn_ship_lag").set_value(84).run()
+        _assert_no_error(at, "Takeoff / China internal lead 84 days")
+        assert start(at) > before
+        _switch_tab(at, "Pacing")
+        assert at.number_input(key="cn_ship_lag").value == 84
 
     def test_gap_cards_never_show_a_negative_span(self):
         """A scenario whose ECI reaches ultraintelligence before its RSI date

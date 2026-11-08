@@ -6756,3 +6756,25 @@ class TestChinaTakeoff:
         cfg = vp._cn_tk_settings()
         assert cfg["compute"] in vp._CN_TK_COMPUTE_OPTIONS
         assert cfg["distill"] == cfg["leak"] == 1.0 and cfg["theft"] == 0.0
+
+    def test_deepseeks_held_back_model_is_about_its_setting_and_already_internal(self):
+        """DeepSeek's internal model sits about `held_back` points over its top
+        release, within the spread, and takes no further internal lead: a
+        longer lead moves the released candidates but not it."""
+        cal, today = self._cal(), datetime(2026, 11, 8)
+        held = f"{vp._CN_TK_HELD_BACK_ORG}'s held-back best"
+        top = cal["held_back"][1]
+        lvl, slope, src = vp._cn_tk_levels(cal, 400, 3, today, 21.0, kimi=(140.0, 140.0),
+                                           held_back=8.0)
+        assert set(src) == {held}
+        carry = slope * (today - cal["held_back"][0]).days / 365.25
+        base = lvl - carry - top
+        assert base.min() >= 7.0 - 1e-9 and base.max() <= 9.0 + 1e-9
+        lvl2, _s, src2 = vp._cn_tk_levels(cal, 400, 3, today, 200.0, kimi=(140.0, 140.0),
+                                          held_back=8.0)
+        # Where it still sets the level, its value is unmoved; elsewhere a
+        # released candidate, lifted by the longer lead, has overtaken it.
+        still = src2 == held
+        assert still.any() and not still.all()
+        np.testing.assert_allclose(lvl[still], lvl2[still])
+        assert np.all(lvl2[~still] > lvl[~still])
