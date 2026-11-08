@@ -25,7 +25,7 @@ WORKFLOW_WEIGHTS = np.array([0.2, 0.7, 0.1])
 MILESTONES = ("RSI",)
 DEFAULTS = {
     "onset_low": 6, "onset_high": 24, "years": 10, "seed": 42,
-    "software_months": 9.0, "compute_growth": 2.0,
+    "software_months": 8.4, "compute_growth": 2.0,
     "training_months": 3.0, "validation_months": 1.0,
     "training_share": 40, "experiment_share": 40,
     "taste_slope": 0.8, "coding_slope": 0.8,

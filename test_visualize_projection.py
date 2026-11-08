@@ -6235,6 +6235,7 @@ class TestTakeoffEciToday:
             c = vp._tk_evidence_chain(dict(tk.DEFAULTS, taste_slope=st["tk_taste_slope"],
                                            coding_slope=st["tk_coding_slope"]))
             assert c["sw_base_months"] == 14.0
+            assert "the default is Epoch's published" in vp._tk_evidence_math(c)
             assert round(c["compute"] * round(c["software"], 2), 2) == c["cap"]
         finally:
             st.clear()
@@ -6687,6 +6688,7 @@ class TestEvidenceMathCoding:
         md = vp._tk_evidence_math(c)
         assert f"{c['hist_oom']:.3f} \\text{{ OOM a year}} \\times {c['per_oom']:.2f}" in md
         assert f"{c['base_ppy']:.2f} − {c['c_pts']:.2f} = {c['a_pts']:.2f}" in md
+        assert "a published figure: Epoch's estimate" in md
         for prior in ("Baseline software doubling time", "Extra AI research output that "
                       "transfers", "Parallelization exponent", "AI speed on automated work",
                       "Labor–compute substitutability", "More AI researchers as algorithms "

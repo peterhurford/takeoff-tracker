@@ -22419,7 +22419,7 @@ def _tk_evidence_chain(params):
         "E": E, "c_pts": c_pts, "a_pts": a_pts, "pace": (E - c_pts) / a_pts,
         "years": yrs, "compute": comp, "cap": cap, "cap_y": cap ** (1 / yrs), "T": T,
         "compute_y": comp ** (1 / yrs), "software": cap / comp,
-        "sw_base_months": sw0,
+        "sw_base_months": sw0, "sw_default": takeoff.DEFAULTS["software_months"],
         "pt_per_dbl": rates["compute"] * np.log(2),
         "ce_months": 12 * rates["compute"] * np.log(2) / rates["algo_ppy"],
         "sw_months": sw0 / ((E - c_pts) / a_pts),
@@ -22531,9 +22531,13 @@ def _tk_evidence_math(c):
         f"is fitted): {c['base_ppy']:.2f} − {c['c_pts']:.2f} = {c['a_pts']:.2f}.",
         rf"$$\text{{pace}} = \frac{{{c['E']:g} - {c['c_pts']:.2f}}}{{{c['a_pts']:.2f}}} = {c['pace']:.2f}\times$$",
         "Chart 1 starts here. The model's software doubling time at the 2024–25 pace, "
-        f"{c['sw_base_months']:g} months (a prior: sidebar *Baseline software doubling "
-        "time*; Epoch's estimate for pretraining is 8.4 months, 95% CI 4.5–14.3; "
-        "see step 2), becomes "
+        f"{c['sw_base_months']:g} months ("
+        + ("a published figure: Epoch's estimate, Ho et al. 2024, 95% CI 4.5–14.3, "
+           "from pretraining alone over 2012–2023; sidebar *Baseline software doubling "
+           "time*; step 2 gives the other end"
+           if c['sw_base_months'] == c['sw_default'] else
+           "sidebar *Baseline software doubling time*; the default is Epoch's published "
+           f"{c['sw_default']:g}") + "), becomes "
         f"{c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} "
         "months today.",
         "**2. Effective compute, the yardstick.** Effective compute is training compute "
@@ -22549,7 +22553,7 @@ def _tk_evidence_math(c):
         f"buy what a compute doubling buys, {c['pt_per_dbl']:.2f} points ({c['per_oom']:.2f} "
         f"per OOM × log₁₀ 2): {c['a_pts']:.2f} ÷ {c['pt_per_dbl']:.2f} = "
         f"{c['a_pts'] / c['pt_per_dbl']:.1f} doublings a year, one every "
-        f"{c['ce_months']:.1f} months. The {c['sw_base_months']:g}-month prior instead makes "
+        f"{c['ce_months']:.1f} months. The {c['sw_base_months']:g}-month baseline instead makes "
         f"each algorithmic doubling worth {c['a_pts'] * c['sw_base_months'] / 12:.1f} points, "
         f"{c['a_pts'] * c['sw_base_months'] / 12 / c['pt_per_dbl']:.1f}× a compute doubling: "
         "it treats much of what ECI credits to release date (post-training, RL, data, "
@@ -24372,9 +24376,9 @@ def _render_takeoff(loading):
                    "measured as training compute saved at fixed quality, at the reference "
                    "40/40/20 compute split. Today's ECI growth above speeds it to today's "
                    "pace; that already includes today's AI assistance, which is not "
-                   "multiplied in again. Epoch (Ho et al. 2024) puts pretraining "
-                   "efficiency at 8.4 months a doubling (95% CI 4.5–14.3); post-training "
-                   "gains are not in that figure. Changing it re-reads the evidence "
+                   "multiplied in again. Default: Epoch's estimate (Ho et al. 2024), "
+                   "8.4 months, 95% CI 4.5–14.3, from pretraining alone over 2012–2023; "
+                   "post-training gains are not in it. Changing it re-reads the evidence "
                    "against the yardstick it sets.", on_change=_tk_reread_evidence)
             st.markdown("**Research feedback**")
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,

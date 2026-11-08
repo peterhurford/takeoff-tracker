@@ -17,7 +17,7 @@ See `checkpoints/takeoff-defaults-2026-09-08.json` for exact machine-readable se
 | Undeployed research today | 2 baseline months | Backlog awaiting validation/incorporation; avoids an empty initial pipeline. Amount not measured. | Months fixed; stock depends on sampled progress rate |
 | Fast feedback share | 25% | Minority of efficiency gains usable through tools, kernels, and small updates; 75% waits for successors. Assumed split. | Fixed |
 | Fast validation cycle | 1 month | Shorter than successor training; exact delay assumed. | Fixed |
-| Baseline software doubling time | 9 months | Current algorithmic efficiency improvement, including existing AI assistance; not fitted to validated discoveries. | Underlying progress rate varied |
+| Baseline software doubling time | 8.4 months | Epoch's pretraining compute-efficiency estimate (Ho et al. 2024, 95% CI 4.5–14.3); not fitted to validated discoveries. | Underlying progress rate varied |
 | Successor training duration | 3 months | Illustrative months-long training run, not a measured average. | Varied |
 | Validation/deployment delay | 1 month | Additional checking and incorporation time; assumed. | Varied |
 
@@ -115,8 +115,8 @@ validation delay; initial useful-project success; calibrated quality elasticity;
 breadth gaps; three human-work halving times; failure halving time; three initial human
 shares; and research difficulty. All other controls are fixed within the ensemble, though users can vary them manually.
 
-The doubling-time input is inverted into a rate before variation: nine months produces
-roughly 6.0–13.4-month doubling times. Compute growth is 2^F, about 1.59–2.81× annually,
+The doubling-time input is inverted into a rate before variation: 8.4 months produces
+roughly 5.6–12.5-month doubling times. Compute growth is 2^F, about 1.59–2.81× annually,
 not 2*F. Human shares are capped at 100% and floored at the persistent floor; success is
 capped at 100%. These clips distort the otherwise symmetric log-space distribution.
 

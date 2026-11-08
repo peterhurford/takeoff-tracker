@@ -13,8 +13,8 @@ They no longer shift an otherwise identical post-coding simulation forward in ti
 
 Research is partially automated today. Initial human-hour shares (calibrated below),
 coding automation (70%), and the software progress rate behind the public ECI line
-(one doubling per nine months; Epoch's pretraining estimate is 8.4, 95% CI 4.5–14.3) are
-assumptions: ECI fixes only algorithms' points a year, not how many doublings they are.
+(one doubling per 8.4 months, Epoch's pretraining estimate, 95% CI 4.5–14.3, applied
+to all of algorithms' share) are assumptions: ECI fixes only algorithms' points a year, not how many doublings they are.
 Today's rate is that one sped up until modeled ECI growth equals `tk_eci_today`, by
 default the trained US frontier's smoothed climb at its latest model (`_TK_ECI_TODAY`,
 read live; the math section shows it and the doubling it implies); it already includes
