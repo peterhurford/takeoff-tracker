@@ -136,6 +136,25 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 - **Effect (2,000 draws, through 2035):** racing, China at ultraintelligence goes from 11 months behind to 1 month ahead with software theft today. With a US pause today, China reaches the frozen frontier in Apr 2027 instead of Nov 2027; a one-time weight theft, in Nov 2026. With no pacing, a one-time weight theft today narrows the ultraintelligence lag from 11 months to 6.
 - **Revisit when:** evidence on Chinese exfiltration of US code or weights, or on Chinese labs' training share of compute.
 
+### 11. China's level today and its takeoff inputs (`_cn_tk_*`, Takeoff section 5)
+
+- **Value:** China's trained frontier today is the highest of three candidates per
+  scenario: the scored frontier's blended anchor; Kimi K3.1 Pro (released Oct 23 2026, no
+  ECI score yet) uniform over 160–162; DeepSeek's top score (V4.1 Flash 1017, 158.8) plus
+  0–3 points. Median ~162.9 (80% 162.1–163.4); Kimi sets it in about half the scenarios.
+- **Why:** DeepSeek's releases are Flash models, deliberately not its best: V4 Pro led V4
+  Flash by 2.9 points, the 0813 Pro the 0731 Flash by 0.9. The Kimi range is a user
+  judgment pending Epoch's score. A higher level also implies a faster slope; the extra
+  goes to China's own research, the residual it was measured as.
+- **Effect:** small. Distillation is proportional to the gap, so a higher start mostly
+  means less distillation; the milestone lags move by about a week.
+- **Other inputs:** experiments grow with China's total installed AI compute
+  (×1.9 over 2025–26, projected ×1.54/yr to 2030), training on the export-control band.
+  The 2025–26 history is the judgment: from 2024 the stock (which counts no chips bought
+  before 2022) grows ×2.45/yr, which would read today's pace as needing more input growth.
+- **Revisit when:** Epoch scores Kimi K3.1 Pro or a DeepSeek Pro/V5, or China's compute
+  sources are revised.
+
 ## Checked and deliberately left alone
 
 - **Catalogue coverage.** It holds ~0.94 GW of IT power in China at end-2026, against SemiAnalysis's 24 GW national fleet (~4%; the US is ~25%). That is irrelevant to largest-site views as long as the largest sites are present.

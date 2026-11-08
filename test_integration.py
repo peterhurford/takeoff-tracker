@@ -1302,8 +1302,8 @@ class TestTakeoffTab:
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, capability pace, net pace, pace factors, their multiplication,
-        # compute, people, ECI, yearly progress and the distributions.
-        assert len(_tk_charts(at)) == 15
+        # compute, people, ECI, yearly progress, the distributions and China's takeoff.
+        assert len(_tk_charts(at)) == 16
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -1316,6 +1316,8 @@ class TestTakeoffTab:
             "METR's acceleration assessment",
             "What the evidence feeds in", "1. Research speeds up", "2. People step out of the loop",
             "3. What it does to capability (ECI)", "4. When it happens, and how fast"]
+        # China's takeoff closes the model, after section 4.
+        assert subs.index("5. China's takeoff") == subs.index("4. When it happens, and how fast") + 1
         folded = {e.label for e in at.expander}
         for label in ("Milestone weights and dates", "Set your own weights",
                       "Why this isn't METR's ~2×", "What moves the pace", "Compute",
@@ -1482,7 +1484,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 15
+        assert len(_tk_charts(at)) == 16
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1491,7 +1493,8 @@ class TestTakeoffTab:
 
         def capture(params, **kwargs):
             result = original(params, **kwargs)
-            captured.append(result)
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(result)
             return result
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1581,7 +1584,8 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            captured.append(kwargs["onset_years"].copy())
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(kwargs["onset_years"].copy())
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1652,7 +1656,8 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            seen.append(kwargs.get("compute_rates"))
+            if kwargs.get("follower") is None:     # the US run, not China's
+                seen.append(kwargs.get("compute_rates"))
             return original(*args, **kwargs)
 
         monkeypatch.setattr(tk, "simulate", capture)
@@ -1691,6 +1696,27 @@ class TestTakeoffTab:
         _assert_no_error(at, "Takeoff / point estimates")
         assert ci80() != wide
 
+    def test_china_takeoff_lags_the_us_and_follows_its_settings(self):
+        """Section 5 runs China as a follower of the US scenarios: its three
+        milestones read behind the US's, and cutting distillation and the leak
+        pushes them further behind."""
+        at = self._app()
+        assert [m.label for m in at.metric if m.label.startswith("China: ")] == [
+            "China: Automated coder", "China: RSI", "China: Ultraintelligence"]
+
+        def lags(app):
+            out = [_span_mo(re.match(r"Behind the US: ([^(]+)", c.value).group(1))
+                   for c in app.caption if c.value.startswith("Behind the US: ")]
+            assert len(out) == 3
+            return out
+        before = lags(at)
+        assert all(v > 0 for v in before)
+        assert "Distillation" in str(at.table[-1].value)
+        at.number_input(key="tk_cn_distill").set_value(0.0)
+        at.number_input(key="tk_cn_leak").set_value(0.0).run()
+        _assert_no_error(at, "Takeoff / China without copying")
+        assert all(a > b for a, b in zip(lags(at), before))
+
     def test_gap_cards_never_show_a_negative_span(self):
         """A scenario whose ECI reaches ultraintelligence before its RSI date
         reads 0 on the gap cards, never a negative interval edge."""
@@ -1703,7 +1729,7 @@ class TestTakeoffTab:
         """The RSI-to-ultraintelligence panel plots no negative gap, matching
         the cards."""
         at = self._app()
-        dist = json.loads(_tk_charts(at)[-1].proto.spec)
+        dist = json.loads(_tk_charts(at)[14].proto.spec)
         gap = [tr for tr in dist["data"] if tr.get("legendgroup") == "gap"]
         assert gap
         def xs(x):
@@ -1719,8 +1745,10 @@ class TestTakeoffTab:
         original = tk.simulate
 
         def capture(*args, **kwargs):
-            captured.append(original(*args, **kwargs))
-            return captured[-1]
+            result = original(*args, **kwargs)
+            if kwargs.get("follower") is None:     # the US run, not China's
+                captured.append(result)
+            return result
 
         monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
@@ -3323,16 +3351,16 @@ class TestTodayForwardMode:
         assert not [c for c in at.checkbox if c.key == "today_fwd"]
 
     def test_takeoff_converts_its_projections_not_the_evidence(self):
-        """The RSI projection's CDF and the eleven takeoff projections (the
-        ECI growth chart included) go forward; the evidence charts above them
-        keep their history."""
+        """The RSI projection's CDF and the twelve takeoff projections (the
+        ECI growth chart and China's takeoff included) go forward; the evidence
+        charts above them keep their history."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Takeoff")
         at.checkbox(key="today_fwd").set_value(True).run()
         specs = self._specs(at)
         fwd = [sp for sp in specs if self._starts_today(sp)]
-        assert len(fwd) == 12
+        assert len(fwd) == 13
         assert fwd[0]["layout"]["yaxis"]["title"]["text"] == "Chance crossed by then"
         assert len(specs) > len(fwd)
 

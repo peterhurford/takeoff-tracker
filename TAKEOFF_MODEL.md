@@ -1,6 +1,6 @@
 # Research feedback from today through takeoff
 
-Version: `takeoff-v31-direction-waits-for-coding`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
+Version: `takeoff-v32-followers`. Checkpoint `6e22ad2` preserves the earlier explorer. These are scenario forecasts with
 explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
@@ -356,6 +356,41 @@ RSI and calibration partly share evidence and are not independent confirmations.
 
 Sources: [OpenAI](https://openai.com/index/research-acceleration-view-inside-openai/),
 [Anthropic](https://www.anthropic.com/institute/recursive-self-improvement).
+
+## Followers: a country behind the frontier
+
+`simulate(follower=...)` runs a country behind the leader (the app runs China behind the
+US, scenario by scenario, every structural draw shared). Four things differ from a leader
+run; everything else is the same equation.
+
+- **Hours are read by ECI.** The follower's human hours at its ECI are the leader
+  scenario's at the same ECI: its ECI is mapped to the leader's capability there (a table
+  per draw, linear at the leader's growth rate today past either end) and read on the
+  leader's clock. Below the leader's level today, each stage's hours run back up at its own
+  halving time, to at most all of them (`workflow_state(backward=True)`). Coding is
+  automated at the ECI the paired leader scenario automated it at, and its productivity
+  ramp runs on capability rather than an inherited date. Its starting human share, not the
+  leader's, normalizes the Amdahl and judgment terms, so today's pace stays its own.
+- **Its own research runs at its own rate** (`software_scale`), calibrated to its measured
+  innovation only, since copying is modeled separately.
+- **Experiment compute can grow apart from the frontier run**: `experiment_rates` against
+  `historical_experiment_rate`, keeping the fitted steady-state share of that growth. For
+  China, experiments run on all its installed compute (smuggled and rented chips included),
+  training on the largest run it can mount, which export controls bound harder.
+- **Copying is a separate stock.** Each step it gains `distill` of the ECI gap to the
+  leader's released frontier a year, a `leak` share of the leader's algorithmic ECI gains
+  `absorb` years late, and a `theft` share at once, together never more than the gap from
+  where its own research stands. The stock counts toward capability, AI help, copies and
+  hours at once, but not into the research stock, so copied ideas neither raise its
+  difficulty nor wait on scale (its training scale did not make them). Each channel's
+  cumulative ECI is `follow_eci`.
+
+Because distillation is proportional to the gap, the lag is held near the gap's time
+constant: a racing leader pulls the follower along, a paused one dries it up. At the app's
+defaults China's three milestones trail the US's by about a year; without distillation by
+2–3 years, and without distillation or the leak by 5–8, its own takeoff being bound by its
+small measured innovation rate. Its level today barely matters, since distillation closes
+the difference.
 
 ## Reporting and limitations
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 
-MODEL_VERSION = "takeoff-v31-direction-waits-for-coding"
+MODEL_VERSION = "takeoff-v32-followers"
 SOURCE_DIGEST = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
                    "Verification and integration")
@@ -294,8 +294,110 @@ def normal_scores(uniform):
     return np.vectorize(NormalDist().inv_cdf, otypes=[float])(u)
 
 
+# A follower's inflow channels, in the order the app stacks them.
+FOLLOW_CHANNELS = ("distillation", "leak", "theft")
+# What `simulate(follower=...)` takes. Paths are (draws x months) on `years`
+# (years from today, increasing); levels are ECI.
+FOLLOWER_KEYS = {
+    "years": "the leader's monthly grid",
+    "eci": "the leader's modeled ECI per draw, non-decreasing (its hours' index)",
+    "capability": "the leader's log capability on the same grid",
+    "rate": "the leader's log capability growth a year today, per draw",
+    "ppy": "the leader's ECI growth a year today",
+    "teacher": "the leader's released ECI, which distillation closes on",
+    "software_eci": "the leader's algorithmic ECI (released), which leaks",
+    "software_ppy": "the leader's algorithmic ECI a year before today",
+    "eci_now": "the follower's ECI today, per draw",
+    "weights": "(ECI per unit log compute, per unit log software) for the follower",
+    "distill": "share of the ECI gap distillation closes a year",
+    "leak": "share of the leader's algorithmic progress that leaks",
+    "theft": "share of the leader's algorithmic progress stolen at once",
+    "absorb": "years a leaked idea takes to reach the follower",
+}
+
+
+def _row_interp(paths, years, back):
+    """u (one time per draw) -> each row of `paths` at its own u: linear inside
+    the grid, held past its end, run back at `back` a year before it."""
+    paths = np.asarray(paths, dtype=float)
+    rows = np.arange(len(paths))
+    dt = years[1] - years[0]
+    last = len(years) - 2
+
+    def at(u):
+        u = np.asarray(u, dtype=float)
+        x = np.clip(u, 0.0, years[-1]) / dt
+        i = np.minimum(x.astype(int), last)
+        f = x - i
+        v = paths[rows, i] * (1 - f) + paths[rows, i + 1] * f
+        return np.where(u < 0, paths[:, 0] + back * u, v)
+    return at
+
+
+def _follower_inputs(follower, n, step=1.0, span=600.0):
+    """Check `follower` (`FOLLOWER_KEYS`) and build what `simulate` reads:
+    'eci' (capability, software -> the follower's ECI), 'equivalent' (an ECI ->
+    the leader's capability there, per draw, from a table every `step` ECI over
+    `span` above the lowest start, linear past it at today's rate), 'rate', and
+    'teacher' / 'software' (time per draw -> the leader's released ECI and
+    algorithmic ECI then)."""
+    missing = [k for k in FOLLOWER_KEYS if k not in follower]
+    if missing:
+        raise ValueError("A follower needs " + ", ".join(missing) + ".")
+    years = np.asarray(follower["years"], dtype=float)
+    shaped = {k: np.asarray(follower[k], dtype=float)
+              for k in ("eci", "capability", "teacher", "software_eci")}
+    if len(years) < 2 or np.any(np.diff(years) <= 0) or any(
+            v.shape != (n, len(years)) or not np.isfinite(v).all() for v in shaped.values()):
+        raise ValueError("Follower paths need one finite row per draw on an increasing grid.")
+    per_draw = {k: np.broadcast_to(np.asarray(follower[k], dtype=float), (n,)).copy()
+                for k in ("rate", "eci_now")}
+    ppy = float(follower["ppy"])
+    w = tuple(float(v) for v in follower["weights"])
+    shares = [float(follower[k]) for k in ("distill", "leak", "theft", "absorb")]
+    if not all(np.isfinite(v).all() for v in per_draw.values()) or (per_draw["rate"] <= 0).any() \
+            or not ppy > 0 or len(w) != 2 or not min(w) > 0 or min(shares) < 0 \
+            or not shares[1] <= 1 or not shares[2] <= 1:
+        raise ValueError("Follower rates, weights and ECI must be positive and finite; "
+                         "shares must be in [0, 1].")
+    lead_eci = np.maximum.accumulate(np.minimum(shaped["eci"], 1e5), axis=1)
+    cap = shaped["capability"]
+    slope = per_draw["rate"] / ppy          # leader capability per ECI point today
+    lo = min(float(per_draw["eci_now"].min()), float(lead_eci[:, 0].min())) - 50.0
+    grid = lo + step * np.arange(int(span / step) + 1)
+    table = np.empty((n, len(grid)))
+    for i in range(n):
+        top = np.searchsorted(lead_eci[i], grid, side="right")
+        inside = np.interp(grid, lead_eci[i], cap[i])
+        below = cap[i, 0] + (grid - lead_eci[i, 0]) * slope[i]
+        above = cap[i, -1] + (grid - lead_eci[i, -1]) * slope[i]
+        table[i] = np.where(grid < lead_eci[i, 0], below,
+                            np.where(top >= len(years), np.maximum(above, inside), inside))
+    rows = np.arange(n)
+
+    def equivalent(e):
+        pos = (np.asarray(e, dtype=float) - lo) / step
+        i = np.clip(pos.astype(int), 0, len(grid) - 2)
+        f = np.clip(pos - i, 0.0, 1.0)
+        inside = table[rows, i] * (1 - f) + table[rows, i + 1] * f
+        past = table[rows, -1] + (np.asarray(e) - grid[-1]) * slope
+        before = table[rows, 0] + (np.asarray(e) - grid[0]) * slope
+        return np.where(pos > len(grid) - 1, past, np.where(pos < 0, before, inside))
+
+    def eci(capability, software):
+        return per_draw["eci_now"] + w[0] * (capability - software) + w[1] * software
+
+    return {"eci": eci, "equivalent": equivalent, "rate": per_draw["rate"],
+            "eci_now": per_draw["eci_now"], "w": w,
+            "teacher": _row_interp(shaped["teacher"], years, ppy),
+            "software": _row_interp(shaped["software_eci"], years,
+                                    float(follower["software_ppy"])),
+            "distill": shares[0], "leak": shares[1], "theft": shares[2],
+            "absorb": shares[3]}
+
+
 def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
-                   curve=None, reference_half=None, direction_pace=None):
+                   curve=None, reference_half=None, direction_pace=None, backward=False):
     """Human hours per stage relative to a fixed baseline project.
 
     Capability progress is measured in years at today's effective-compute
@@ -307,11 +409,21 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
     evenly spaced `years` grid; further elements give the stages in order
     (research direction first) their own curves of the same form. `direction_pace`, one
     multiple per draw, moves research direction that much faster.
+
+    `backward` reads a capability below today's (negative), as a country
+    behind the frontier stands: each stage's hours run back up at its own
+    halving time, to at most all of them (1).
     """
-    equivalent_years = np.maximum(capability_log, 0) / baseline_rate
+    equivalent_years = (np.asarray(capability_log, dtype=float) if backward
+                        else np.maximum(capability_log, 0)) / baseline_rate
     stage_years = np.repeat(equivalent_years[:, None], np.shape(starts)[-1], axis=1)
     if direction_pace is not None:
         stage_years[:, 0] = stage_years[:, 0] * direction_pace
+    if backward:
+        behind = np.exp(-np.log(2) * np.minimum(stage_years, 0) * 12 / half_months)
+        ahead = workflow_state(np.maximum(capability_log, 0), baseline_rate, starts,
+                               half_months, floor, curve, reference_half, direction_pace)
+        return np.minimum(floor + (ahead - floor) * behind, 1.0)
     if curve is None:
         decline = np.exp(-np.log(2) * stage_years * 12 / half_months)
     else:
@@ -394,7 +506,8 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
              compute_rates=None, historical_compute_rate=None, coding_capability=None,
-             coding_weights=None, human_curve=None):
+             coding_weights=None, human_curve=None, software_scale=None,
+             experiment_rates=None, historical_experiment_rate=None, follower=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under `full_human`% of
@@ -411,7 +524,28 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     for that test, so the level can be an ECI gain; default 1 and 1, log
     effective compute. `coding_capability`, a capability level
     (log effective compute), counts coding as automated once a deployed model
-    reaches it, ahead of the inherited date; the result's `coding_at`.
+    reaches it, ahead of the inherited date; the result's `coding_at`
+    (`coding_capability` may be one level per draw).
+
+    `software_scale`, one multiple per draw, scales today's software rate
+    (a country whose own research runs slower). `experiment_rates`, one log
+    growth rate a year per draw, is the growth of the compute experiments can
+    use when it differs from the frontier run's (`compute_rates`), against
+    `historical_experiment_rate` behind today's pace: experiment compute keeps
+    its fitted steady-state share of that growth. Both default to the
+    frontier's, which leaves the model as it was.
+
+    `follower` runs a country behind the frontier (see `FOLLOWER_KEYS`): its
+    human hours are those of the leader's scenario at the same ECI (run back
+    at each stage's halving below today's), and besides its own research it
+    gains capability by distilling the leader's released models (a share of
+    the ECI gap a year) and by the leader's algorithmic progress leaking (a
+    share, `absorb` years late) or being stolen (a share, at once). That
+    inflow is its own additive stock: it counts toward capability, AI help and
+    hours at once, never into the research stock, so it neither raises
+    difficulty nor waits on scale, and it never carries the follower past the
+    leader's released frontier. The result's `follow_eci` keeps each
+    channel's cumulative ECI per month.
 
     A run freezes its algorithm snapshot at its start, integrates allocated
     training compute during the run, then waits for validation before deployment.
@@ -446,12 +580,27 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
     software_rate = np.log(2) * 12 / p["software_months"] * factors[0]
+    if software_scale is not None:
+        software_scale = np.asarray(software_scale, dtype=float)
+        if software_scale.shape != (n,) or not np.isfinite(software_scale).all() \
+                or (software_scale <= 0).any():
+            raise ValueError("Provide one finite, positive software-rate multiple per draw.")
+        software_rate = software_rate * software_scale
     compute_rate = np.log(p["compute_growth"]) * factors[1]
     if compute_rates is not None:
         compute_rate = np.asarray(compute_rates, dtype=float).copy()
         if compute_rate.shape != (n,) or not np.isfinite(compute_rate).all() \
                 or (compute_rate < 0).any():
             raise ValueError("Provide one finite, non-negative compute growth rate per draw.")
+    exp_rate = compute_rate
+    if experiment_rates is not None:
+        exp_rate = np.asarray(experiment_rates, dtype=float).copy()
+        if exp_rate.shape != (n,) or not np.isfinite(exp_rate).all() or (exp_rate < 0).any():
+            raise ValueError("Provide one finite, non-negative experiment-compute growth "
+                             "rate per draw.")
+    fol = _follower_inputs(follower, n) if follower is not None else None
+    if fol is not None and coding_capability is None:
+        raise ValueError("A follower needs the capability at which its coding is automated.")
     train_time = p["training_months"] / 12 * factors[2]
     eval_time = p["validation_months"] / 12 * factors[3]
     taste_slope = p["taste_slope"] * np.exp(p["judgment_spread"] / 100 * z[5])
@@ -471,15 +620,21 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # time over its own (with its draw's spread).
     reference_half = float(np.array([p["half_" + s] for s in WORKFLOW_KEYS]) @ WORKFLOW_WEIGHTS)
 
-    def humans(capability, t=None):
+    def humans(capability, t=None, software=None):
+        # A follower's hours are its leader's at the same ECI: the leader's
+        # capability there, on the leader's clock.
+        rate = baseline_capability_rate
+        if fol is not None:
+            capability = fol["equivalent"](fol["eci"](capability, software))
+            rate = fol["rate"]
         # Direction is handed over faster as AI judgment passes today's AI's.
         # Clipped in logs: a runaway's judgment would overflow, and past e^30
         # direction has long since been handed over.
         pace = (np.exp(np.minimum(p["direction_adoption"] * ai_judgment_log(
                     capability, taste_slope, drift, transfer, p["judgment_cap"]), 30))
                 if p["direction_adoption"] else None)
-        hours = workflow_state(capability, baseline_capability_rate, starts, halves, floor,
-                               human_curve, reference_half, pace)
+        hours = workflow_state(capability, rate, starts, halves, floor,
+                               human_curve, reference_half, pace, backward=fol is not None)
         if t is None:
             return hours
         # AI cannot direct research before it can code: direction holds at the
@@ -676,11 +831,16 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
     ai_speed = p["ai_speed"]
-    human0 = starts @ WORKFLOW_WEIGHTS
+    # Today's human hours: the settings' starts, or a follower's own (its
+    # leader's hours at the follower's ECI today, run back if behind).
+    today_hours = starts if fol is None else humans(np.zeros(n), None, np.zeros(n))
+    human0 = today_hours @ WORKFLOW_WEIGHTS
+    if fol is not None:
+        record("Today", np.ones(n, bool), today_hours, np.ones(n), np.ones(n))
     amdahl0 = np.log(human0 + (1 - human0) / ai_speed)
     # Today's research quality, so the level of AI judgment moves only what
     # handing direction over buys, not today's calibrated pace.
-    quality0_log = np.log(starts[:, 0] + (1 - starts[:, 0]) * p["judgment_today"])
+    quality0_log = np.log(today_hours[:, 0] + (1 - today_hours[:, 0]) * p["judgment_today"])
     # Non-AI inputs. Human staff grow `hiring_growth` a year until RSI and
     # `staff_after_rsi` after, speeding the human share of the work; their
     # effect on labor today is that growth times the human share of the time.
@@ -702,9 +862,18 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # compute grows at the fitted rate itself.
     has_history = hist_rate > 1e-9
     exp_share = np.divide(exp_growth, hist_rate, out=np.ones(n), where=has_history)
+    # Experiment compute of its own (`experiment_rates`): the same fitted
+    # steady-state share, of its own growth against its own history.
+    own_experiments = experiment_rates is not None or historical_experiment_rate is not None
+    if own_experiments:
+        exp_hist = (hist_rate if historical_experiment_rate is None
+                    else np.full(n, float(historical_experiment_rate)))
+        has_history = exp_hist > 1e-9
+        exp_share = np.divide(exp_growth, exp_hist, out=np.ones(n), where=has_history)
+    exp_late = exp_rate * p["compute_slowdown"] / 100
     # What research inputs grow by on average, for the trend blend.
     input_rate = compute_rate + (hire_effect + np.where(
-        has_history, (exp_share - 1) * compute_rate, exp_growth)) / 2
+        has_history, exp_share * exp_rate - compute_rate, exp_growth)) / 2
     # Ongoing useful research production is distinct from batched deliveries.
     # Today's production baseline already includes existing AI assistance.
     pace_history = np.repeat(initial_throughput[:, None], len(workflow_grid), axis=1)
@@ -737,6 +906,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     boost_log = np.zeros(n)
     boost_history = np.zeros_like(capability_history)
     now = (np.zeros(n), np.zeros(n), np.zeros(n))
+    # A follower's inflow (capability-log units) and its ECI by channel.
+    follow_log = np.zeros(n)
+    follow_eci = {k: np.zeros(n) for k in FOLLOW_CHANNELS} if fol is not None else {}
+    follow_history = {k: np.zeros_like(capability_history) for k in follow_eci}
+    if fol is not None:
+        coding_level = np.broadcast_to(np.asarray(coding_capability, dtype=float), (n,)).copy()
     realized()                  # the deployed model, refreshed when it changes
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + run_len
@@ -762,8 +937,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         compute_log = base_compute_log + boost_log + boost_step / 2
         # Experiment compute's shortfall from the frontier, and staff headcount
         # (vs today) on the draw's own RSI clock.
-        exp_log = np.where(has_history, (exp_share - 1) * base_compute_log,
-                           exp_growth * (t + dt / 2))
+        if own_experiments:
+            exp_log = np.where(has_history, exp_share * log_level(
+                t + dt / 2, exp_rate, exp_late, slow_at) - base_compute_log,
+                exp_growth * (t + dt / 2))
+        else:
+            exp_log = np.where(has_history, (exp_share - 1) * base_compute_log,
+                               exp_growth * (t + dt / 2))
         mid_t = t + dt / 2
         # Without AI transfer nothing changes at RSI, as in the reference.
         staff_rsi = events["RSI"] if transfer else np.inf
@@ -771,15 +951,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                     + after_rate * np.maximum(mid_t - staff_rsi, 0))
         # The deployed model only changes at the end of a step, where `now`
         # is refreshed, so the last step's reading still holds here.
-        effective = now[2].copy()
-        human_now = humans(effective, t)
+        effective = now[2] + follow_log
+        human_now = humans(effective, t, now[1] + follow_log)
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
         # More copies of the AI researcher on the same compute as its
         # algorithms improve: AI's share of the work speeds up with them.
         # In logs, so a runaway's copies never overflow.
-        log_speed = np.log(ai_speed) + p["ai_copies"] * np.maximum(now[1], 0)
+        log_speed = np.log(ai_speed) + p["ai_copies"] * np.maximum(now[1] + follow_log, 0)
         with np.errstate(divide="ignore"):
             amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
                                                 np.log1p(-share_now) - log_speed)
@@ -800,6 +980,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         coding_fraction = np.clip(np.divide(t + dt / 2, coding,
             out=np.ones(n), where=coding > 0), 0, 1)
         coding_fraction = np.where(coding <= 0, 0, coding_fraction)
+        if fol is not None:
+            # No inherited date: the ramp runs on capability, from today's
+            # level to the one that automates coding.
+            level_now = (effective if coding_weights is None else
+                         coding_weights[0] * now[0] + coding_weights[1] * (now[1] + follow_log))
+            coding_fraction = np.where(coding <= t + 1e-12, 1.0, np.clip(np.divide(
+                level_now, coding_level, out=np.ones(n), where=coding_level > 0), 0, 1))
         rsi_coding_log = np.log((1 - p["coding_today"] / 100) / .05) * coding_fraction
         coding_gain = np.maximum(rsi_coding_log, p["coding_slope"] * effective)
         if transfer:
@@ -866,7 +1053,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             judgment_log = (1 - weight) * quality_log
             compute_part = ((1 - weight) * compute_part + weight * (
                 np.log(initial_throughput) + parallel * mid * np.where(
-                    has_history, compute_rate * (1 + exp_share) / 2,
+                    has_history, (compute_rate + exp_share * exp_rate) / 2,
                     compute_rate + exp_growth / 2)))
             labor_part = (1 - weight) * labor_part + weight * parallel * hire_effect / 2 * mid
         # Difficulty: beta per unit of progress, rising toward the ceiling,
@@ -909,6 +1096,22 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             return progress + np.exp(np.minimum(amount_log, 100))
 
         updated = initial_stock + advance(gained, log_x, log_amount)
+        if fol is not None:
+            # The follower's inflow over the step, in ECI, toward the leader's
+            # released frontier from where its own research stands.
+            standing = fol["eci_now"] + fol["w"][0] * now[0] + fol["w"][1] * (
+                updated - initial_stock + follow_log)
+            gap = np.maximum(fol["teacher"](mid_t) - standing, 0)
+            flows = {"distillation": fol["distill"] * gap * dt,
+                     "leak": fol["leak"] * (1 - fol["theft"]) * np.maximum(
+                         fol["software"](end - fol["absorb"]) - fol["software"](t - fol["absorb"]), 0),
+                     "theft": fol["theft"] * np.maximum(
+                         fol["software"](end) - fol["software"](t), 0)}
+            total = sum(flows.values())
+            keep = np.divide(np.minimum(total, gap), total, out=np.zeros(n), where=total > 0)
+            for key, flow in flows.items():
+                follow_eci[key] += np.where(active, flow * keep, 0)
+            follow_log = follow_log + np.where(active, total * keep, 0) / fol["w"][1]
         reference_gained = advance(reference_gained, ref_log_x, ref_log_amount)
         # Stop numerically divergent draws explicitly, rather than silently
         # treating a numerical ceiling as a capability plateau.
@@ -933,7 +1136,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # relative to today's mix.
             h_ver = human_now[:, 2]
             eval_len[done] = (eval_time * (h_ver + (1 - h_ver) / ai_speed)
-                              / (starts[:, 2] + (1 - starts[:, 2]) / ai_speed))[done]
+                              / (today_hours[:, 2] + (1 - today_hours[:, 2]) / ai_speed))[done]
         candidate_compute = np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
         candidate = (1 - fast_fraction) * snapshot + candidate_compute
         reference_snapshot = initial_stock + reference_at_run_start
@@ -999,6 +1202,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if changed.size:
             realized(changed)
         compute_now, software_now, effective = (v.copy() for v in now)
+        software_now += follow_log
+        effective += follow_log
         if coding_capability is not None:
             level = effective
             if coding_weights is not None:
@@ -1014,7 +1219,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             history[rows] = np.where(future, values[rows, None], history[rows])
         # A diverged draw's state is a numerical ceiling: record nothing from it.
         live = active & ~diverged
-        human = humans(effective, end)
+        human = humans(effective, end, software_now)
         coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
@@ -1048,6 +1253,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             seen_flat[0][rows * len(workflow_grid) + observation_index[rows]] = (
                 seen_now + row_offset[rows])
         stock_seen[rows, observation_index[rows]] = software[rows]
+        for key in follow_eci:
+            follow_history[key][rows, observation_index[rows]] = follow_eci[key][rows]
         boost_history[rows, observation_index[rows]] = boost_log[rows]
         resources_log = research_log - judgment_log
         for key, values in (("judgment", judgment_log),
@@ -1064,6 +1271,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         stopped_at[active & diverged] = end[active & diverged]
         t = np.where(diverged, p["years"], end)
     total_budget = grown(p["years"], compute_rate, compute_late, slow_at)
+    # Cumulative, so a month a stopped draw never reached holds its last value.
+    follow_history = {k: np.maximum.accumulate(v, axis=1) for k, v in follow_history.items()}
     stopped = workflow_grid[None, :] > stopped_at[:, None]
     pace_history = np.where(stopped, last_pace[:, None], pace_history)
     reference_pace_history = np.where(stopped, last_reference_pace[:, None], reference_pace_history)
@@ -1079,9 +1288,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     direction_ready = np.full(n, np.inf)
 
     def humans_at(j):
-        ready = humans(capability_history[:, j])[:, 0] <= p["full_human"] / 100
+        ready = humans(capability_history[:, j], None,
+                       realized_history[:, j])[:, 0] <= p["full_human"] / 100
         direction_ready[ready & ~np.isfinite(direction_ready)] = workflow_grid[j]
-        hours = humans(capability_history[:, j], workflow_grid[j])
+        hours = humans(capability_history[:, j], workflow_grid[j], realized_history[:, j])
         if p["rsi_autopilot"]:
             hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
         return hours
@@ -1155,6 +1365,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             "reference_log": reference_history,
             "rate": rate_history,
             "matched": matched_history,
+            # A follower's cumulative ECI from each inflow channel, by month.
+            "follow_eci": follow_history,
         },
         "progress_multiple": delivered_rate,
         "compute_matched_advantage": advantage,
@@ -1165,6 +1377,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},
+        # Each draw's log software and capability growth a year today: a
+        # follower's clock for reading this run's hours (`FOLLOWER_KEYS`).
+        "software_rate": software_rate, "capability_rate": baseline_capability_rate,
         "stopped_at": stopped_at,
     }
 

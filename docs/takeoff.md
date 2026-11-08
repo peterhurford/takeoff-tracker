@@ -4,7 +4,7 @@ The Takeoff scenario explorer and its evidence half (the former RSI tab). Read b
 
 ## Takeoff scenario explorer
 
-`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v31-direction-waits-for-coding`.
+`render_takeoff()` uses `takeoff_model.py`, currently `takeoff-v32-followers`.
 See `TAKEOFF_MODEL.md` for the current equations, calibration, definitions, and caveats.
 Simulation time now begins **today**. `onset` retains exact final RSI coding-date draws;
 `events` are already years from today. Never add onset to event times. `after_coding`
@@ -255,7 +255,8 @@ clipped at Dec 31 may end a day before Jan 1 and still keeps that year's bar
 (`test_a_grid_ending_on_dec_31_keeps_that_year`); and
 its line labels are placed by hand since a log axis reads an annotation's y as the exponent) and **4. When it happens, and
 how fast** (`_tk_dist_fig`: density and cumulative share of the RSI and ultraintelligence
-dates and the gap between them). `test_default_render_and_stable_rerun` pins the order.
+dates and the gap between them), then **5. China's takeoff** (below).
+`test_default_render_and_stable_rerun` pins the order.
 
 Today's human share comes from the automation index's latest mix of AL levels times the
 human time each level still takes in each stage: `_TK_AL_STAGE_HOURS_PRIOR` (stages x
@@ -340,6 +341,43 @@ frontier and the two public lines, ending at the model's start. Each draw keeps 
 around it. Rebase each draw before taking quantiles; never multiply quantile bands.
 The simulator records ongoing production separately from delivery-window rates, which
 remain available for internal diagnostics and the validated milestone definitions.
+
+## 5. China's takeoff (`_tk_render_china`, `_cn_tk_*`)
+
+The last section runs China through the same model as a **follower** of the US scenarios
+(`TAKEOFF_MODEL.md`, *Followers*): `_cn_tk_run(today, run)` takes `_tk_run`'s result, so
+draw *i* of every structural setting is the US's draw *i*, and the three cards' *Behind the
+US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). Load-bearing:
+
+1. **China's level today is uncertain on purpose** (`_cn_tk_levels`): the highest of the
+   scored frontier's blended anchor (`_cc_frontier_anchor`, uniform over its spread),
+   `_CN_TK_UNSCORED` (Kimi K3.1 Pro, unscored, uniform over `tk_cn_kimi_lo`–`_hi`) and
+   `_CN_TK_HELD_BACK_ORG`'s best (DeepSeek releases Flash models: its top score plus up to
+   `tk_cn_heldback`), each carried to today on its own slope plus China's ship lag. A higher
+   record lifts the slope (`_cn_tk_slope` refits the frontier with it), and the extra slope
+   goes to China's own research. `tk_cn_unscored` off leaves the scored anchor alone; the
+   base draw comes first, so on can only raise a scenario
+   (`test_unscored_models_only_ever_raise_chinas_level`).
+2. **Every rate is the China tab's split** (`_cn_tk_calibration`, `_cc_cn_channels` at
+   Pacing's default payoff): own research is the innovation residual (floored at
+   `_CN_TK_INNOVATION_FLOOR`); distillation is calibrated as today's measured rate over
+   today's gap to the US *released* frontier (the Takeoff path a ship lag back), the leak as
+   today's diffusion over the US's algorithmic ECI a year. The sliders scale those
+   (`tk_cn_distill`, `tk_cn_leak`, % of today's), theft is a share of US algorithmic
+   progress (`tk_cn_theft`, default 0); weight theft is not modeled.
+3. **Training and experiments grow apart**: training on `_CN_TK_COMPUTE_OPTIONS`
+   (`tk_cn_compute`, the export-control band by default) against ×2.12 history;
+   experiments on China's total installed compute from `china_compute_sources.csv`
+   (`_CN_TK_EXP_HIST_YEARS` history, `_CN_TK_EXP_FWD_YEARS` projection, lognormal
+   `_CN_TK_EXP_SPREAD`).
+4. **The ECI path is floored like the US's** (China's own slope for
+   `_TK_ECI_FLOOR_YEARS`, fading), and the source table (`_cn_tk_source_rows`) quotes
+   each source's median gain, which need not add to the median total.
+
+`_cn_tk_simulate` caches the run (model digest in its key). Tests that capture
+`takeoff.simulate` keep only calls without `follower`, since China's run comes last.
+Guarded by `TestChinaTakeoff` (unit), the follower tests in `test_takeoff_model.py`, and
+`test_china_takeoff_lags_the_us_and_follows_its_settings` (integration).
 
 ## RSI tab (now the evidence half of Takeoff)
 

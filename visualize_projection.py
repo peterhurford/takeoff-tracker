@@ -6678,7 +6678,8 @@ _TK_JUMP_ROWS = (
                ("1. Research speeds up", "1 Research speeds up"),
                ("2. People step out of the loop", "2 Out of the loop"),
                ("3. What it does to capability (ECI)", "3 Capability"),
-               ("4. When it happens, and how fast", "4 When and how fast"))),
+               ("4. When it happens, and how fast", "4 When and how fast"),
+               ("5. China's takeoff", "5 China"))),
 )
 
 
@@ -21636,6 +21637,12 @@ _TK_DEFAULTS.update({
     "tk_hiring_growth": 100.0,
     "tk_wf_humans": 3_000,
     "tk_wf_copies": 45_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
+    # China's takeoff (section 5): the unscored and held-back models that set
+    # China's level today, its compute band, and the inflow channels as shares
+    # of today's measured rates (theft as a share of US algorithmic progress).
+    "tk_cn_unscored": True, "tk_cn_kimi_lo": 160.0, "tk_cn_kimi_hi": 162.0,
+    "tk_cn_heldback": 3.0, "tk_cn_compute": "Export-control band",
+    "tk_cn_distill": 100.0, "tk_cn_leak": 100.0, "tk_cn_theft": 0.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
@@ -24033,6 +24040,462 @@ def _tk_run(today, progress=None):
             "pace_yield": pace_yield, "software_pace": software_pace}
 
 
+# ── Takeoff: China's takeoff (section 5) ─────────────────────────────────
+
+# A Chinese model with no ECI score yet, (name, release date): with
+# `tk_cn_unscored` on it counts at a score drawn uniformly over
+# `tk_cn_kimi_lo`-`tk_cn_kimi_hi`.
+_CN_TK_UNSCORED = ("Kimi K3.1 Pro", datetime(2026, 10, 23))
+# The lab whose releases are deliberately not its best (DeepSeek's are Flash
+# models): with `tk_cn_unscored` on, its best counts at its top score plus
+# up to `tk_cn_heldback` points, uniform. V4 Pro led V4 Flash by 2.9 points
+# and the 0813 Pro the 0731 Flash by 0.9.
+_CN_TK_HELD_BACK_ORG = "DeepSeek"
+# China's largest-run compute growth past the plans, OOM/yr as an 80% range:
+# the export-control band (CHINA_COMPUTE_JUDGMENTS.md §1) or the
+# China-accessible band with the offshore sites (§2).
+_CN_TK_COMPUTE_OPTIONS = {
+    "Export-control band": (_CC_CN_COMPUTE_LO, _CC_CN_COMPUTE_HI),
+    "China-accessible (sites abroad)": _DC_CTY_CN_ACCESS_PACE}
+# Experiment compute grows with China's total installed AI compute (every
+# channel, `china_compute_sources.csv`): its growth over the latest stored
+# year is the history behind today's pace, its projection the forward rate,
+# each scenario's drawn lognormally around it with this 1-sigma.
+_CN_TK_EXP_HIST_YEARS = (2025, 2026)
+_CN_TK_EXP_FWD_YEARS = (2026, 2030)
+_CN_TK_EXP_SPREAD = 0.3
+# China's own research, ECI points a year, is never read below this: the
+# channel split can leave it near zero.
+_CN_TK_INNOVATION_FLOOR = 0.3
+# Years of each grid the section's source table reads.
+_CN_TK_TABLE_YEARS = (2027, 2028, 2030)
+_CN_TK_COLOR = "#d68910"
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _cn_tk_calibration(mtime, src_mtime):
+    """What China's takeoff calibrates to, from the ECI and compute-source
+    data: {'a_partial' (ECI per 10x training compute, Pacing's default
+    payoff), 'ch' (`_cc_cn_channels`: China's observed slope split into
+    compute, innovation, diffusion and distillation), 'cn_fr', 'anchor'
+    (`_cc_frontier_anchor`), 'held_back' (the held-back lab's best record),
+    'exp_hist' / 'exp_fwd' (log growth a year of China's total installed
+    compute)}, or None without the fits."""
+    cc_rows = load_eci_compute(mtime=mtime)
+    eci_all = load_eci_frontier(mtime=mtime)
+    us_fr = _cc_country_frontier(eci_all, 'United States of America')
+    cn_fr = _cc_country_frontier(eci_all, 'China')
+    if len(us_fr) < 2 or len(cn_fr) < 2:
+        return None
+    a_fit, _b = _cc_pooled_decomp(cc_rows)
+    fgm = _cc_frontier_grade_algo(cc_rows, load_eci_frontier(mtime=mtime, full_window=True))
+    if fgm:
+        a_fit = fgm['a_partial']
+    a_partial = _pc_compute_payoff(
+        a_fit, _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0,
+        _PC_PAYOFF_OPTIONS[_PC_DEFAULTS["pc_payoff"]])
+    ch = _cc_cn_channels(cc_rows, cn_fr, a_partial)
+    if ch is None:
+        return None
+    lab = load_eci_frontier(mtime=mtime, country='China', orgs=[_CN_TK_HELD_BACK_ORG])
+    best = max(lab, key=lambda m: m['eci_score']) if lab else None
+    data = load_china_compute_sources(src_mtime)
+    stock = {**data["stock"], **_cn_src_projection(data)["stock"]}
+
+    def total(year):
+        return sum(v[0] for v in stock[str(year)].values())
+    (h0, h1), (f0, f1) = _CN_TK_EXP_HIST_YEARS, _CN_TK_EXP_FWD_YEARS
+    return {"a_partial": a_partial, "ch": ch, "cn_fr": cn_fr,
+            "anchor": _cc_frontier_anchor(cn_fr),
+            "held_back": (best['date'], best['eci_score'], best['display_name']) if best else None,
+            "exp_hist": float(np.log(total(h1) / total(h0)) / (h1 - h0)),
+            "exp_fwd": float(np.log(total(f1) / total(f0)) / (f1 - f0))}
+
+
+def _cn_tk_slope(cn_fr, date, score):
+    """China's frontier slope since `_CC_CALIB_SINCE` were a model at `score`
+    released on `date` on it (it joins the running max only if it beats it)."""
+    if score <= cn_fr[-1][1]:
+        return _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
+    rows = [r for r in cn_fr if r[0] < date] + [(date, score, "unscored")]
+    return _cc_frontier_eci_slope(rows, _CC_CALIB_SINCE)
+
+
+def _cn_tk_levels(cal, n, seed, today, lag_days, unscored=True, kimi=(160.0, 162.0),
+                  held_back=3.0):
+    """Each scenario's Chinese trained frontier today, ECI, and the frontier
+    slope behind it: (level, slope, source), source naming which candidate set
+    the level. Candidates, each carried from its date to today on its own
+    slope plus China's trained-to-release lag (`lag_days`): the scored
+    frontier's blended anchor, uniform over its spread; with `unscored`, the
+    unscored model (`_CN_TK_UNSCORED`) at a score uniform over `kimi`, and the
+    held-back lab's best plus up to `held_back` points. A higher record lifts
+    the slope through `_cn_tk_slope`, so a China already further along is
+    also climbing faster. Its own generator from `seed`."""
+    rng = np.random.default_rng(int(seed) + 7)
+    obs = cal["ch"]["obs"]
+    d, mid, half, name = cal["anchor"]
+    cands = [(name, rng.uniform(mid - half, mid + half, n), np.full(n, obs), d)]
+    if unscored:
+        options = [(_CN_TK_UNSCORED[0], _CN_TK_UNSCORED[1], *sorted(kimi))]
+        if cal["held_back"] is not None:
+            hd, hs, hn = cal["held_back"]
+            options.append((f"{_CN_TK_HELD_BACK_ORG}'s held-back best", hd, hs,
+                            hs + max(float(held_back), 0.0)))
+        for label, when, lo, hi in options:
+            value = rng.uniform(lo, hi, n)
+            grid = np.linspace(lo, hi, 9) if hi > lo else np.array([lo, lo + 1e-9])
+            slopes = [_cn_tk_slope(cal["cn_fr"], when, g) or obs for g in grid]
+            cands.append((label, value, np.interp(value, grid, slopes), when))
+    carried = np.array([v + s * ((today - w).days + lag_days) / 365.25
+                        for _l, v, s, w in cands])
+    pick = np.argmax(carried, axis=0)
+    rows = np.arange(n)
+    slope = np.array([s for _l, _v, s, _w in cands])[pick, rows]
+    return carried[pick, rows], slope, np.array([c[0] for c in cands])[pick]
+
+
+def _cn_tk_shift(paths, years, lead, back):
+    """Each row of `paths` `lead` years later (a released path from a trained
+    one), run back at `back` a year before the grid."""
+    u = years - lead
+    inside = np.array([np.interp(u, years, row) for row in paths])
+    return np.where(u[None, :] < 0, paths[:, :1] + back * u[None, :], inside)
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, hist_compute,
+                    experiment_rates, experiment_hist, coding_capability, coding_weights,
+                    human_curve, follower):
+    """`takeoff.simulate` for China as a follower, holding only what the
+    section reads. The source digest invalidates it when the model changes."""
+    n = len(software_scale)
+    r = takeoff.simulate(params, n=n, onset_years=np.full(n, np.inf),
+                         software_scale=software_scale, compute_rates=compute_rates,
+                         historical_compute_rate=hist_compute,
+                         experiment_rates=experiment_rates,
+                         historical_experiment_rate=experiment_hist,
+                         coding_capability=coding_capability, coding_weights=coding_weights,
+                         human_curve=human_curve, follower=follower)
+    wp = r["workflow_progress"]
+    return {"coding_at": r["coding_at"], "events": r["events"],
+            "today_hours": r["outcomes"]["Today"],
+            "workflow_progress": {k: wp[k] for k in ("years", "capability_log",
+                                                     "software_realized_log", "follow_eci")}}
+
+
+def _cn_tk_settings():
+    """The section's settings from session state (defaults where unset)."""
+    def ss(key):
+        return st.session_state.get(key, _TK_DEFAULTS[key])
+    compute = ss("tk_cn_compute")
+    return {"unscored": bool(ss("tk_cn_unscored")),
+            "kimi": (float(ss("tk_cn_kimi_lo")), float(ss("tk_cn_kimi_hi"))),
+            "held_back": float(ss("tk_cn_heldback")),
+            "compute": compute if compute in _CN_TK_COMPUTE_OPTIONS
+            else _TK_DEFAULTS["tk_cn_compute"],
+            "distill": float(ss("tk_cn_distill")) / 100,
+            "leak": float(ss("tk_cn_leak")) / 100,
+            "theft": float(ss("tk_cn_theft")) / 100}
+
+
+def _cn_tk_run(today, run=None):
+    """China's takeoff, run as a follower of the Takeoff tab's US scenarios
+    (`run`, `_tk_run`'s result; read seeded when not given): the same draws of
+    every structural setting, scenario by scenario, so each pairs with its US
+    one. Returns {'years', 'paths' (China's trained ECI, draws x months),
+    'us_paths', 'level', 'slope', 'source', 'when' / 'us_when' (each
+    milestone per draw, years from today), 'sources' (cumulative ECI by
+    source, draws x months), 'cal', 'inputs'}, or None when it cannot run."""
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    if run is None:
+        with _seeded_rng(_tk_seed()):
+            run = _tk_run(day)
+    if not isinstance(run, dict) or "error" in run:
+        return None
+    cal = _cn_tk_calibration(_eci_mtime(), _cn_src_mtime())
+    if cal is None:
+        return None
+    cfg = _cn_tk_settings()
+    res, eci, params = run["result"], run["eci"], run["params"]
+    wp = res["workflow_progress"]
+    years, n = wp["years"], len(res["onset"])
+    seed = int(params["seed"])
+    ch = cal["ch"]
+    lag = _ship_lag("cn")
+    level, slope, source = _cn_tk_levels(cal, n, seed, day, lag, cfg["unscored"],
+                                         cfg["kimi"], cfg["held_back"])
+    rates = res["eci_rates"]
+    w_c, w_s = cal["a_partial"] / np.log(10), rates["software"]
+    # China's own research: the channel split's innovation, lifted by any
+    # extra slope the drawn level implies, in the US run's software units.
+    innovation = np.maximum(ch["innovation"] + slope - ch["obs"], _CN_TK_INNOVATION_FLOOR)
+    software_scale = innovation / (w_s * np.log(2) * 12 / params["software_months"])
+    rng = np.random.default_rng(seed + 11)
+    lo, hi = _CN_TK_COMPUTE_OPTIONS[cfg["compute"]]
+    oom = 0.5 * (lo + hi) + rng.standard_normal(n) * (hi - lo) / (2 * 1.2816)
+    compute_rates = np.maximum(oom, 0.0) * np.log(10)
+    experiment_rates = cal["exp_fwd"] * np.exp(_CN_TK_EXP_SPREAD * rng.standard_normal(n))
+    # The US leader: its released paths (trained, a ship lag back) are what
+    # China distills, its released algorithmic ECI what leaks.
+    lead, ppy, algo_ppy = res["eci_lead"], eci["ppy"], rates["algo_ppy"]
+    released = _cn_tk_shift(eci["paths"], years, lead, ppy)
+    soft_released = _cn_tk_shift(w_s * wp["software_realized_log"], years, lead, algo_ppy)
+    d, mid, _half, _name = cal["anchor"]
+    scored_now = mid + ch["obs"] * ((day - d).days + lag) / 365.25
+    # Today's measured distillation and diffusion, against the gap and the US
+    # algorithmic climb they were measured at.
+    distill = ch["distillation"] / max(float(np.median(released[:, 0])) - scored_now, 1.0)
+    leak = ch["diffusion"] / max(algo_ppy, 1e-9)
+    follower = {
+        "years": years, "eci": np.maximum.accumulate(eci["model"], axis=1),
+        "capability": wp["capability_log"], "rate": res["capability_rate"], "ppy": ppy,
+        "teacher": released, "software_eci": soft_released, "software_ppy": algo_ppy,
+        "eci_now": level, "weights": (w_c, w_s),
+        "distill": distill * cfg["distill"], "leak": min(leak * cfg["leak"], 1.0),
+        "theft": cfg["theft"], "absorb": _CC_DIFF_ABSORB_YRS}
+    ca = np.asarray(res["coding_at"], dtype=float)
+    us_coder = np.where(np.isfinite(ca) & (ca <= years[-1]),
+                        _tk_path_at(eci["paths"], years, ca), eci["ultra_level"])
+    hist_compute = _CC_CN_HIST_COMPUTE * np.log(10)
+    human_curve = _tk_ladder_curves(_TK_AL_HUMAN_HOURS, n, params["seed"])
+    nextstep = _tk_nextstep_curves(n, params["seed"], today=day)
+    if human_curve is not None:
+        years_, ladder, (direction, experiments, verification) = human_curve
+        if nextstep is not None:
+            direction = _tk_blend_in_time(years_, direction, nextstep[1], _TK_NEXTSTEP_WEIGHT)
+        human_curve = (years_, ladder, direction, experiments, verification)
+    out = _cn_tk_simulate(params, _TK_SOURCE_DIGEST, software_scale, compute_rates,
+                          hist_compute, experiment_rates, cal["exp_hist"],
+                          np.maximum(us_coder - level, 0.1), (w_c, w_s), human_curve, follower)
+    cw = out["workflow_progress"]
+    cap, soft = cw["capability_log"], cw["software_realized_log"]
+    follow = cw["follow_eci"]
+    model = level[:, None] + w_c * (cap - soft) + w_s * soft
+    # As on the US side: today's trend (China's own slope) floors the first
+    # year, before the next model ships, and its lift then fades out.
+    trend = level[:, None] + slope[:, None] * years[None, :]
+    floored = np.maximum(model, trend)
+    j = min(np.searchsorted(years, _TK_ECI_FLOOR_YEARS), len(years) - 1)
+    fade = np.clip(1 - (years - years[j]) / _TK_ECI_FLOOR_FADE_YEARS, 0, 1)
+    paths = np.where(years[None, :] <= years[j], floored,
+                     model + (floored[:, j] - model[:, j])[:, None] * fade[None, :])
+    paths = np.maximum.accumulate(paths, axis=1)
+    copied = sum(follow.values())
+    sources = {"Compute": w_c * (cap - soft), "Own research": w_s * soft - copied,
+               "Distillation": follow["distillation"], "US software leaked": follow["leak"],
+               "US software stolen": follow["theft"], "Early trend floor": paths - model}
+    ultra = eci["ultra_level"]
+    return {"years": years, "paths": paths, "us_paths": eci["paths"], "level": level,
+            "slope": slope, "source": source, "sources": sources, "cal": cal,
+            "when": {"automated coder": np.asarray(out["coding_at"], float),
+                     "RSI": np.asarray(out["events"]["RSI"], float),
+                     "ultraintelligence": _tk_first_reach(paths, years, ultra)},
+            "us_when": {"automated coder": ca,
+                        "RSI": np.asarray(res["events"]["RSI"], float),
+                        "ultraintelligence": eci["ultra"]},
+            "today_direction": out["today_hours"]["human_direction"],
+            "inputs": {"innovation": innovation, "compute_rates": compute_rates,
+                       "experiment_rates": experiment_rates, "distill": follower["distill"],
+                       "leak": follower["leak"], "theft": follower["theft"],
+                       "w": (w_c, w_s), "settings": cfg}}
+
+
+def _cn_tk_fig(cn, today, view_end, ultra):
+    """China's projected ECI against the US's (median, middle 80% each), with
+    China's measured frontier since 2024 and the unscored model's range."""
+    years = cn["years"]
+    keep = years <= (view_end - today).days / 365.25 + 1 / 12
+    x = [today + timedelta(days=float(y) * 365.25) for y in years[keep]]
+    fig = go.Figure()
+    for name, paths, color, fill in (
+            ("US", cn["us_paths"], "#c0392b", "rgba(192,57,43,0.12)"),
+            ("China", cn["paths"], _CN_TK_COLOR, "rgba(214,137,16,0.18)")):
+        q = np.quantile(paths[:, keep], [.1, .5, .9], axis=0)
+        fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
+                                 hoverinfo="skip", showlegend=False))
+        fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0), fill="tonexty",
+                                 fillcolor=fill, name=f"{name}: middle 80%", hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=x, y=q[1], mode="lines", name=f"{name}: projected (median, trained)",
+            line=dict(color=color, width=2.5),
+            hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>" + name + ", median</extra>"))
+    past = [r for r in cn["cal"]["cn_fr"] if r[0] >= datetime(2024, 1, 1)]
+    fig.add_trace(go.Scatter(
+        x=[r[0] for r in past], y=[r[1] for r in past], mode="lines+markers",
+        name="Measured: China frontier", line=dict(color="#7d5a0b", width=1.5, shape="hv"),
+        marker=dict(color="#7d5a0b", size=6), text=[r[2] for r in past],
+        hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
+    cfg = cn["inputs"]["settings"]
+    if cfg["unscored"]:
+        lo, hi = sorted(cfg["kimi"])
+        fig.add_trace(go.Scatter(
+            x=[_CN_TK_UNSCORED[1]], y=[0.5 * (lo + hi)], mode="markers",
+            name=f"{_CN_TK_UNSCORED[0]} (unscored, assumed)",
+            marker=dict(color="#7d5a0b", symbol="diamond-open", size=9, line=dict(width=2)),
+            error_y=dict(type="data", array=[0.5 * (hi - lo)], color="#7d5a0b"),
+            hovertemplate=f"{_CN_TK_UNSCORED[0]}: no ECI score; assumed {lo:g}–{hi:g}"
+                          "<extra></extra>"))
+    fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    fig.add_hline(y=ultra, line_dash="dash", line_color="#c0392b", line_width=1,
+                  annotation_text=f"Ultraintelligence: ECI {ultra:g}",
+                  annotation_position="top left", annotation_font_color="#c0392b")
+    fig.update_layout(
+        height=420, margin=dict(l=55, r=20, t=30, b=40),
+        xaxis=dict(range=[past[0][0] if past else x[0], x[-1]]),
+        yaxis=dict(title="ECI (Epoch Capabilities Index)",
+                   range=[min(r[1] for r in past) - 10 if past else 120,
+                          ultra + _TK_ECI_VIEW_PAST_ULTRA]),
+        legend=dict(orientation="h", y=-0.12), hovermode="x")
+    return fig
+
+
+def _cn_tk_source_rows(cn, today, horizon_year):
+    """The source table: per source, the median scenario's ECI gained from it
+    by the end of each of `_CN_TK_TABLE_YEARS` up to `horizon_year`, and the
+    median total gain (medians do not add up)."""
+    years = cn["years"]
+    cols = []
+    for year in _CN_TK_TABLE_YEARS:
+        t = (datetime(year, 12, 31) - today).days / 365.25
+        if year <= horizon_year and 0 < t <= years[-1]:
+            cols.append((f"By end-{year}", min(int(np.searchsorted(years, t)), len(years) - 1)))
+    rows = []
+    for name, values in cn["sources"].items():
+        if name == "US software stolen" and not cn["inputs"]["theft"]:
+            continue
+        if name == "Early trend floor" and all(
+                abs(np.median(values[:, k])) < 0.05 for _l, k in cols):
+            continue
+        rows.append({"Source of China's ECI gain": name,
+                     **{label: f"{np.median(values[:, k]):+.1f}" for label, k in cols}})
+    rows.append({"Source of China's ECI gain": "Total (median scenario)",
+                 **{label: f"{np.median(cn['paths'][:, k] - cn['level']):+.1f}"
+                    for label, k in cols}})
+    return rows
+
+
+def _tk_render_china(run, today, view_end, end_date, horizon):
+    """Section 5: China's takeoff, the same model run as a follower of the US
+    scenarios (`_cn_tk_run`)."""
+    st.subheader("5. China's takeoff")
+    cn = _cn_tk_run(today, run)
+    if cn is None:
+        st.info("Not enough ECI data to run China's takeoff.")
+        return
+    ch, inp, cfg = cn["cal"]["ch"], cn["inputs"], cn["inputs"]["settings"]
+    lvl = np.quantile(cn["level"], [.1, .5, .9])
+    share = {s: np.mean(cn["source"] == s) for s in np.unique(cn["source"])}
+    top_source = max(share, key=share.get)
+    _fn_caption(
+        "China runs the same takeoff model, scenario by scenario beside the US's, starting "
+        f"from its own frontier (ECI ~{lvl[1]:.0f}), with its own compute and its own research, "
+        "and catching up by distilling US models and absorbing US software.",
+        ("same takeoff model",
+         "Every structural setting (returns to research, judgment, substitutability, the "
+         "software ceiling) takes the same draw as the US scenario it sits beside, so the "
+         "lags below compare like with like. China's human research hours are the US "
+         "scenario's at the same ECI, run back at each stage's halving where China is "
+         "behind it; its coding is automated at the ECI the US scenario automated it at."),
+        (f"ECI ~{lvl[1]:.0f}",
+         f"China's best trained model today, 80% range {lvl[0]:.1f}–{lvl[2]:.1f}: the "
+         "highest of the scored frontier's blended anchor and"
+         + (f" {_CN_TK_UNSCORED[0]} (no ECI score; assumed {min(cfg['kimi']):g}–"
+            f"{max(cfg['kimi']):g}) and {_CN_TK_HELD_BACK_ORG}'s best, its top released "
+            f"score plus up to {cfg['held_back']:g} points since its releases are Flash "
+            f"models; {top_source} sets it in {100 * share[top_source]:.0f}% of scenarios"
+            if cfg["unscored"] else " nothing else (unscored models are off)")
+         + f", carried to today with China's {_ship_lag('cn'):.0f}-day trained-to-release "
+         "lag. A higher level also lifts China's frontier slope, and so its own research."),
+        ("its own compute",
+         f"Training runs grow on the {cfg['compute'].lower()} "
+         f"(median ×{np.exp(np.median(inp['compute_rates'])):.2f}/yr), against "
+         f"×{10 ** _CC_CN_HIST_COMPUTE:.2f} behind today's pace. Experiments run on "
+         "China's whole installed AI compute, smuggled and rented-abroad chips included: "
+         f"×{np.exp(cn['cal']['exp_hist']):.2f} over {_CN_TK_EXP_HIST_YEARS[0]}–"
+         f"{str(_CN_TK_EXP_HIST_YEARS[1])[2:]}, projected ×"
+         f"{np.exp(cn['cal']['exp_fwd']):.2f}/yr to {_CN_TK_EXP_FWD_YEARS[1]}. Each "
+         f"counts {cn['cal']['a_partial']:.1f} ECI per 10×, Pacing's default payoff."),
+        ("its own research",
+         f"China's measured slope, {ch['obs']:.1f} ECI/yr since "
+         f"{_CC_CALIB_SINCE:%b %Y}, splits into compute {ch['compute']:.1f}, distillation "
+         f"{ch['distillation']:.1f}, US software diffusing {ch['diffusion']:.1f} and its own "
+         f"innovation {ch['innovation']:.1f} (the China tab's split). Only that last is "
+         f"China's research, which AI then speeds up (median {np.median(inp['innovation']):.1f}"
+         " ECI/yr today after any lift from the level). It is a residual, so uncertain."),
+        ("distilling US models",
+         f"Closes {100 * inp['distill']:.0f}% of the gap to the US's released frontier a "
+         f"year ({cfg['distill']:.0%} of today's measured {ch['distillation']:.1f} ECI/yr at "
+         "today's gap), so it grows as a racing US pulls ahead and dries up as China closes "
+         "in. It never carries China past the US's released frontier."),
+        ("absorbing US software",
+         f"{100 * inp['leak']:.0f}% of the US's algorithmic ECI gains reach China "
+         f"{_CC_DIFF_ABSORB_YRS:g} year later ({cfg['leak']:.0%} of today's measured "
+         f"diffusion), so a US speeding up leaks faster"
+         + (f"; {100 * inp['theft']:.0f}% more is stolen as it happens" if inp["theft"]
+            else "; software theft is off") + ". Weight theft is not modeled."))
+    cols = st.columns(3)
+    labels = (("automated coder", "Automated coder"), ("RSI", "RSI"),
+              ("ultraintelligence", "Ultraintelligence"))
+    for col, (key, label) in zip(cols, labels):
+        cn_t, us_t = cn["when"][key], cn["us_when"][key]
+        col.metric(f"China: {label}", _tk_date(takeoff.quantile(cn_t, 0.5, horizon), today),
+                   help=f"Median date China's best trained model reaches it; "
+                        f"{100 * np.mean(cn_t <= horizon):.0f}% of scenarios by "
+                        f"{end_date:%b %Y}. The US's: "
+                        f"{_tk_date(takeoff.quantile(us_t, 0.5, horizon), today)}.")
+        col.caption(f"80% CI: {_tk_date(takeoff.quantile(cn_t, 0.1, horizon), today)} – "
+                    f"{_tk_date(takeoff.quantile(cn_t, 0.9, horizon), today)}")
+        gap, reached = _tk_gap(us_t, cn_t, horizon)
+        if reached.any():
+            g = gap[reached]
+            col.caption(f"Behind the US: {_tk_span(takeoff.quantile(g, 0.5), end_date)} "
+                        f"(80%: {_tk_span(takeoff.quantile(g, 0.1), end_date)} – "
+                        f"{_tk_span(takeoff.quantile(g, 0.9), end_date)})")
+    st.plotly_chart(_tf(_cn_tk_fig(cn, today, view_end, run["eci"]["ultra_level"])),
+                    width="stretch")
+    _fn_caption(
+        "Where China's ECI gains come from, in the median scenario.",
+        ("median scenario",
+         "Each source's median across scenarios, so the rows need not add to the total. "
+         "Compute is training compute's share of China's deployed models; own research its "
+         "algorithms; distillation and US software what the US hands it."))
+    st.table(_cn_tk_source_rows(cn, today, view_end.year))
+
+
+def _tk_cn_sidebar(number):
+    """The sidebar's *China's takeoff* settings (section 5)."""
+    with st.expander("China's takeoff (section 5)"):
+        st.checkbox("Count unscored and held-back Chinese models", key="tk_cn_unscored",
+                    help=f"On: China's level today is the highest of its scored frontier, "
+                         f"{_CN_TK_UNSCORED[0]} (released {_CN_TK_UNSCORED[1]:%b %d} with no "
+                         "ECI score yet) at a score drawn from the range below, and "
+                         f"{_CN_TK_HELD_BACK_ORG}'s best, which its Flash releases are "
+                         "deliberately not. Off: the scored frontier alone.")
+        number(f"{_CN_TK_UNSCORED[0]} ECI, low", "cn_kimi_lo", 140.0, 180.0, 0.5,
+               "Low end of the assumed score, drawn uniformly.")
+        number(f"{_CN_TK_UNSCORED[0]} ECI, high", "cn_kimi_hi", 140.0, 180.0, 0.5,
+               "High end of the assumed score.")
+        number(f"{_CN_TK_HELD_BACK_ORG}'s best over its top release (ECI, up to)",
+               "cn_heldback", 0.0, 10.0, 0.5,
+               "Drawn uniformly from 0 to this. V4 Pro led V4 Flash by 2.9 points; the "
+               "0813 Pro the 0731 Flash by 0.9.")
+        st.selectbox("China's training-compute growth", list(_CN_TK_COMPUTE_OPTIONS),
+                     key="tk_cn_compute",
+                     help="Largest-run growth past the catalogued plans, as an 80% range: "
+                          "the export-control band (×1.4–2.0/yr) or the band with "
+                          "China's rented sites abroad (×1.6–2.2/yr). Experiments "
+                          "use China's whole installed compute either way.")
+        number("Distillation (% of today's measured rate)", "cn_distill", 0.0, 300.0, 10.0,
+               "Scales the share of the gap to the US's released frontier China closes a "
+               "year. 0 stops distillation.")
+        number("US software leaking (% of today's measured rate)", "cn_leak", 0.0, 300.0, 10.0,
+               "Scales the share of US algorithmic progress that reaches China a year late "
+               "through papers, people and vendors.")
+        number("US software stolen (% of US algorithmic progress)", "cn_theft", 0.0, 100.0, 5.0,
+               "Copied as it happens, on top of the leak. Weight theft is not modeled.")
+
+
 def render_takeoff():
     """The Takeoff tab, behind a loading bar that stays up until its last
     chart is drawn, whichever way the tab returns."""
@@ -24477,6 +24940,7 @@ def _render_takeoff(loading):
                    "coder projection's coding dates and the takeoff scenarios, so the same "
                    "settings give the same numbers on every run. Change it to see how much "
                    "a number moves from sampling alone.")
+        _tk_cn_sidebar(number)
 
     with top.container(key="tk_headline"):
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -24976,6 +25440,8 @@ def _render_takeoff(loading):
          "denominator, and one reaching it before RSI counts as 0."))
     st.plotly_chart(_tf(_tk_dist_fig(rsi, eci["ultra"], gap[reached], today, view_end,
                                      end_date)), width="stretch")
+
+    _tk_render_china(run, today, view_end, end_date, horizon)
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────
