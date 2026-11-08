@@ -361,10 +361,17 @@ US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). 
 2. **Every rate is the China tab's split** (`_cn_tk_calibration`, `_cc_cn_channels` at
    Pacing's default payoff): own research is the innovation residual (floored at
    `_CN_TK_INNOVATION_FLOOR`); distillation is calibrated as today's measured rate over
-   today's gap to the US *released* frontier (the Takeoff path a ship lag back), the leak as
-   today's diffusion over the US's algorithmic ECI a year. The sliders scale those
-   (`tk_cn_distill`, `tk_cn_leak`, % of today's), theft is a share of US algorithmic
-   progress (`tk_cn_theft`, default 0); weight theft is not modeled.
+   today's gap to the US *released* frontier (the Takeoff path a ship lag back). The leak
+   share is `_cn_tk_leak`, one definition for both tabs: China's diffusion over the US
+   frontier's algorithmic climb on the *same* window (its slope since `_CC_CALIB_SINCE` less
+   compute's share), ~33%, not over Takeoff's faster pace today, which mixed windows and read
+   19%. Before today the US software path runs back at that window rate, so the leak today
+   is the measured flow and grows as the US's faster climb arrives. Each leaked idea arrives
+   spread evenly over `absorb` years (`takeoff.LEAK_POINTS`), so a cut fades rather than
+   steps. The sliders scale those (`tk_cn_distill`, `tk_cn_leak`, % of the measured),
+   theft is a share of US algorithmic progress (`tk_cn_theft`, default 0); weight theft is
+   not modeled here (Pacing has it). Distillation closes on the released frontier, leaked
+   and stolen ideas on the trained one.
 3. **Training and experiments grow apart**: training on `_CN_TK_COMPUTE_OPTIONS`
    (`tk_cn_compute`, the export-control band by default) against ×2.12 history;
    experiments on China's total installed compute from `china_compute_sources.csv`
@@ -374,7 +381,15 @@ US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). 
    `_TK_ECI_FLOOR_YEARS`, fading), and the source table (`_cn_tk_source_rows`) quotes
    each source's median gain, which need not add to the median total.
 
-`_cn_tk_simulate` caches the run (model digest in its key). Tests that capture
+China runs on every k-th US scenario only (`_cn_tk_rows`, at most `_CN_TK_DRAWS` = 625),
+each with its twin's exact draws (`simulate(draw_rows=…)` draws for the full run and keeps
+those rows): a run's cost is per loop iteration, set by the most event-dense scenario, so
+this cuts it from ~14 s to ~5 s at production samples while the lags move by under a week.
+The cards and lags are over those pairs. Headcount is not an input: China's ~10× fewer
+researchers per lab (and its smaller experiment compute) are already in the measured
+innovation rate it is calibrated to, and AI labor runs on compute after automation; adding
+them would count them twice. `_tk_run_seeded` computes the US run once per rerun for Pacing
+and this section. `_cn_tk_simulate` caches the run (model digest in its key). Tests that capture
 `takeoff.simulate` keep only calls without `follower`, since China's run comes last.
 Guarded by `TestChinaTakeoff` (unit), the follower tests in `test_takeoff_model.py`, and
 `test_china_takeoff_lags_the_us_and_follows_its_settings` (integration).

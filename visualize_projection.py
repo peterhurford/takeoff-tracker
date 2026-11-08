@@ -17163,7 +17163,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
                   "pc_cn_run",
                   "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
-                  "pc_pace", "pc_tk_follow",
+                  "pc_pace",
                   "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
                   "pc_sec_halve", "pc_sec_on",
                   "pc_theft_when", "pc_theft_share",
@@ -17292,7 +17292,6 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_cn_run": 2, "pc_leak_cut": 0,
                 "pc_leak_when": _PC_WHEN_NOW,
                 "pc_leak_absorb": _CC_DIFF_ABSORB_YRS,
-                "pc_tk_follow": 0.8,
                 "pc_sec_sched": False, "pc_sec_when": _PC_WHEN_NOW,
                 "pc_sec_sprint": 50, "pc_sec_halve": 1.0,
                 "pc_sec_on": "Distillation and US software",
@@ -18925,6 +18924,25 @@ def _pc_render_compute_ratios(ci):
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
 
 
+# One seeded Takeoff run per rerun and settings: the script re-executes each
+# rerun, so this empties itself; the key also carries every setting the run
+# reads, for the unit tests' long-lived module.
+_TK_RUN_MEMO = {}
+
+
+def _tk_run_seeded(day):
+    """`_tk_run(day)` under Takeoff's seed, computed once per rerun for the
+    tabs and sections that read it (Pacing's US, China's takeoff)."""
+    key = (day, tuple(sorted((k, repr(v)) for k, v in st.session_state.items()
+                             if k.startswith(("tk_", "rsi_", "pc_rsiw"))
+                             or k in _SHIP_LAG_DEFAULTS)))
+    if key not in _TK_RUN_MEMO:
+        _TK_RUN_MEMO.clear()
+        with _seeded_rng(_tk_seed()):
+            _TK_RUN_MEMO[key] = _tk_run(day)
+    return _TK_RUN_MEMO[key]
+
+
 def _pc_takeoff_us(today):
     """The Takeoff tab's run, as the Pacing tab reads it: {'day', 'years',
     'paths' (draws x months, ECI of the trained US frontier from `day`),
@@ -18933,8 +18951,7 @@ def _pc_takeoff_us(today):
     `day`, the very dates Takeoff's cards take medians of)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
-    with _seeded_rng(_tk_seed()):
-        run = _tk_run(day)
+    run = _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return None
     eci, res = run["eci"], run["result"]
@@ -19336,6 +19353,181 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         _fn_caption(" ".join(legend + (["Rates under these settings."]
                                        if notes else [])),
                     *([("these settings", " ".join(notes))] if notes else []))
+
+
+def _pc_cn_on_grid(cn, draw, grid, t_day, cn_ship, anchor_eci, offset=None, ramp=0.5,
+                   domestic=None):
+    """China's takeoff (`_cn_tk_run`) as the pause panel's sim returns it: its
+    release-dated ECI per Pacing sample (`draw`, the row of China's takeoff
+    each sample takes, whose US twin it races) on `grid` (years from China's anchor), and the sim's channels.
+    A model released at t finished training `cn_ship` earlier, `t_day` years
+    after the anchor is today; before today each path runs back on its own
+    slope. `offset` (per sample) is the release-step scatter, phased in over
+    `ramp` years as the sim does it. Channels: compute, innovation (own
+    research at today's rate), speedup (what AI adds to it), diffusion (US
+    software leaked or stolen), distillation, theft (stolen weights), level
+    (the rest, so they sum to the path less `anchor_eci`), and with
+    `domestic` ((years, share of each draw's compute growth domestic clusters
+    alone would have had, draws x months)) compute_domestic."""
+    years = cn["years"]
+    u = np.asarray(grid, dtype=float)[None, :] - t_day - cn_ship
+    u = np.broadcast_to(u, (len(draw), u.shape[1]))
+    rows = np.asarray(draw)
+
+    def at(paths, back=None):
+        x = np.clip(u, 0.0, years[-1]) / (years[1] - years[0])
+        i = np.minimum(x.astype(int), len(years) - 2)
+        f = x - i
+        v = paths[rows[:, None], i] * (1 - f) + paths[rows[:, None], i + 1] * f
+        if back is None:
+            return np.where(u < 0, 0.0, v)
+        return np.where(u < 0, paths[rows, :1] + back[rows, None] * u, v)
+    traj = at(cn["paths"], cn["slope"])
+    if offset is not None:
+        traj = traj + np.asarray(offset)[:, None] * np.minimum(
+            np.asarray(grid, dtype=float)[None, :] / max(ramp, 1e-9), 1.0)
+    src = dict(cn["sources"])
+    # Models deploy in steps, so compute and China's own research land in
+    # jumps; read over one training-plus-validation cycle, a rate at an
+    # instant (the pause) reads what the cycle delivers, not 0 between models.
+    cycle = max(int(round(cn.get("cycle_months", 4))), 1)
+    for key in ("Compute", "Own research"):
+        v = np.pad(src[key], ((0, 0), (cycle, cycle)), mode="edge")
+        k = np.ones(2 * cycle + 1) / (2 * cycle + 1)
+        src[key] = np.apply_along_axis(lambda r: np.convolve(r, k, mode="valid"), 1, v)
+    own = at(src["Own research"])
+    # Own research at today's rate is innovation; what AI adds past it is the
+    # speed-up (a shortfall while models wait to deploy falls to `level`).
+    base = np.maximum(u, 0.0) * cn["inputs"]["innovation"][rows, None]
+    chan = {"compute": at(src["Compute"]), "innovation": base,
+            "speedup": np.maximum(own - base, 0.0),
+            "diffusion": at(src["US software leaked"]) + at(src["US software stolen"]),
+            "distillation": at(src["Distillation"]), "theft": at(src["Weights stolen"])}
+    if domestic is not None:
+        chan["compute_domestic"] = (
+            chan["compute"] * np.clip(at(np.asarray(domestic[1], dtype=float)), 0.0, 1.0))
+    chan["level"] = traj - anchor_eci - sum(v for k, v in chan.items()
+                                            if k != "compute_domestic")
+    return traj, chan
+
+
+def _pc_cn_takeoff_paths(today, tk, *, n_s, draw, t_day, cn_ship, anchor_eci, cn_fr,
+                         a_partial, payoff, horizon_yrs, us_path_cn, clock=None,
+                         teacher_cap=None, dist=None, sec=None, sec_dist=False,
+                         sec_leak=False, leak=(np.inf, 1.0), leak_absorb=_CC_DIFF_ABSORB_YRS,
+                         theft_soft=None, theft_weights=None, band=None, comp_slow=None,
+                         comp_dead=None, supply=None, mix=None, anchor_d=None,
+                         comp_shadow=None, level_sd=0.0, ramp=0.5, **_unused):
+    """The pause panel's China, from China's takeoff (`_cn_tk_run`) under the
+    panel's levers: (crossing years, grid, paths, the paths with the US
+    unpaced and no lever, channels), as `_cc_cn_crossing_sim` returns them.
+    Lever times are years from China's anchor on its release clock, as the
+    sim reads them; the takeoff runs on Takeoff's draws (`tk`), and sample i
+    takes China's row `draw[i]`, the twin of the US scenario it follows.
+
+    Mapped: the paced US (`clock`) moves the teacher and the leak; `teacher_cap`
+    the release freeze; `dist` (time, share kept) and `sec` (defenses, on
+    distillation with `sec_dist`, on US software with `sec_leak`) scale
+    distillation and the leak (`leak` = (time cut, share kept), by the month an
+    idea left the US); `theft_soft` / `theft_weights` as in the sim; the
+    training band, `comp_slow`, `comp_dead` and `supply` = (domestic OOM/yr,
+    cut share by year) bend China's training compute, `mix` its installed
+    compute for experiments. AI's speed-up is the model's own."""
+    n_tk = len(_cn_tk_rows(len(tk["paths"])))      # China's twins, in sample order
+    years = tk["years"]
+    ta = years + t_day + cn_ship                  # each month on the levers' clock
+    pc = {"payoff": payoff, "absorb": max(float(leak_absorb), 1.0 / 12.0),
+          "horizon": max(horizon_yrs - t_day - cn_ship, 0.0) + 0.25}
+    if clock is not None:
+        pc["clock"] = clock
+    if teacher_cap is not None:
+        pc["teacher_cap"] = np.asarray(teacher_cap, dtype=float)[:n_tk]
+    keep = np.ones(len(years))
+    if dist is not None:
+        keep = np.where(ta >= dist[0], dist[1], 1.0)
+    if sec is not None and sec_dist:
+        keep = keep * np.array([sec(x) for x in ta])
+    if dist is not None or (sec is not None and sec_dist):
+        pc["distill_scale"] = keep
+    soft = np.where(ta >= leak[0], leak[1], 1.0)
+    if sec is not None and sec_leak:
+        soft = soft * np.array([sec(x) for x in ta])
+    if np.any(soft != 1.0):
+        pc["leak_scale"] = soft
+    if theft_soft is not None:
+        t0, x, comp_gap, realloc = theft_soft[:4]
+        sched = theft_soft[5] if len(theft_soft) > 5 else (lambda t: 1.0)
+        pc["theft"] = float(x)
+        pc["theft_scale"] = np.where(ta >= t0, [sched(v) for v in ta], 0.0)
+        k = float(sched(t0))
+        pc["theft_jump"] = (max(t0 - t_day - cn_ship, 0.0), float(x) * k, float(comp_gap),
+                            k * float(realloc))
+    if theft_weights is not None:
+        pc["weight_theft"] = (max(theft_weights[0] - t_day - cn_ship, 0.0),
+                              bool(theft_weights[1]))
+    if band is not None:
+        pc["band"] = tuple(float(v) for v in band)
+
+    def per_draw(v):
+        v = np.asarray(v, dtype=float)
+        return v[:n_tk] if v.ndim else np.full(n_tk, float(v))
+    cut = (supply[0] * np.array([supply[1](x) for x in ta]) if supply is not None
+           else np.zeros(len(years)))
+    bent = comp_slow is not None or comp_dead is not None or np.any(cut > 0)
+
+    def rate(yrs, oom):
+        g = np.broadcast_to(np.asarray(oom, dtype=float)[:, None], (n_tk, len(yrs))).copy()
+        if comp_slow is not None:
+            g = np.where(ta[None, :] >= comp_slow[0],
+                         (per_draw(comp_slow[1]) / a_partial)[:, None], g)
+        g = g - cut[None, :]
+        if comp_dead is not None:
+            g = np.where((ta[None, :] >= comp_dead[0]) & (ta[None, :] < per_draw(comp_dead[1])[:, None]),
+                         0.0, g)
+        return np.maximum(g, 0.0)
+    if bent:
+        pc["compute_rate"] = rate
+    if mix is not None and anchor_d is not None:
+        ratio = _cn_src_compute_ratio(today, anchor_d, mix, 1.0)
+        offset = np.log(np.maximum([ratio(v) for v in ta], 1e-12))
+        if np.any(np.abs(offset) > 1e-12):
+            pc["experiment_offset"] = offset
+    free = _cn_tk_run(today)
+    # With no lever moved, the paced run is the free one (Takeoff's own,
+    # usually cached already): skip rerunning it to a shorter horizon.
+    levers = set(pc) - {"payoff", "absorb", "horizon"}
+    default_band = _CN_TK_COMPUTE_OPTIONS[_cn_tk_settings()["compute"]]
+    if pc.get("band") is not None and tuple(pc["band"]) == tuple(default_band):
+        levers.discard("band")
+    if not levers and payoff == _PC_DEFAULTS["pc_payoff"] \
+            and abs(pc["absorb"] - _CC_DIFF_ABSORB_YRS) < 1e-9:
+        cn = free
+    else:
+        cn = _cn_tk_run(today, pacing=pc)
+    if cn is None or free is None:
+        return None
+    domestic = None
+    if comp_shadow is not None:
+        lo, hi = pc.get("band") or _CN_TK_COMPUTE_OPTIONS[_cn_tk_settings()["compute"]]
+        r = rate(years, cn["inputs"]["compute_rates"] / np.log(10)) if bent else \
+            np.broadcast_to((cn["inputs"]["compute_rates"] / np.log(10))[:, None],
+                            (n_tk, len(years)))
+        dom = np.minimum(r, comp_shadow[0] / a_partial)
+        if comp_shadow[1] is not None:
+            dom = np.where((ta[None, :] >= comp_shadow[1][0])
+                           & (ta[None, :] < per_draw(comp_shadow[1][1])[:, None]), 0.0, dom)
+        total, part = np.cumsum(r, axis=1), np.cumsum(dom, axis=1)
+        domestic = (years, np.divide(part, total, out=np.ones_like(total), where=total > 1e-12))
+    steps = int(round(horizon_yrs * 12))
+    grid = np.arange(steps + 1) / 12.0
+    offset = np.random.normal(0.0, level_sd, n_s) if level_sd > 0 else None
+    traj, chan = _pc_cn_on_grid(cn, draw, grid, t_day, cn_ship, anchor_eci, offset, ramp,
+                                domestic)
+    traj_free, _ = _pc_cn_on_grid(free, draw, grid, t_day, cn_ship, anchor_eci, offset, ramp)
+    if theft_weights is None:
+        chan.pop("theft")
+    crossed = _pc_cross_years(traj, grid, us_path_cn(grid)[0])
+    return crossed, grid, traj, traj_free, chan
 
 
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
@@ -19815,19 +20007,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                      "observed slope, so this changes what the chip levers "
                      "buy (roughly double at IFP's value against ours), not "
                      "the catch-up without them.")
-            st.divider()
-            st.markdown("**China's takeoff**")
-            tk_follow = st.slider(
-                "How closely China's takeoff tracks the US's", 0.0, 1.0,
-                value=_PC_DEFAULTS["pc_tk_follow"], step=0.1,
-                key="pc_tk_follow",
-                help="Once China reaches the ECI where AI sped US research up, "
-                     "how much of the US's extra growth it gets, in ECI a year. "
-                     "1: the same extra as the US at that ECI, since takeoff "
-                     "runs on how LLMs improve, which both sides share. 0: the "
-                     "same multiple of China's own, slower pace. Either way "
-                     "each sample's China speeds up when its paired US "
-                     "scenario does, and by as much.")
     # China's catch-up run is drawn beside the US run length, under the
     # caller's compute settings.
     us_run_mo = max(int(round(run_days / 30)), 1)
@@ -19995,7 +20174,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # Without a Takeoff run, the compute-derived straight climb stands in.
     tk = _pc_takeoff_us(today)
     _t_day = ((tk['day'] if tk else today) - anchor_d).days / 365.25
-    _draw = (np.arange(n_s) % len(tk['paths'])) if tk else None
+    # Each sample follows one Takeoff scenario, cycling through those China's
+    # takeoff pairs with (`_cn_tk_rows`), so every sample has a Chinese twin.
+    _cn_rows = _cn_tk_rows(len(tk['paths'])) if tk else None
+    _draw = _cn_rows[np.arange(n_s) % len(_cn_rows)] if tk else None
 
     _us_start = (np.random.uniform(-us_half, us_half, n_s)
                  if tk is None and us_half > 0 else np.zeros(n_s))
@@ -20009,21 +20191,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                     + us_rate_s[:, None] * (t + _us_dt))
         return _pc_tk_interp(tk, _draw, t - _t_day)
 
-    # China gets automated coding and RSI at the ECI the US got them: each
-    # sample's rate is multiplied by the speed-up its Takeoff scenario shows
-    # at China's current ECI (`_pc_speedup_table`), so it bites as China
-    # reaches that scenario's coder and RSI levels. Capability-indexed and
-    # unpaced: pacing slows the US, not what AI at a given ECI does for R&D.
+    # China's own takeoff (`_pc_cn_takeoff_paths`) gives it automated coding
+    # and RSI at the ECI the US got them, from its own model; the channel
+    # sim it replaces took no AI speed-up of its own.
     cn_speedup = None
-    if tk is not None:
-        _lv0, _dlv = 100.0, 1.0
-        _sp_tab = _pc_speedup_table(
-            tk, np.arange(_lv0, 1000.0, _dlv)).astype(np.float32)
-        _sp_rows = np.asarray(_draw)
-
-        def cn_speedup(e):
-            j = np.clip(((e - _lv0) / _dlv).astype(int), 0, _sp_tab.shape[1] - 1)
-            return _sp_tab[_sp_rows, j].astype(float)
 
     level_s = _us_trained_unpaced(_us_clock(t_pause_s[:, None]))[:, 0]
     lvl50 = float(np.median(level_s))
@@ -20244,9 +20415,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # The leak's share of US software progress, for the leak slider's help
     # (drawn above, so it reads this a rerun late).
     if pure:
-        st.session_state["_pc_leak_share"] = float(
-            (0.5 * (inno[0] + inno[1]) - 0.5 * (pure[0] + pure[1]))
-            / max(float(np.median(_soft * us_rate_s)), 1e-9))
+        _cal = _cn_tk_calibration(_eci_mtime(), _cn_src_mtime(), payoff_label)
+        _hist = _tk_hist_compute(today)
+        st.session_state["_pc_leak_share"] = (
+            _cn_tk_leak(_cal, _hist)[0] if _cal is not None and _hist is not None
+            else float((0.5 * (inno[0] + inno[1]) - 0.5 * (pure[0] + pure[1]))
+                       / max(float(np.median(_soft * us_rate_s)), 1e-9)))
     # The US level the distillation gap sees is the trend's value at China's
     # anchor date, not the US's later best (the bar's climb already counts
     # from us_best's own date via _us_dt).
@@ -20270,7 +20444,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               dist_teacher=teacher_s if withhold else None,
               # Release-step scatter, as on the China tab's catch-up panel.
               us_path=us_path_cn, speedup=cn_speedup,
-              speedup_follow=(tk_follow, tk['ppy'] if tk else 0.0),
+              speedup_follow=(0.0, 0.0),
               speedup_scale=_cn_sp_scale, diff_flow=_diff_flow,
               dist_sched=_sec if sec_dist else None,
               theft_soft=_theft_soft, theft_weights=_theft_wt,
@@ -20283,40 +20457,64 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         # Search only as far as the sidebar's projection range, keeping at
         # least a year of grid so a near-term horizon still draws.
         kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
-    chan = {}
-    _rng0 = np.random.get_state()
-    years, grid_yrs, traj = _cc_cn_crossing_sim(
-        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
-        channels=chan, comp_shadow=comp_shadow, **kw)
-    # The dashed "China if the US kept going" line: the same sim from the
-    # same draws, with the US unpaced and every lever off, so at defaults it
-    # is the projection and any gap is what the settings did.
-    _rng1 = np.random.get_state()
-    np.random.set_state(_rng0)
+    # China's path is China's takeoff, under these levers, beside each US
+    # scenario; without a Takeoff run, the channel sim stands in.
+    _cnp = None if tk is None else _pc_cn_takeoff_paths(
+            today, tk, n_s=n_s, draw=np.arange(n_s) % len(_cn_rows), t_day=_t_day,
+            cn_ship=_cn_ship,
+            anchor_eci=anchor_eci, cn_fr=cn_fr, a_partial=a_partial,
+            payoff=payoff_label, horizon_yrs=kw.get('horizon_yrs', 12.0),
+            us_path_cn=us_path_cn,
+            clock=(None if pace >= 1 and not pace_wins else
+                   (lambda u: _pc_paced_clock(
+                       u + _t_day, float(t_pause_s[0]) if pace_wins
+                       else t_pause_s[:u.shape[0], None], pace, pace_wins) - _t_day)),
+            teacher_cap=teacher_s if withhold else None,
+            dist=(max((d_dist - anchor_d).days, 0) / 365.25, dist_keep) if stop_dist else None,
+            sec=_sec, sec_dist=sec_dist, sec_leak=sec_leak,
+            leak=(_t_leak, _leak_keep), leak_absorb=leak_absorb,
+            theft_soft=_theft_soft, theft_weights=_theft_wt,
+            band=(g_lo_eff, g_hi_eff), comp_slow=comp_slow, comp_dead=comp_dead,
+            supply=(_g_dom_ref, _sup), mix=_mix, anchor_d=anchor_d,
+            comp_shadow=comp_shadow, level_sd=kw['level_sd'],
+            ramp=kw['level_ramp_yrs'])
+    if _cnp is not None:
+        years, grid_yrs, traj, traj_free, chan = _cnp
+    else:
+        chan = {}
+        _rng0 = np.random.get_state()
+        years, grid_yrs, traj = _cc_cn_crossing_sim(
+            anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
+            channels=chan, comp_shadow=comp_shadow, **kw)
+        # The dashed "China if the US kept going" line: the same sim from the
+        # same draws, with the US unpaced and every lever off, so at defaults it
+        # is the projection and any gap is what the settings did.
+        _rng1 = np.random.get_state()
+        np.random.set_state(_rng0)
 
-    def _diff_free(t):
-        # The leak with the US unpaced and uncut: its own pace, no lever.
-        if tk is None:
-            return 1.0
-        a = max(leak_absorb, 1.0 / 12.0)
-        x = np.array([[t - a - _cn_ship, t - _cn_ship]])
-        v = _us_trained_unpaced(np.broadcast_to(x, (n_s, 2)))
-        return np.maximum((v[:, 1] - v[:, 0]) / (a * tk['ppy']), 0.0)
+        def _diff_free(t):
+            # The leak with the US unpaced and uncut: its own pace, no lever.
+            if tk is None:
+                return 1.0
+            a = max(leak_absorb, 1.0 / 12.0)
+            x = np.array([[t - a - _cn_ship, t - _cn_ship]])
+            v = _us_trained_unpaced(np.broadcast_to(x, (n_s, 2)))
+            return np.maximum((v[:, 1] - v[:, 0]) / (a * tk['ppy']), 0.0)
 
-    def _us_path_free(grid):
-        t = np.broadcast_to(np.asarray(grid, dtype=float) - _cn_ship,
-                            (n_s, len(grid)))
-        trained = _us_trained_unpaced(t)
-        return trained, np.minimum(_us_trained_unpaced(t - _ship), trained)
-    _, _, traj_free = _cc_cn_crossing_sim(
-        anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
-        **{**kw, 'us_path': _us_path_free,
-           'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
-           'comp_dead': None, 'comp_slow': None, 't_pause': None,
-           't_dist_stop': None, 'dist_teacher': None,
-           'speedup_scale': None, 'comp_cut': None, 'diff_flow': _diff_free,
-           'dist_sched': None, 'theft_soft': None, 'theft_weights': None})
-    np.random.set_state(_rng1)
+        def _us_path_free(grid):
+            t = np.broadcast_to(np.asarray(grid, dtype=float) - _cn_ship,
+                                (n_s, len(grid)))
+            trained = _us_trained_unpaced(t)
+            return trained, np.minimum(_us_trained_unpaced(t - _ship), trained)
+        _, _, traj_free = _cc_cn_crossing_sim(
+            anchor_eci, level_s, inno_lo=inno[0], inno_hi=inno[1],
+            **{**kw, 'us_path': _us_path_free,
+               'g_lo': _CC_CN_COMPUTE_LO, 'g_hi': _CC_CN_COMPUTE_HI,
+               'comp_dead': None, 'comp_slow': None, 't_pause': None,
+               't_dist_stop': None, 'dist_teacher': None,
+               'speedup_scale': None, 'comp_cut': None, 'diff_flow': _diff_free,
+               'dist_sched': None, 'theft_soft': None, 'theft_weights': None})
+        np.random.set_state(_rng1)
     # The run-length trade-off, read off the *same* sampled paths so the
     # comparison is paired (no MC noise between the two answers): the bar
     # drops by cn_gain, then the extra wall clock is added back. The organic
@@ -20439,13 +20637,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
          "frontier. "
          if tk else
          f"The US climbs ~{us_rate:.0f} ECI/yr, from its compute growth. ")
-        + "China runs on its own innovation "
-        + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
-           f"({inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
-        + " plus compute, with diffusion and distillation fading as set in "
-          "the sidebar"
-        + (", and gets automated coding and RSI at the ECI the US did, sped up "
-           "as the sidebar's *China's takeoff* setting says." if tk else "."))
+        + ("China runs the Takeoff tab's model too, scenario by scenario beside "
+           "the US's (Takeoff, section 5): its own research and compute, sped up "
+           "by its own AI as it reaches the ECI where the US automated coding and "
+           "research, plus distillation of US models and US software leaking or "
+           "stolen, each closing on the gap and cut as set in the sidebar."
+           if _cnp is not None else
+           "China runs on its own innovation "
+           + (f"({pure[0]:.0f}\u2013{pure[1]:.0f} ECI/yr)" if pure else
+              f"({inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
+           + " plus compute, with diffusion and distillation fading as set in "
+             "the sidebar."))
     _card1 = ("China reaches paused US frontier" if _paused
               else "China catches the paced US")
     # The pacing settings ride the first card's hover, ahead of its clock.
@@ -24070,10 +24272,20 @@ _CN_TK_INNOVATION_FLOOR = 0.3
 # Years of each grid the section's source table reads.
 _CN_TK_TABLE_YEARS = (2027, 2028, 2030)
 _CN_TK_COLOR = "#d68910"
+# China's takeoff runs on at most this many of the US run's scenarios, every
+# k-th, each with its US twin's draws (`takeoff.simulate(draw_rows=...)`):
+# a run costs about as much as the US one per scenario, and the Pacing tab
+# reruns it at every lever change.
+_CN_TK_DRAWS = 625
+
+
+def _cn_tk_rows(n):
+    """The US scenarios (rows of an `n`-draw run) China's takeoff pairs with."""
+    return np.arange(0, n, max(1, int(np.ceil(n / _CN_TK_DRAWS))))
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
-def _cn_tk_calibration(mtime, src_mtime):
+def _cn_tk_calibration(mtime, src_mtime, payoff=None):
     """What China's takeoff calibrates to, from the ECI and compute-source
     data: {'a_partial' (ECI per 10x training compute, Pacing's default
     payoff), 'ch' (`_cc_cn_channels`: China's observed slope split into
@@ -24093,7 +24305,7 @@ def _cn_tk_calibration(mtime, src_mtime):
         a_fit = fgm['a_partial']
     a_partial = _pc_compute_payoff(
         a_fit, _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0,
-        _PC_PAYOFF_OPTIONS[_PC_DEFAULTS["pc_payoff"]])
+        _PC_PAYOFF_OPTIONS[payoff if payoff in _PC_PAYOFF_OPTIONS else _PC_DEFAULTS["pc_payoff"]])
     ch = _cc_cn_channels(cc_rows, cn_fr, a_partial)
     if ch is None:
         return None
@@ -24106,6 +24318,7 @@ def _cn_tk_calibration(mtime, src_mtime):
         return sum(v[0] for v in stock[str(year)].values())
     (h0, h1), (f0, f1) = _CN_TK_EXP_HIST_YEARS, _CN_TK_EXP_FWD_YEARS
     return {"a_partial": a_partial, "ch": ch, "cn_fr": cn_fr,
+            "us_obs": _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE) or 15.0,
             "anchor": _cc_frontier_anchor(cn_fr),
             "held_back": (best['date'], best['eci_score'], best['display_name']) if best else None,
             "exp_hist": float(np.log(total(h1) / total(h0)) / (h1 - h0)),
@@ -24166,7 +24379,8 @@ def _cn_tk_shift(paths, years, lead, back):
 @st.cache_data(show_spinner=False, max_entries=6)
 def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, hist_compute,
                     experiment_rates, experiment_hist, coding_capability, coding_weights,
-                    human_curve, follower):
+                    human_curve, follower, compute_path=None, experiment_path=None,
+                    draw_rows=None):
     """`takeoff.simulate` for China as a follower, holding only what the
     section reads. The source digest invalidates it when the model changes."""
     n = len(software_scale)
@@ -24176,7 +24390,9 @@ def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, 
                          experiment_rates=experiment_rates,
                          historical_experiment_rate=experiment_hist,
                          coding_capability=coding_capability, coding_weights=coding_weights,
-                         human_curve=human_curve, follower=follower)
+                         human_curve=human_curve, follower=follower,
+                         compute_path=compute_path, experiment_path=experiment_path,
+                         draw_rows=draw_rows)
     wp = r["workflow_progress"]
     return {"coding_at": r["coding_at"], "events": r["events"],
             "today_hours": r["outcomes"]["Today"],
@@ -24199,21 +24415,55 @@ def _cn_tk_settings():
             "theft": float(ss("tk_cn_theft")) / 100}
 
 
-def _cn_tk_run(today, run=None):
+def _tk_hist_compute(today):
+    """The US compute growth (log a year) behind today's ECI trend in the
+    Takeoff run, as China's leak share is measured against it; None without a
+    run."""
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    run = _tk_run_seeded(day)
+    if not isinstance(run, dict) or "error" in run:
+        return None
+    hist = run["result"].get("hist_compute")
+    return hist if hist is not None else float(np.log(run["params"]["compute_growth"]))
+
+
+def _cn_tk_leak(cal, hist_compute):
+    """Share of US algorithmic progress that reaches China, and the US
+    algorithmic ECI a year it was measured against: China's measured
+    diffusion over the US frontier's own algorithmic climb on the same window
+    (its slope since `_CC_CALIB_SINCE` less compute's share at the catch-up's
+    payoff, `hist_compute` the US compute growth behind it, log a year). One
+    definition, so the Takeoff and Pacing tabs leak alike."""
+    us_algo = max(cal["us_obs"] - cal["a_partial"] * float(hist_compute) / np.log(10), 1e-6)
+    return min(cal["ch"]["diffusion"] / us_algo, 1.0), us_algo
+
+
+def _cn_tk_run(today, run=None, pacing=None):
     """China's takeoff, run as a follower of the Takeoff tab's US scenarios
     (`run`, `_tk_run`'s result; read seeded when not given): the same draws of
     every structural setting, scenario by scenario, so each pairs with its US
-    one. Returns {'years', 'paths' (China's trained ECI, draws x months),
+    one. `pacing` (the Pacing tab's levers, all optional) bends it: 'clock'
+    ((draws x months) years from today -> the US's progress clock then),
+    'teacher_cap' (per draw, the best queryable US model), 'distill_scale' /
+    'leak_scale' / 'theft_scale' (per month on the grid; the leak's by the
+    month an idea left the US), 'theft', 'theft_jump', 'weight_theft' (as in
+    `takeoff.FOLLOWER_OPTIONAL`), 'absorb' (the leak's years), 'band'
+    (training compute OOM/yr, an 80% range), 'compute_rate' ((years, OOM/yr
+    per draw) -> OOM/yr per draw x month) and 'experiment_offset' (log of
+    installed compute under the levers over without, per month), 'horizon'
+    (years from today the run need reach: Pacing reads no further).
+
+    Returns {'years', 'paths' (China's trained ECI, draws x months),
     'us_paths', 'level', 'slope', 'source', 'when' / 'us_when' (each
     milestone per draw, years from today), 'sources' (cumulative ECI by
     source, draws x months), 'cal', 'inputs'}, or None when it cannot run."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
     if run is None:
-        with _seeded_rng(_tk_seed()):
-            run = _tk_run(day)
+        run = _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return None
-    cal = _cn_tk_calibration(_eci_mtime(), _cn_src_mtime())
+    pc = pacing or {}
+    cal = _cn_tk_calibration(_eci_mtime(), _cn_src_mtime(), pc.get("payoff"))
     if cal is None:
         return None
     cfg = _cn_tk_settings()
@@ -24232,44 +24482,99 @@ def _cn_tk_run(today, run=None):
     innovation = np.maximum(ch["innovation"] + slope - ch["obs"], _CN_TK_INNOVATION_FLOOR)
     software_scale = innovation / (w_s * np.log(2) * 12 / params["software_months"])
     rng = np.random.default_rng(seed + 11)
-    lo, hi = _CN_TK_COMPUTE_OPTIONS[cfg["compute"]]
-    oom = 0.5 * (lo + hi) + rng.standard_normal(n) * (hi - lo) / (2 * 1.2816)
-    compute_rates = np.maximum(oom, 0.0) * np.log(10)
+    lo, hi = pc.get("band") or _CN_TK_COMPUTE_OPTIONS[cfg["compute"]]
+    oom = np.maximum(0.5 * (lo + hi) + rng.standard_normal(n) * (hi - lo) / (2 * 1.2816), 0.0)
+    compute_rates = oom * np.log(10)
     experiment_rates = cal["exp_fwd"] * np.exp(_CN_TK_EXP_SPREAD * rng.standard_normal(n))
-    # The US leader: its released paths (trained, a ship lag back) are what
-    # China distills, its released algorithmic ECI what leaks.
-    lead, ppy, algo_ppy = res["eci_lead"], eci["ppy"], rates["algo_ppy"]
-    released = _cn_tk_shift(eci["paths"], years, lead, ppy)
-    soft_released = _cn_tk_shift(w_s * wp["software_realized_log"], years, lead, algo_ppy)
+    # Only every k-th US scenario gets a Chinese twin (`_CN_TK_DRAWS`); every
+    # per-scenario input is drawn for all of them first, so a twin's never
+    # depend on how many there are.
+    full_n, keep = n, _cn_tk_rows(n)
+    n = len(keep)
+    level, slope, source, innovation, software_scale, oom, compute_rates, experiment_rates = (
+        v[keep] for v in (level, slope, source, innovation, software_scale, oom, compute_rates,
+                          experiment_rates))
+    us_paths, us_model = eci["paths"][keep], eci["model"][keep]
+    us_cap, us_soft = wp["capability_log"][keep], wp["software_realized_log"][keep]
+    hist_us = res.get("hist_compute")
+    leak, us_algo = _cn_tk_leak(cal, hist_us if hist_us is not None
+                                else np.log(params["compute_growth"]))
+    # The US leader, on the Pacing clock when paced: its released paths
+    # (trained, a ship lag back) are what China distills, its released
+    # algorithmic ECI what leaks. Before today both run back on their trends.
+    lead, ppy = res["eci_lead"], eci["ppy"]
+    soft_trained = w_s * us_soft
+    clock = pc.get("clock") or (lambda u: u)
+    grid = np.broadcast_to(years, (n, len(years)))
+    rows = np.arange(n)[:, None]
+
+    def at(paths, u, back):
+        u = np.asarray(u, dtype=float)
+        x = np.clip(u, 0.0, years[-1]) / (years[1] - years[0])
+        i = np.minimum(x.astype(int), len(years) - 2)
+        f = x - i
+        v = paths[rows, i] * (1 - f) + paths[rows, i + 1] * f
+        return np.where(u < 0, paths[:, :1] + back * u, v)
+    trained = at(us_paths, clock(grid), ppy)
+    released = np.minimum(at(us_paths, clock(grid - lead), ppy), trained)
+    soft_released = at(soft_trained, clock(grid - lead), us_algo)
+    if pc.get("teacher_cap") is not None:
+        released = np.minimum(released, np.asarray(pc["teacher_cap"], dtype=float)[:, None])
     d, mid, _half, _name = cal["anchor"]
     scored_now = mid + ch["obs"] * ((day - d).days + lag) / 365.25
-    # Today's measured distillation and diffusion, against the gap and the US
-    # algorithmic climb they were measured at.
-    distill = ch["distillation"] / max(float(np.median(released[:, 0])) - scored_now, 1.0)
-    leak = ch["diffusion"] / max(algo_ppy, 1e-9)
+    # Today's measured distillation against today's gap to the US release.
+    distill = ch["distillation"] / max(
+        float(np.median(us_paths[:, 0] - ppy * lead)) - scored_now, 1.0)
     follower = {
-        "years": years, "eci": np.maximum.accumulate(eci["model"], axis=1),
-        "capability": wp["capability_log"], "rate": res["capability_rate"], "ppy": ppy,
-        "teacher": released, "software_eci": soft_released, "software_ppy": algo_ppy,
+        "years": years, "eci": np.maximum.accumulate(us_model, axis=1),
+        "capability": us_cap, "rate": res["capability_rate"][keep], "ppy": ppy,
+        "teacher": released, "software_eci": soft_released, "software_ppy": us_algo,
         "eci_now": level, "weights": (w_c, w_s),
         "distill": distill * cfg["distill"], "leak": min(leak * cfg["leak"], 1.0),
-        "theft": cfg["theft"], "absorb": _CC_DIFF_ABSORB_YRS}
-    ca = np.asarray(res["coding_at"], dtype=float)
+        "theft": pc.get("theft", cfg["theft"]), "absorb": pc.get("absorb", _CC_DIFF_ABSORB_YRS)}
+    for key in ("distill_scale", "leak_scale", "theft_scale", "theft_jump", "weight_theft"):
+        if pc.get(key) is not None:
+            follower[key] = pc[key]
+    # Leaked and stolen ideas close on the US's trained frontier, which a
+    # release freeze leaves free; distillation on what it released.
+    follower["trained"] = trained
+    ca = np.asarray(res["coding_at"], dtype=float)[keep]
     us_coder = np.where(np.isfinite(ca) & (ca <= years[-1]),
-                        _tk_path_at(eci["paths"], years, ca), eci["ultra_level"])
+                        _tk_path_at(us_paths, years, ca), eci["ultra_level"])
     hist_compute = _CC_CN_HIST_COMPUTE * np.log(10)
-    human_curve = _tk_ladder_curves(_TK_AL_HUMAN_HOURS, n, params["seed"])
-    nextstep = _tk_nextstep_curves(n, params["seed"], today=day)
+    # Policy paths: training compute from its rate a month, slowing from the
+    # model's slowdown date as constant rates do; experiments on China's
+    # installed compute under the levers.
+    compute_path = experiment_path = None
+    slow = np.where(years < params["compute_slow_years"], 1.0, params["compute_slowdown"] / 100)
+    if pc.get("compute_rate") is not None:
+        r = np.log(10) * np.maximum(pc["compute_rate"](years, oom), 0.0) * slow[None, :]
+        compute_path = (years, np.concatenate(
+            [np.zeros((n, 1)), np.cumsum(0.5 * (r[:, 1:] + r[:, :-1]) * np.diff(years), axis=1)],
+            axis=1))
+    if pc.get("experiment_offset") is not None:
+        base = np.concatenate([[0.0], np.cumsum(0.5 * (slow[1:] + slow[:-1]) * np.diff(years))])
+        experiment_path = (years, experiment_rates[:, None] * base[None, :]
+                           + np.asarray(pc["experiment_offset"], dtype=float)[None, :])
+    human_curve = _tk_ladder_curves(_TK_AL_HUMAN_HOURS, full_n, params["seed"])
+    nextstep = _tk_nextstep_curves(full_n, params["seed"], today=day)
     if human_curve is not None:
         years_, ladder, (direction, experiments, verification) = human_curve
         if nextstep is not None:
             direction = _tk_blend_in_time(years_, direction, nextstep[1], _TK_NEXTSTEP_WEIGHT)
-        human_curve = (years_, ladder, direction, experiments, verification)
-    out = _cn_tk_simulate(params, _TK_SOURCE_DIGEST, software_scale, compute_rates,
+        human_curve = (years_,) + tuple(
+            v[keep] if np.ndim(v) == 2 and len(v) == full_n else v
+            for v in (ladder, direction, experiments, verification))
+    sim_params = (dict(params, years=min(params["years"], float(pc["horizon"])))
+                  if pc.get("horizon") else params)
+    out = _cn_tk_simulate(sim_params, _TK_SOURCE_DIGEST, software_scale, compute_rates,
                           hist_compute, experiment_rates, cal["exp_hist"],
-                          np.maximum(us_coder - level, 0.1), (w_c, w_s), human_curve, follower)
+                          np.maximum(us_coder - level, 0.1), (w_c, w_s), human_curve, follower,
+                          compute_path, experiment_path, (full_n, keep))
     cw = out["workflow_progress"]
     cap, soft = cw["capability_log"], cw["software_realized_log"]
+    years = cw["years"]            # China's own grid, cut at any horizon
+    us_paths = us_paths[:, :len(years)]
     follow = cw["follow_eci"]
     model = level[:, None] + w_c * (cap - soft) + w_s * soft
     # As on the US side: today's trend (China's own slope) floors the first
@@ -24284,20 +24589,23 @@ def _cn_tk_run(today, run=None):
     copied = sum(follow.values())
     sources = {"Compute": w_c * (cap - soft), "Own research": w_s * soft - copied,
                "Distillation": follow["distillation"], "US software leaked": follow["leak"],
-               "US software stolen": follow["theft"], "Early trend floor": paths - model}
+               "US software stolen": follow["theft"], "Weights stolen": follow["weights"],
+               "Early trend floor": paths - model}
     ultra = eci["ultra_level"]
-    return {"years": years, "paths": paths, "us_paths": eci["paths"], "level": level,
-            "slope": slope, "source": source, "sources": sources, "cal": cal,
+    return {"years": years, "paths": paths, "us_paths": us_paths,
+            "us_trained": trained[:, :len(years)],
+            "rows": keep, "cycle_months": params["training_months"] + params["validation_months"],
+            "level": level, "slope": slope, "source": source, "sources": sources, "cal": cal,
             "when": {"automated coder": np.asarray(out["coding_at"], float),
                      "RSI": np.asarray(out["events"]["RSI"], float),
                      "ultraintelligence": _tk_first_reach(paths, years, ultra)},
             "us_when": {"automated coder": ca,
-                        "RSI": np.asarray(res["events"]["RSI"], float),
-                        "ultraintelligence": eci["ultra"]},
+                        "RSI": np.asarray(res["events"]["RSI"], float)[keep],
+                        "ultraintelligence": np.asarray(eci["ultra"], float)[keep]},
             "today_direction": out["today_hours"]["human_direction"],
             "inputs": {"innovation": innovation, "compute_rates": compute_rates,
                        "experiment_rates": experiment_rates, "distill": follower["distill"],
-                       "leak": follower["leak"], "theft": follower["theft"],
+                       "leak": follower["leak"], "theft": follower["theft"], "us_algo": us_algo,
                        "w": (w_c, w_s), "settings": cfg}}
 
 
@@ -24410,11 +24718,15 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
         ("its own compute",
          f"Training runs grow on the {cfg['compute'].lower()} "
          f"(median ×{np.exp(np.median(inp['compute_rates'])):.2f}/yr), against "
-         f"×{10 ** _CC_CN_HIST_COMPUTE:.2f} behind today's pace. Experiments run on "
-         "China's whole installed AI compute, smuggled and rented-abroad chips included: "
-         f"×{np.exp(cn['cal']['exp_hist']):.2f} over {_CN_TK_EXP_HIST_YEARS[0]}–"
-         f"{str(_CN_TK_EXP_HIST_YEARS[1])[2:]}, projected ×"
-         f"{np.exp(cn['cal']['exp_fwd']):.2f}/yr to {_CN_TK_EXP_FWD_YEARS[1]}. Each "
+         f"×{10 ** _CC_CN_HIST_COMPUTE:.2f} behind today's pace. Experiment compute "
+         "is a share of China's installed AI compute (most of it serves users), and only "
+         "its growth matters: today's level, like headcount, is already in the research "
+         "pace China is calibrated to. The share is held, so it grows with the installed "
+         "total, smuggled and rented-abroad chips included (usable for experiments, not "
+         f"one big run): ×{np.exp(cn['cal']['exp_hist']):.2f} over "
+         f"{_CN_TK_EXP_HIST_YEARS[0]}–{str(_CN_TK_EXP_HIST_YEARS[1])[2:]}, projected "
+         f"×{np.exp(cn['cal']['exp_fwd']):.2f}/yr to {_CN_TK_EXP_FWD_YEARS[1]}, at the "
+         "fitted share of that growth the US model gives its own experiments. Training "
          f"counts {cn['cal']['a_partial']:.1f} ECI per 10×, Pacing's default payoff."),
         ("its own research",
          f"China's measured slope, {ch['obs']:.1f} ECI/yr since "
@@ -24430,8 +24742,10 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
          "in. It never carries China past the US's released frontier."),
         ("absorbing US software",
          f"{100 * inp['leak']:.0f}% of the US's algorithmic ECI gains reach China "
-         f"{_CC_DIFF_ABSORB_YRS:g} year later ({cfg['leak']:.0%} of today's measured "
-         f"diffusion), so a US speeding up leaks faster"
+         f"{_CC_DIFF_ABSORB_YRS:g} year later ({cfg['leak']:.0%} of the measured share: "
+         f"China's {ch['diffusion']:.1f} ECI/yr of diffusion over the US frontier's "
+         f"{inp['us_algo']:.1f} ECI/yr of algorithmic progress on the same window, the share "
+         "the Pacing tab's leak uses too), so a US speeding up leaks faster"
          + (f"; {100 * inp['theft']:.0f}% more is stolen as it happens" if inp["theft"]
             else "; software theft is off") + ". Weight theft is not modeled."))
     cols = st.columns(3)
@@ -24489,9 +24803,10 @@ def _tk_cn_sidebar(number):
         number("Distillation (% of today's measured rate)", "cn_distill", 0.0, 300.0, 10.0,
                "Scales the share of the gap to the US's released frontier China closes a "
                "year. 0 stops distillation.")
-        number("US software leaking (% of today's measured rate)", "cn_leak", 0.0, 300.0, 10.0,
+        number("US software leaking (% of the measured share)", "cn_leak", 0.0, 300.0, 10.0,
                "Scales the share of US algorithmic progress that reaches China a year late "
-               "through papers, people and vendors.")
+               "through papers, people and vendors: China's measured diffusion over the "
+               "US's algorithmic progress on the same window. Pacing uses the same share.")
         number("US software stolen (% of US algorithmic progress)", "cn_theft", 0.0, 100.0, 5.0,
                "Copied as it happens, on top of the leak. Weight theft is not modeled.")
 

@@ -962,3 +962,53 @@ def test_a_follower_needs_its_inputs():
         _follow(params, lead, eci, {k: v for k, v in fol.items() if k != "teacher"})
     with pytest.raises(ValueError, match="coding is automated"):
         _follow(params, lead, eci, fol, coding_capability=None)
+
+
+def test_a_compute_path_reproduces_constant_growth():
+    """A log-compute path rising at each draw's constant rate runs as those
+    rates do (with no slowdown, which a path carries itself)."""
+    params = dict(years=4, seed=3, compute_slowdown=100.0)
+    rates = np.full(20, np.log(2.5))
+    grid = np.linspace(0, 4, 49)
+    plain = tk.simulate(params, n=20, compute_rates=rates)
+    path = tk.simulate(params, n=20, compute_rates=rates,
+                       compute_path=(grid, rates[:, None] * grid[None, :]))
+    # The path integrates the training budget at each step's midpoint, the
+    # rates exactly; runaways amplify that, so compare the median scenario.
+    np.testing.assert_allclose(np.median(path["workflow_progress"]["capability_log"], axis=0),
+                               np.median(plain["workflow_progress"]["capability_log"], axis=0),
+                               rtol=0.01, atol=0.05)
+
+
+def test_a_leak_cut_fades_over_the_absorption_window():
+    """Cutting the leak today stops ideas leaving the leader from today: those
+    already on their way keep arriving, spread over the absorption years, so
+    the leak fades rather than stops; with no cut it keeps flowing."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.3, absorb=1.0)
+    grid = fol["years"]
+    flows = {}
+    for label, keep in (("cut", 0.0), ("open", 1.0)):
+        run = _follow(params, lead, eci, dict(fol, leak_scale=np.full(len(grid), keep),
+                                              trained=eci))
+        flows[label] = np.median(run["workflow_progress"]["follow_eci"]["leak"], axis=0)
+    at = lambda v, t: np.interp(t, grid, v)
+    cut, open_ = flows["cut"], flows["open"]
+    assert at(cut, 0.25) > 0                                   # still arriving
+    assert at(cut, 0.5) - at(cut, 0.25) < at(cut, 0.25)        # but fading
+    assert at(cut, 3.0) - at(cut, 1.5) < 1e-6                  # gone after the window
+    assert at(open_, 3.0) - at(open_, 1.5) > 0.5
+
+
+def test_weight_theft_lifts_a_follower_to_the_trained_leader():
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    run = _follow(params, lead, eci, dict(fol, trained=eci, weight_theft=(0.5, False)))
+    wp = run["workflow_progress"]
+    stolen = wp["follow_eci"]["weights"]
+    k = np.searchsorted(fol["years"], 0.6)
+    assert np.all(stolen[:, :np.searchsorted(fol["years"], 0.4)] == 0)
+    level = fol["eci_now"][:, None] + fol["weights"][0] * (
+        wp["capability_log"] - wp["software_realized_log"]) + fol["weights"][1] * wp["software_realized_log"]
+    before = np.searchsorted(fol["years"], 0.4)
+    # Just after, within the US's month of climb since; before, the full gap.
+    assert np.median(eci[:, k] - level[:, k]) < 2.5
+    assert np.median(eci[:, before] - level[:, before]) > 5.0

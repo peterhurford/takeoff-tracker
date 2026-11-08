@@ -380,10 +380,18 @@ run; everything else is the same equation.
 - **Copying is a separate stock.** Each step it gains `distill` of the ECI gap to the
   leader's released frontier a year, a `leak` share of the leader's algorithmic ECI gains
   `absorb` years late, and a `theft` share at once, together never more than the gap from
-  where its own research stands. The stock counts toward capability, AI help, copies and
+  where its own research stands (distillation on the released frontier, leaked and stolen
+  ideas on the trained one, `trained`), each leaked idea arriving spread evenly over
+  `absorb` years. Optional per-month scales (`distill_scale`, `leak_scale` by the month an
+  idea left, `theft_scale`), a one-off `theft_jump` and `weight_theft` let policy act on
+  each channel over time (`FOLLOWER_OPTIONAL`). The stock counts toward capability, AI help, copies and
   hours at once, but not into the research stock, so copied ideas neither raise its
   difficulty nor wait on scale (its training scale did not make them). Each channel's
   cumulative ECI is `follow_eci`.
+
+`compute_path` / `experiment_path` replace constant compute growth with log paths, for
+policy that bends a country's compute over time; `draw_rows` runs a subset of a full run's
+scenarios with their exact draws, so a follower can pair with every k-th leader scenario.
 
 Because distillation is proportional to the gap, the lag is held near the gap's time
 constant: a racing leader pulls the follower along, a paused one dries it up. At the app's

@@ -152,6 +152,15 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   (×1.9 over 2025–26, projected ×1.54/yr to 2030), training on the export-control band.
   The 2025–26 history is the judgment: from 2024 the stock (which counts no chips bought
   before 2022) grows ×2.45/yr, which would read today's pace as needing more input growth.
+- **Leak share, one definition:** China's measured diffusion (3.7 ECI/yr) over the US
+  frontier's algorithmic climb on the same window (~11 ECI/yr: its slope less compute's
+  share), ~33%, on both the Takeoff and Pacing tabs (`_cn_tk_leak`). An earlier draft divided
+  by Takeoff's pace today (~19 ECI/yr), mixing windows, and read 19%.
+- **Headcount is not a separate input.** Moonshot has ~300 staff (401 credited on Kimi K3),
+  DeepSeek ~160–420 and doubling, against ~3,000 in research, engineering and product at
+  Anthropic alone. That gap, like experiment compute, is already in China's measured
+  innovation rate (2.4 ECI/yr), which the model calibrates to; after automation AI labor
+  runs on compute, not heads.
 - **Revisit when:** Epoch scores Kimi K3.1 Pro or a DeepSeek Pro/V5, or China's compute
   sources are revised.
 
