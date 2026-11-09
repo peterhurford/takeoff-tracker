@@ -601,6 +601,28 @@ def _emp_app():
     return at
 
 
+class TestRliMilestones:
+    def test_a_measured_milestone_reads_as_reached(self):
+        """The start draws below the newest record (`_rli_start_interval`), but
+        the frontier is a running max: a milestone the record already passed
+        reads 100% at every date and arrives at the record's date."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "rli"
+        at.run()
+        _assert_no_error(at, "RLI tab")
+        record = vp.rli_frontier_all[-1]
+        tables = [t.value for t in at.table]
+        probs = next(pd_ for pd_ in tables if "Milestone" in pd_.columns
+                     and "Median" not in pd_.columns)
+        arrive = next(pd_ for pd_ in tables if "Median" in pd_.columns)
+        for i, row in probs.iterrows():
+            pct = float(row["Milestone"].split()[1].rstrip("%"))
+            if pct <= record['rli_score']:
+                assert all(v == "100%" for v in list(row)[1:]), row
+                assert arrive.iloc[i]["Median"] == record['date'].strftime('%b %Y')
+
+
 class TestEmploymentDefaults:
     """Employment default values are reasonable and data-driven."""
 

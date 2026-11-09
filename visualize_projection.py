@@ -6330,7 +6330,9 @@ def render_rli():
                 logit_total = (hl / np.log(2)) * logit_slopes * (2**(elapsed_days / hl) - 1)
         else:
             logit_total = elapsed_days * logit_slopes
-        return _inv_logit(start_logit + logit_total) * 100
+        # The frontier is a running max: no reading falls below the measured
+        # record, though the start draws below it (`_rli_start_interval`).
+        return np.maximum(_inv_logit(start_logit + logit_total) * 100, rli_current_score)
 
     _rli_slope_floor = np.log(2) / rli_superexp_dt_floor if rli_is_superexp else None
 
@@ -6397,6 +6399,8 @@ def render_rli():
                 else:
                     days_to = logit_needed / rli_proj_logit_slope
                 days_to = np.maximum(days_to, 0)
+                if score_threshold <= rli_current_score:
+                    days_to = np.zeros_like(days_to)   # already measured
                 p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
                 med_date = rli_current['date'] + timedelta(days=max(p50_d, 0))
                 early_date = rli_current['date'] + timedelta(days=max(p10_d, 0))
