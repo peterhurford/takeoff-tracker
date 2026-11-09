@@ -1531,10 +1531,16 @@ class TestTakeoffTab:
         assert at.number_input(key="tk_full_human").value == 5.0
         assert any("2. People step out of the loop" in s.value for s in at.subheader)
         rsi_label = "RSI: AI directs research"
-        assert next(m.value for m in at.metric if m.label == rsi_label) != "Beyond horizon"
+        median = next(m.value for m in at.metric if m.label == rsi_label)
+        assert median != "Beyond horizon"
+        # The line under the RSI definition quotes the card's median.
+        odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
+        assert f"probably by {median} (50%)" in odds
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
+        odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
+        assert "Beyond horizon" not in odds and "probably by" not in odds
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         assert _qp(at, "tk_human_floor") == ["6.0"]
         at.button(key="tk_reset").click().run()

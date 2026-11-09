@@ -24145,6 +24145,18 @@ def _tk_date(value, today):
             if np.isfinite(value) else "Beyond horizon")
 
 
+def _tk_rsi_odds_text(rsi, horizon, today, end_date):
+    """The line under the RSI definition: the RSI card's 10th and 50th
+    percentile dates, so it moves with the card."""
+    def when(q, phrase):
+        value = takeoff.quantile(rsi, q, horizon)
+        return (f"{phrase} {_tk_date(value, today)}" if np.isfinite(value)
+                else f"not before {end_date:%b %Y}")
+    return ("Based on the below evidence, we think this runaway RSI is likely to be "
+            f"technically possible {when(0.1, 'as early as')} (10%) and "
+            f"{when(0.5, 'probably by')} (50%).")
+
+
 # Steps the takeoff tab's loading bar walks through, each (share done, text).
 _TK_LOADING_STEPS = (
     (0.05, "Loading the evidence: CoBench, the automation index, surveys and the "
@@ -25141,6 +25153,7 @@ def _render_takeoff(loading):
         "attained, humans will no longer be needed to build future AI systems, and "
         "AI can build AI+, AI+ can build AI++, all the way to very powerful AI "
         "systems that greatly exceed humans at everything - ultraintelligence.")
+    rsi_odds = st.empty()  # _tk_rsi_odds_text, once the scenarios have run
     # The model's loop is static, so it draws at once; the headline cards need
     # the evidence's settings first and draw into `top` once computed. The
     # loading bar, sized to the cards (the `stProgress` style), holds their
@@ -25562,6 +25575,7 @@ def _render_takeoff(loading):
         rsi, eci_base = result["events"]["RSI"], run["eci_base"]
         experiment_starts, pace_today, pace_yield = (
             run["experiment_starts"], run["pace_today"], run["pace_yield"])
+        rsi_odds.markdown(_tk_rsi_odds_text(rsi, horizon, today, end_date))
         def _card(col, label, samples, help):
             col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
                        help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "
