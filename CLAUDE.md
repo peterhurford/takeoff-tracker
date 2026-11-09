@@ -26,6 +26,10 @@ pytest -v -n0                                # serial — needed for --pdb / liv
 _VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
 ```
 
+Run only the tests that cover what you changed (`-k` on the tab's test class or the test
+named in its `docs/` record); the full suite takes ~4 minutes locally, so run it only when a
+change touches shared code (helpers, loaders, dispatch, session state) or Peter asks.
+
 Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tests use a fake Streamlit module (`_FakeStreamlit` / `_Noop`) so the app imports without a server; `_VP_TESTING=1` skips rendering at module level. Integration tests use Streamlit's `AppTest` headless runtime (60s timeout, a hang guard).
 
 ## Project Structure
