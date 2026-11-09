@@ -400,9 +400,12 @@ and this section. `_cn_tk_simulate` caches the run (model digest in its key).
 automated coding and ultraintelligence, and copying's share of China's ECI gain to
 end-2028); *Where each side starts today* (`_cn_tk_start_rows`), which is where internal
 models and release lags are explained, not left to hovers: each side's best release, the
-trained level the model starts from and how (the US's latest Anthropic internal model
-projected from METR's AECI and carried at the pace; China's highest candidate plus its ship
-lag), and the pace both as the model uses it and like for like on releases. That last
+trained level the model starts from and how (both sides a range: the US's per scenario the
+higher of its latest Anthropic internal model, projected from METR's AECI with that
+projection's residual sd, and its release frontier's blended anchor plus the ship lag, each
+carried at the pace (`_tk_start_draws`; every display quotes the 20,000-draw median,
+`_tk_trained_now`, and each run's draws shift its paths and coding level as offsets from it;
+`TestTkStartDraws`); China's its anchor plus its ship lag), and the pace both as the model uses it and like for like on releases. That last
 column is the section's key caveat: on releases the two climb at nearly the same pace
 (+2.4 ECI/yr since 2024, +1.4 smoothed now); the model's US starts ~8 faster because its
 trained frontier counts Anthropic's internal models, which have no Chinese counterpart in

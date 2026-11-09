@@ -6298,6 +6298,31 @@ class TestTakeoffEciFloor:
         assert rate[i] == pytest.approx(3 + 19 * 2, rel=0.05)
 
 
+class TestTkStartDraws:
+    """The US start is a range like China's: per scenario, the higher of the
+    internal model (with its projection scatter) and the release anchor plus
+    the lag, both carried to today."""
+
+    def test_the_start_is_a_seeded_range_around_the_quoted_median(self):
+        today = datetime(2026, 11, 9)
+        a, internal = vp._tk_start_draws(24.5, 20_000, 0, today)
+        b, _ = vp._tk_start_draws(24.5, 20_000, 0, today)
+        np.testing.assert_array_equal(a, b)
+        assert np.median(a) == pytest.approx(vp._tk_trained_now(24.5, today))
+        assert np.quantile(a, 0.9) - np.quantile(a, 0.1) > 1.0
+        # Neither candidate is a constant floor: both set some scenarios.
+        assert 0.0 < internal.mean() < 1.0
+
+    def test_no_draw_starts_below_the_release_anchor_plus_the_lag(self):
+        today = datetime(2026, 11, 9)
+        starts, _ = vp._tk_start_draws(24.5, 5_000, 3, today)
+        fr = vp._cc_country_frontier(vp.load_eci_frontier(mtime=vp._eci_mtime()),
+                                     'United States of America')
+        d, mid, half, _n = vp._cc_frontier_anchor(fr)
+        lowest = mid - half + 24.5 * (max((today - d).days, 0) + vp._ship_lag("us")) / 365.25
+        assert starts.min() >= lowest - 1e-9
+
+
 class TestMetrAeci:
     """METR's AECI points, pixel-digitized: the refit must reproduce the slopes
     and the Model 4 value METR prints."""

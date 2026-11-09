@@ -7852,17 +7852,34 @@ def _tk_trained_frontier(since=datetime(2023, 6, 1)):
     return out
 
 
-def _tk_trained_now(eci_today, today=None):
-    """Today's trained-frontier ECI, where the takeoff model starts: the latest
-    trained model (`_tk_trained_frontier`, e.g. Model 4 projected) carried to
-    today at `eci_today` points a year, and never below the latest US release
-    plus the US ship lag of that climb."""
+def _tk_start_draws(eci_today, n, seed, today=None):
+    """Per scenario, today's trained-frontier ECI, where the takeoff model
+    starts: (starts, from_internal). The higher of two candidates, each carried
+    to today at `eci_today` points a year: the latest trained model
+    (`_tk_trained_frontier`, e.g. Model 4 projected), normal over its
+    projection's residual sd when projected; and the US release frontier's
+    blended anchor (`_cc_frontier_anchor`, uniform over its spread, as China's
+    start) plus the US ship lag of climb. `from_internal` marks the draws the
+    first sets. Its own generator from `seed`."""
     today = today or datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    rng = np.random.default_rng(int(seed) + 11)
     last = _tk_trained_frontier()[-1]
-    carried = last['eci_score'] + eci_today * max((today - last['date']).days, 0) / 365.25
-    released = (_eci_entity_data("US best")[1][-1]['eci_score']
-                + eci_today * _ship_lag("us") / 365.25)
-    return max(carried, released)
+    sd = next((p['sd'] for p in _metr_on_eci() if p['model'] == last['name']), 0.0)
+    carried = (last['eci_score'] + rng.normal(0.0, sd, n) if sd > 0 else
+               np.full(n, last['eci_score'])) + eci_today * max(
+                   (today - last['date']).days, 0) / 365.25
+    us_fr = _cc_country_frontier(load_eci_frontier(mtime=_eci_mtime()),
+                                 'United States of America')
+    d, mid, half, _name = _cc_frontier_anchor(us_fr)
+    released = (rng.uniform(mid - half, mid + half, n)
+                + eci_today * (max((today - d).days, 0) + _ship_lag("us")) / 365.25)
+    return np.maximum(carried, released), carried >= released
+
+
+def _tk_trained_now(eci_today, today=None):
+    """The median of `_tk_start_draws` (20,000 draws, seed 0): the start every
+    caption, marker and table quotes; each run's draws scatter around it."""
+    return float(np.median(_tk_start_draws(eci_today, 20_000, 0, today)[0]))
 
 
 def _metr_pace_series():
@@ -21248,9 +21265,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _fn_caption(
         "Both lines are each side's best trained model, not its best release.",
         ("best trained model",
-         "The US's starts from the higher of Anthropic's latest internal model, its ECI "
-         "projected from METR's AECI chart and carried to today, and its latest release "
-         f"plus the about {us_lag_d:.0f} days releases trail by. China's starts from its releases plus {cn_lag_d:.0f} "
+         "The US's starts, per scenario, from the higher of Anthropic's latest internal "
+         "model, its ECI projected from METR's AECI chart (with that projection's "
+         "scatter) and carried to today, and its release frontier's anchor plus the "
+         f"about {us_lag_d:.0f} days releases trail by. China's starts from its releases plus {cn_lag_d:.0f} "
          "days. The *actual* points are releases, shifted to the sidebar's "
            "*Date points at*."))
     st.plotly_chart(_tf(fig), width="stretch")
@@ -23538,11 +23556,17 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     fade = np.clip(1 - (years - years[j]) / _TK_ECI_FLOOR_FADE_YEARS, 0, 1)
     paths = np.where(years[None, :] <= years[j], floored,
                      model + (floored[:, j] - model[:, j])[:, None] * fade[None, :])
+    # Each scenario's own start (`_tk_start_draws`) shifts its whole path.
+    dev = result.get("eci_start_dev")
+    if dev is not None:
+        paths = paths + dev[:, None]
+        model = model + dev[:, None]
     paths = np.maximum.accumulate(paths, axis=1)
     rsi = result["events"]["RSI"]
     at_rsi = np.where(np.isfinite(rsi) & (rsi <= years[-1]),
                       _tk_path_at(paths, years, rsi), np.nan)
     return {"now": now, "released": frontier[-1]['eci_score'], "ppy": ppy,
+            "now_draws": now + (dev if dev is not None else 0.0),
             "trained": _tk_trained_frontier(),
             "paths": paths, "at_rsi": at_rsi, "model": model, "frontier": frontier,
             "ultra": _tk_first_reach(paths, years, ultra), "ultra_level": ultra}
@@ -24372,13 +24396,17 @@ def _tk_run(today, progress=None):
     # date says, so RSI no longer waits on a late inherited date past it.
     # The model starts at today's trained frontier (`_tk_trained_now`): the
     # lead over the latest release that puts it there.
+    # Each scenario starts at its own draw (`_tk_start_draws`), carried as an
+    # offset from the median every display quotes.
     eci_lead = max((_tk_trained_now(eci_today, today)
                     - _eci_entity_data("US best")[1][-1]['eci_score']) / eci_today, 0.0)
     _, eci_now, eci_ppy, eci_base = _tk_eci_scale(params, hist_compute, eci_lead,
                                                   ppy=eci_today)
+    _starts = _tk_start_draws(eci_today, len(onset_years), params["seed"], today)[0]
+    eci_start_dev = _starts - np.median(_starts)
     eci_rates = _tk_eci_rates(params, hist_compute, ppy=eci_today)
     ultra = _tk_ultra_eci()
-    coding_level = ultra - eci_now          # in ECI points, through eci_rates
+    coding_level = ultra - (eci_now + eci_start_dev)   # per draw, in ECI points
     coding_weights = (eci_rates["compute"], eci_rates["software"])
     # Research hours follow the automation index's own projection, each stage
     # at its own hours per level and each scenario with its own AL4->AL5 gap.
@@ -24413,6 +24441,7 @@ def _tk_run(today, progress=None):
     result["hist_compute"] = hist_compute
     result["eci_rates"] = eci_rates
     result["eci_lead"] = eci_lead
+    result["eci_start_dev"] = eci_start_dev
     result["eci_today"] = eci_today
     rsi = result["events"]["RSI"]
     eci = _tk_eci(result, params, ultra)
@@ -24877,17 +24906,20 @@ def _cn_tk_start_rows(cn, eci, today):
     trained = eci.get("trained") or []
     last_tr = trained[-1] if trained else None
     internal = {r['model'] for r in _metr_on_eci() if r['kind'] == 'internal'}
-    # Names whichever of `_tk_trained_now`'s two terms sets the start: the
-    # internal model carried to today, or the latest release plus the lag.
-    carried = (last_tr['eci_score'] + eci['ppy'] * max((today - last_tr['date']).days, 0)
-               / 365.25 if last_tr else -np.inf)
-    floor = us_rel['eci_score'] + eci['ppy'] * _ship_lag('us') / 365.25
-    us_how = (f"Anthropic's internal {last_tr['name']} ({last_tr['date']:%b %d}), projected "
-              f"onto Epoch's scale from METR's AECI ({last_tr['eci_score']:.1f}), carried "
-              f"to today at the pace" if last_tr and last_tr['name'] in internal
-              and carried >= floor else
-              f"The latest release plus {_ship_lag('us'):.0f} days of climb, the US's "
-              "trained-to-release lag")
+    # Both of `_tk_start_draws`' candidates, and how often the internal one wins.
+    _share = float(np.mean(_tk_start_draws(eci['ppy'], 20_000, 0, today)[1]))
+    us_anchor = _cc_frontier_anchor(_cc_country_frontier(
+        load_eci_frontier(mtime=_eci_mtime()), 'United States of America'))
+    release_how = (f"the release frontier's anchor ({us_anchor[1]:.1f} ± {us_anchor[2]:.1f}, "
+                   f"led by {us_anchor[3]}) plus {_ship_lag('us'):.0f} days of climb, the "
+                   "US's trained-to-release lag")
+    us_how = (f"Per scenario, the higher of Anthropic's internal {last_tr['name']} "
+              f"({last_tr['date']:%b %d}), projected onto Epoch's scale from METR's AECI "
+              f"({last_tr['eci_score']:.1f}), carried to today at the pace, and "
+              f"{release_how}; the internal model sets it in {100 * _share:.0f}% of scenarios"
+              if last_tr and last_tr['name'] in internal else
+              release_how[0].upper() + release_how[1:])
+    us_lvl = np.quantile(eci.get("now_draws", eci["now"]), [.1, .5, .9])
     lvl = np.quantile(cn["level"], [.1, .5, .9])
     d, mid, half, name = cal["anchor"]
     cn_how = (f"The scored frontier's anchor ({mid:.1f} ± {half:.1f}, led by {name}), "
@@ -24910,7 +24942,8 @@ def _cn_tk_start_rows(cn, eci, today):
         {"": "United States",
          "Best released": f"{us_rel['eci_score']:.1f}, {us_rel.get('name', '')} "
                           f"({us_rel['date']:%b %d})",
-         "Where the model starts (trained, today)": f"{eci['now']:.1f}",
+         "Where the model starts (trained, today)":
+             f"{eci['now']:.1f} ({us_lvl[0]:.1f}–{us_lvl[2]:.1f})",
          "How": us_how,
          "Pace (ECI/yr)": f"Model: {eci['ppy']:g}, the trained frontier's smoothed climb "
                           f"(internal models included). Releases: {cal['us_obs']:.1f} since "

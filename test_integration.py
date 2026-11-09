@@ -1368,8 +1368,14 @@ class TestTakeoffTab:
         for name in ("Projected ECI", "Projected ECI: 10th percentile"):
             assert np.all(np.diff(_ys(traces[name])) >= -1e-9), name   # no step down
         first_year = slice(0, 13)        # monthly grid: today plus 12 months
+        # The floor holds per scenario from its own start (`_tk_start_draws`),
+        # and the trend is drawn from the median start: so the 10th percentile
+        # clears it less the start spread's own 10th percentile.
+        import visualize_projection as vp
+        starts = vp._tk_start_draws(vp._TK_ECI_TODAY, 20_000, 0)[0]
+        low = float(np.quantile(starts, 0.1) - np.median(starts))
         assert np.all(_ys(traces["Projected ECI: 10th percentile"])[first_year]
-                      >= _ys(traces["Today's trend continued"])[first_year] - 1e-9)
+                      >= _ys(traces["Today's trend continued"])[first_year] + low - 0.3)
         capability = json.loads(_tk_charts(at)[4].proto.spec)
         assert "Pace from capability" in {d.get("name") for d in capability["data"]}
         pace = json.loads(_tk_charts(at)[5].proto.spec)
