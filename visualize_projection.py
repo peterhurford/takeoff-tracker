@@ -1041,6 +1041,7 @@ _RLI_RAW = [
     # Added 2026-10-23: Scale only, as "Gemini Argon 4" (isNew, createdAt 2026-10-22T22:16Z); not yet in
     # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
     {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
+    {"name": "Fable 5.2",       "date": "2026-11-09", "rli_score": 41.30},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -1094,6 +1095,8 @@ _RLI_RAW = [
     # closing that asymmetry; Gemini 4 Argon is still Scale-only.
     # Rechecked 2026-10-26 to 10-30: no new model or changed score; Scale's newest createdAt is still Gemini 4
     # Argon, which is still absent from the CAIS API.
+    # Rechecked 2026-11-09: Fable 5.2 above (41.3 on both surfaces; Scale createdAt 11-09) is the only change.
+    # Mythos 5.2, Sonnet 5.5, Haiku 5.5, Mythos 5.1 and Opus 5 have no score; Argon is still Scale-only.
 ]
 
 
@@ -1167,6 +1170,10 @@ _RSI_SYSCARD_RESCALE = 50.3 / 45.6
 # expects the 85% bar "to carry over to CoBench 2.1". The Sonnet 5.5 card
 # (2026-09-28) and Haiku 5.5 (2026-10-07) cards report no CoBench at all; both defer to Opus 5.5's.
 # Opus 5.5 card: https://www-cdn.anthropic.com/fc1b44717c85dc068bc6ba5024219938094694bd/Claude%20Opus%205.5%20System%20Card.pdf
+# The Fable 5.2 & Mythos 5.2 card (2026-11-09, §2.3.4.1) reports no CoBench: "we are updating the
+# evaluation to address issues we discovered in the previous version", so the next published score is
+# likely another scale break. Its AECI table is a new fit (Nov 6) it calls not comparable to earlier cards.
+# https://assets.claude.com/27d60918d218125e7504bc7354c4b4626ec56b11.pdf
 
 _RSI_RAW = [
     {"name": "Claude Opus 4.6",       "date": "2026-02-05", "cobench": 15.6, "date_known": True},
@@ -9330,6 +9337,8 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-10-18: no TickerTrends post since. Epoch has replaced its $70B row with the FT's $50B
     # (as of 09-30) and a $30B July row; press line only, so this series is unchanged.
     # Rechecked daily 2026-10-21 to 11-02: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
+    # Rechecked 2026-11-09: TickerTrends' posts since (11-03 crawler volume, 11-03 and 11-06 Anthropic) carry
+    # no OpenAI total; press has only the same ~$50B for September and a ~$70B year-end target (forecast).
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -9447,6 +9456,10 @@ _ANTHROPIC_REVENUE = [
     # anthropic.com/news (10-27 drug development, GSA; 10-28 AI for Science) states no run rate.
     # Rechecked 2026-11-02: S-1/A filed (accession 0001628280-26-068676); Run-Rate Revenue as of 10-31 still
     # blank, no 424B yet. Excluded: Q3 2026 revenue of $17.0B, now filled in (period revenue).
+    # Rechecked 2026-11-09: no filing after the 11-02 S-1/A, so the 10-31 figure is still blank; the Fable 5.2
+    # launch post states no run rate. Excluded, none a company disclosure: the FT's $81B (11-06, Epoch's
+    # newest row, dated 10-31), the WSJ's "topped $80 billion at the end of October" (person familiar), and
+    # TickerTrends' $82.33B as of 10-30 (alt-data).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only

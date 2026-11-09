@@ -2851,9 +2851,16 @@ class TestPacingTab:
         tbl = next(x.value for x in at.table if "Source" in x.value.columns)
         abroad = tbl[tbl["Source"].str.startswith("Compute, clusters abroad")]
         assert list(abroad.iloc[0][1:]) == ["Stopped"] * 3
-        # The domestic row is rebuilding at the pause, not missing data.
+        # The domestic row is rebuilding at a pause inside the setback, not
+        # missing data. The setback's length is live data (the domestic
+        # buildout pace), so the pause moves to 3 months out to sit inside it.
+        self._paired(at.select_slider(key="pc_pause_mo").set_value(3))
+        tbl = next(x.value for x in at.table if "Source" in x.value.columns)
         dom = tbl[tbl["Source"].str.startswith("Compute, domestic")].iloc[0]
         assert dom["China ECI/yr at US pause"] == "Regrowing"
+        import visualize_projection as vp
+        at.select_slider(key="pc_pause_mo").set_value(
+            vp._PC_DEFAULTS["pc_pause_mo"]).run()
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(

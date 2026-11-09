@@ -5285,7 +5285,9 @@ class TestPacing:
         fitted = np.mean(logit - slope * days) + slope * days[-1]
         dt = round(np.log(2) / slope)
         prev = None
-        for target in (25.0, 50.0, vp._PC_RLI_TARGET_PCT):
+        # Bars stay above the frontier's newest score (Fable 5.2, 41.3%), else
+        # the ETA collapses to today.
+        for target in (50.0, 70.0, vp._PC_RLI_TARGET_PCT):
             early, med, late = vp._pc_rli_eta(fr, target, n=20000)
             assert early < med < late
             want = fr[-1]['date'] + timedelta(
