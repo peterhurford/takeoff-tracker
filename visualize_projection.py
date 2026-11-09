@@ -25134,6 +25134,13 @@ def _render_takeoff(loading):
                f"come from scenarios simulated through {_TK_SIM_END_YEAR}, whatever "
                f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
     st.header("Takeoff")
+    st.markdown(
+        "**\"Runaway recursive self-improvement (RSI)\"** is the idea that, at some "
+        "point, an AI system can be as good as or better than top human experts at "
+        "the task of researching and developing AI itself. When this skill is "
+        "attained, humans will no longer be needed to build future AI systems, and "
+        "AI can build AI+, AI+ can build AI++, all the way to very powerful AI "
+        "systems that greatly exceed humans at everything - ultraintelligence.")
     # The model's loop is static, so it draws at once; the headline cards need
     # the evidence's settings first and draw into `top` once computed. The
     # loading bar, sized to the cards (the `stProgress` style), holds their
