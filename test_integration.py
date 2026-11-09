@@ -3616,6 +3616,8 @@ class TestSidebarTools:
         at.button(key="_reset_changed").click().run()
         _assert_no_error(at, "badge / reset")
         assert at.checkbox(key="dc_log").value == default_log
+        # The browser is told too; without set_value the box stays ticked on screen.
+        assert at.checkbox(key="dc_log").proto.set_value
         assert not badge()
 
 

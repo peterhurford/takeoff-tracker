@@ -16964,9 +16964,15 @@ def _changed_settings():
 
 
 def _reset_changed(keys):
-    """Drop each changed setting; its widget re-initialises to its default."""
+    """Write each changed setting's default back. Popping alone resets the
+    server's value but not the browser's widget, which keeps showing (and later
+    resends) the old one (`test_changed_badge_counts_and_resets`)."""
+    defaults = {**_all_tracked()[1], **st.session_state.get("_url_auto_defaults", {})}
     for k in keys:
-        st.session_state.pop(k, None)
+        if k in defaults:
+            st.session_state[k] = defaults[k]
+        else:
+            st.session_state.pop(k, None)
         if k in st.query_params:
             del st.query_params[k]
     st.session_state.pop("_tk_fit_message", None)
