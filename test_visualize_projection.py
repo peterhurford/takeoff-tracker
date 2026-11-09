@@ -4987,15 +4987,21 @@ class TestPacing:
 
     def test_china_hover_gap_reads_the_drawn_us_line(self):
         """China's hover gap is the months since the US line, interpolated
-        as drawn, first reached its ECI; dips in the US line are ignored."""
+        as drawn, first reached its ECI, in whole months; dips in the US
+        line are ignored."""
         us = [(datetime(2025, 1, 1), 100.0), (datetime(2025, 7, 1), 90.0),
               (datetime(2026, 1, 1), 120.0)]
         # 110 is halfway from 100 (Jan 2025) to 120 (Jan 2026), skipping the
         # dip: early Jul 2025, 182.5 days before Jan 2026.
         gap = vp._pc_gap_to_us(us, datetime(2026, 1, 1), 110.0)
-        assert gap == "<br>6.0mo behind the US line"
+        assert gap == "<br>~6mo behind the US line"
+        # 6.3 months still reads 6: tenths are the medians' sampling noise.
+        assert vp._pc_gap_to_us(us, datetime(2026, 1, 10), 110.0) == \
+            "<br>~6mo behind the US line"
+        assert vp._pc_gap_to_us(us, datetime(2026, 1, 10), 120.0) == \
+            "<br>level with the US line"
         assert vp._pc_gap_to_us(us, datetime(2025, 1, 1), 120.0) == \
-            "<br>12.0mo ahead of the US line"
+            "<br>~12mo ahead of the US line"
         assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 130.0) == \
             "<br>above the US line"
         assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 50.0) == ""

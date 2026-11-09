@@ -19566,7 +19566,8 @@ def _pc_gap_to_us(us_line, d, e, what="the US line"):
     """Hover line for a China point (`d`, ECI `e`) on the race chart: the
     months since the drawn US line [(date, eci), …] first reached `e`,
     interpolated along it as plotted, so the figure is the horizontal
-    distance the y-spike shows. '' before the US line starts."""
+    distance the y-spike shows. Whole months: both lines are per-month
+    medians, so tenths are Monte Carlo noise. '' before the US line starts."""
     pts = sorted(us_line)
     if not pts or e < pts[0][1]:
         return ""
@@ -19578,9 +19579,9 @@ def _pc_gap_to_us(us_line, d, e, what="the US line"):
             else:
                 f = (e - prev[1]) / (cur[1] - prev[1])
                 at = prev[0] + (cur[0] - prev[0]) * f
-            mo = (d - at).days / 30.44
-            return (f"<br>{mo:.1f}mo behind {what}" if mo >= 0.05
-                    else f"<br>{-mo:.1f}mo ahead of {what}" if mo <= -0.05
+            mo = round((d - at).days / 30.44)
+            return (f"<br>~{mo}mo behind {what}" if mo > 0
+                    else f"<br>~{-mo}mo ahead of {what}" if mo < 0
                     else f"<br>level with {what}")
         if cur[1] > prev[1]:
             prev = cur
