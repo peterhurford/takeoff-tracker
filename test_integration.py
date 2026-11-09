@@ -10,7 +10,7 @@ Run: pytest test_integration.py -v
 
 import numpy as np
 import pytest
-from datetime import datetime
+from datetime import date, datetime
 import base64
 import json
 import re
@@ -1533,15 +1533,18 @@ class TestTakeoffTab:
         rsi_label = "RSI: AI directs research"
         median = next(m.value for m in at.metric if m.label == rsi_label)
         assert median != "Beyond horizon"
-        # The line under the RSI definition quotes the card's median.
+        # The line under the RSI definition gives the card's median as months from now.
         odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
-        assert f"probably by {median} (50%)" in odds
         assert re.search(r"possible (in \S+ (months?|years)|within a month) \(10%\)", odds)
+        card = datetime.strptime(median, "%b %Y")
+        card_months = 12 * (card.year - date.today().year) + card.month - date.today().month
+        said = re.search(r"probably within (\d+) months \(50%\)", odds)
+        assert said and abs(int(said.group(1)) - card_months) <= 1
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
         odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
-        assert "Beyond horizon" not in odds and "probably by" not in odds
+        assert "Beyond horizon" not in odds and "probably within" not in odds
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         assert _qp(at, "tk_human_floor") == ["6.0"]
         at.button(key="tk_reset").click().run()

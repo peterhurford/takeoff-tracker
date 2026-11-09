@@ -182,8 +182,8 @@ effective compute through the ECI mapping), +inf for a runaway inside the window
 at full automation, so its hover says to compare loosely. The loop, brakes and these six cards lead
 the tab, above the evidence: they render into a `st.container()` slot made before
 `render_rsi`, since they need its settings first. The RSI definition under the header is
-followed by `_tk_rsi_odds_text`, the RSI card's 10th percentile as a time from now
-(`_tk_in_time`, "in nine months") and its 50th as the card's date, drawn into a
+followed by `_tk_rsi_odds_text`, the RSI card's 10th and 50th percentiles as times from now
+(`_tk_in_time`: "in nine months", "within 15 months"), drawn into a
 slot filled once the scenarios run so it always matches the card
 (`test_grounded_thresholds_and_workflow_floor`).
 One seed, `tk_seed` (default 42, *Random seed* in the sidebar), fixes every draw on the tab:
