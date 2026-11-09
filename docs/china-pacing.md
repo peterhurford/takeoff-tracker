@@ -140,7 +140,7 @@ the RSI tab's own *Milestone dates point at* selector (`rsi_timing`): `_pc_metr_
 for the METR frontier reaching `_PC_METR_TARGET_HRS` — about one work-month — at each
 of `_PC_METR_LEVELS` (at the month-scale bar p50's earlier firing is its own card and
 weight rather than the exclusion it got at the old 40h bar), `_pc_rli_eta()` for the RLI frontier reaching `_PC_RLI_TARGET_PCT`
-(above that tab's own milestone table), `_pc_rsi_eta()` for the CoBench frontier
+(above that tab's own milestone table; starting from `_rli_start_interval`, as the tab does), `_pc_rsi_eta()` for the CoBench frontier
 reaching `_RSI_SUBSTITUTION_BAR` (Anthropic's own full-substitution bar, which the
 RSI tab dates too), `_pc_rsi_survey_eta()` for self-reported staff speedup reaching
 `_PC_RSI_SURVEY_TARGET_X` (about a doubling and a half past the most recent round),

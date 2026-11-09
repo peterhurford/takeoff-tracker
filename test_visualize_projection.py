@@ -5277,13 +5277,14 @@ class TestPacing:
 
     def test_rli_eta_reproduces_the_rli_tab_defaults(self):
         """The RLI 90% card is the RLI tab at its defaults: single OLS in
-        logit space, odds-doubling time over [DT/2, DT*2]."""
+        logit space, odds-doubling time over [DT/2, DT*2], starting from the
+        middle of `_rli_start_interval`."""
         fr = vp.rli_frontier_all
         days = np.array([(m['date'] - fr[0]['date']).days for m in fr],
                         dtype=float)
         logit = vp._logit(np.array([m['rli_score'] / 100 for m in fr]))
         slope = vp.fit_line(days, logit)[1]
-        fitted = np.mean(logit - slope * days) + slope * days[-1]
+        fitted = 0.5 * sum(vp._rli_start_interval(fr, slope))
         dt = round(np.log(2) / slope)
         prev = None
         # Bars stay above the frontier's newest score (Fable 5.2, 41.3%), else
@@ -5297,6 +5298,34 @@ class TestPacing:
             # A higher bar is never reached earlier.
             assert prev is None or med > prev
             prev = med
+
+    def test_rli_start_interval_holds_the_newest_record_and_backtests(self):
+        """The RLI start's 80% interval (blended anchor plus release scatter)
+        contains the newest measured score, and projecting each release since
+        Feb 2026 from the frontier before it lands at least 6 of the last 8
+        inside the projection's 80% band (the fitted-line start, +/-1 point,
+        landed 5, three above its 90th percentile)."""
+        fr = vp.rli_frontier_all
+
+        def fit(hist):
+            d = np.array([(m['date'] - hist[0]['date']).days for m in hist], dtype=float)
+            return vp.fit_line(d, vp._logit(np.array([m['rli_score'] / 100 for m in hist])))[1]
+        lo, hi = vp._rli_start_interval(fr, fit(fr))
+        assert lo <= vp._logit(fr[-1]['rli_score'] / 100) <= hi
+        rng = np.random.default_rng(5)
+        inside = 0
+        for i in range(len(fr) - 8, len(fr)):
+            hist, nxt = fr[:i], fr[i]
+            slope = fit(hist)
+            dt = round(np.log(2) / slope)
+            ps = np.log(2) / vp._lognormal_from_ci(float(round(max(5.0, dt / 2))),
+                                                   float(round(dt * 2)), 20000)
+            a, b = vp._rli_start_interval(hist, slope)
+            start = rng.normal(0.5 * (a + b), (b - a) / (2 * 1.282), 20000)
+            proj = start + ps * (nxt['date'] - hist[-1]['date']).days
+            q10, q90 = np.quantile(proj, [0.1, 0.9])
+            inside += q10 <= vp._logit(nxt['rli_score'] / 100) <= q90
+        assert inside >= 6
 
     def test_report_lag_moves_only_the_release_dated_milestones(self):
         """METR/ECI/RLI are dated off released, benchmarked models; CoBench and

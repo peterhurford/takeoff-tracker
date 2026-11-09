@@ -1100,6 +1100,30 @@ _RLI_RAW = [
 ]
 
 
+def _rli_start_interval(frontier, slope):
+    """Where the RLI frontier stands at its newest record, as an 80% interval
+    (lo, hi) in logit space: the blended anchor (the newest record and the one
+    before it carried to its date at `slope` logit/day; uniform between them,
+    as `_cc_frontier_anchor` starts ECI) plus the release scatter (the
+    frontier's residual sd around its single-line fit), so a jump above trend
+    neither sets the level alone nor falls outside it. Deterministic: its own
+    seeded generator."""
+    base = frontier[0]['date']
+    days = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+    logit = _logit(np.array([m['rli_score'] / 100 for m in frontier]))
+    if len(frontier) < 3:
+        return logit[-1] - 0.1, logit[-1] + 0.1
+    carried = logit[-2] + slope * (days[-1] - days[-2])
+    mid, half = 0.5 * (logit[-1] + carried), 0.5 * abs(logit[-1] - carried)
+    s1 = fit_line(days, logit)[1]
+    res = logit - (np.mean(logit - s1 * days) + s1 * days)
+    sd = float(np.sqrt((res ** 2).sum() / (len(days) - 2)))
+    rng = np.random.default_rng(0)
+    z = rng.uniform(mid - half, mid + half, 40_000) + rng.normal(0.0, sd, 40_000)
+    lo, hi = np.quantile(z, [0.1, 0.9])
+    return float(lo), float(hi)
+
+
 @st.cache_data
 def load_rli_data():
     models = []
@@ -5766,16 +5790,21 @@ def render_rli():
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
 
-                # Position CI in percentage points
-                _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
-                _rli_def_score = _rli_cur['rli_score']
+                # Position CI in percentage points: an 80% interval for where
+                # the frontier stands, which the projection centres on
+                # (`_rli_start_interval`: blended anchor plus release scatter).
+                _rli_def_lo, _rli_def_hi = _rli_start_interval(_rli_pre_fr, _rli_pre_params[1])
                 _rli_pos_lo_col, _rli_pos_hi_col = st.columns(2)
                 rli_custom_pos_lo = _ss_number_input(_rli_pos_lo_col,
-                    "Pos CI low (%)", "rli_custom_pos_lo", round(max(_rli_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, step=0.1)
+                    "Pos CI low (%)", "rli_custom_pos_lo",
+                    round(max(100 * _inv_logit(_rli_def_lo), 0.1), 2),
+                    min_value=0.01, step=0.1,
+                    help="Where the frontier stands at its newest record, 80% range. Default: "
+                         "the newest record averaged with the one before carried on the "
+                         "trend, widened by how far releases scatter around it.")
                 rli_custom_pos_hi = _ss_number_input(_rli_pos_hi_col,
-                    "Pos CI high (%)", "rli_custom_pos_hi", round(_rli_def_score + 1.0, 2),
-                    step=0.1)
+                    "Pos CI high (%)", "rli_custom_pos_hi",
+                    round(100 * _inv_logit(_rli_def_hi), 2), step=0.1)
 
                 rli_custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -5887,15 +5916,6 @@ def render_rli():
         else:
             _rli_params = fit_line(days_used, logit_used)
 
-        _rli_current_day = (rli_frontier_used[-1]['date'] - base_date).days
-        if rli_piecewise_n_segments >= 2:
-            _rli_seg_d = days_used[_rli_last_seg_range]
-            _rli_seg_y = logit_used[_rli_last_seg_range]
-        else:
-            _rli_seg_d = days_used
-            _rli_seg_y = logit_used
-        _rli_intercept = np.mean(_rli_seg_y - _rli_params[1] * _rli_seg_d)
-        _rli_fitted_logit = _rli_intercept + _rli_params[1] * _rli_current_day
 
         n_rli = N_SAMPLES
         if rli_custom_dt_dist == "Log-log":
@@ -5914,13 +5934,15 @@ def render_rli():
             _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
             _rli_pos_offset = 10  # shift so values are safely positive
             _rli_pos_sigma = (np.log(_rli_pos_logit_hi + _rli_pos_offset) - np.log(_rli_pos_logit_lo + _rli_pos_offset)) / (2 * 1.282)
-            _rli_pos_mu = np.log(_rli_fitted_logit + _rli_pos_offset)
+            _rli_pos_mu = 0.5 * (np.log(_rli_pos_logit_lo + _rli_pos_offset)
+                                 + np.log(_rli_pos_logit_hi + _rli_pos_offset))
             rli_proj_start_logit = np.random.lognormal(_rli_pos_mu, max(_rli_pos_sigma, 0), n_rli) - _rli_pos_offset
         else:
             _rli_pos_logit_lo = _logit(rli_custom_pos_lo / 100)
             _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
             _rli_pos_sigma = (_rli_pos_logit_hi - _rli_pos_logit_lo) / (2 * 1.282)
-            rli_proj_start_logit = np.random.normal(_rli_fitted_logit, max(_rli_pos_sigma, 0), n_rli)
+            rli_proj_start_logit = np.random.normal(0.5 * (_rli_pos_logit_lo + _rli_pos_logit_hi),
+                                                    max(_rli_pos_sigma, 0), n_rli)
 
     elif rli_proj_basis == "Superexponential (logit)":
         # In logit space: logit = A + K * 2^(d/halflife)
@@ -17897,7 +17919,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  _pc_rli_eta(rli_frontier_all, n=n, samples=True), True,
                  "RLI tab at its defaults: single OLS in logit space, "
                  "odds-doubling time over [DT/2, DT\u00d72] floored at 5 "
-                 f"days, position \u00b1{_PC_RLI_POS_CI:g} point. "
+                 "days, position the newest record blended with the one before, "
+                 "widened by release scatter. "
                  f"{_PC_RLI_TARGET_PCT:.0f}% is above that tab's own "
                  "milestone table, which stops at 50%."))
     _cap.append((f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}",
@@ -18141,16 +18164,13 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
 # tab's own milestone table (which stops at 50%), so the card is a long
 # extrapolation of the same logit fit.
 _PC_RLI_TARGET_PCT = 90.0
-_PC_RLI_POS_CI = 1.0     # the RLI tab's default position CI, fitted score +/- 1pt
-
-
 def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None, samples=False):
     """(early, median, late) dates for the RLI frontier to reach `target_pct`.
 
     The RLI tab at its defaults — single OLS in logit space, odds-doubling
     time lognormal over [DT/2, DT*2] (floored at 5 days as the sidebar input
-    is), position normal over the fitted score +/- `_PC_RLI_POS_CI` points,
-    also in logit space. Returns None if the fitted slope is flat or negative.
+    is), position normal over `_rli_start_interval`'s 80% interval, also in
+    logit space. Returns None if the fitted slope is flat or negative.
     """
     n = n or N_SAMPLES
     base = frontier[0]['date']
@@ -18162,11 +18182,8 @@ def _pc_rli_eta(frontier, target_pct=_PC_RLI_TARGET_PCT, n=None, samples=False):
     dt = round(np.log(2) / slope)
     proj_slope = np.log(2) / _lognormal_from_ci(
         float(round(max(5.0, dt / 2), 0)), float(round(dt * 2, 0)), n)
-    fitted = np.mean(logit - slope * days) + slope * days[-1]
-    cur = frontier[-1]['rli_score']
-    pos_lo = _logit(round(max(cur - _PC_RLI_POS_CI, 0.1), 2) / 100)
-    pos_hi = _logit(round(cur + _PC_RLI_POS_CI, 2) / 100)
-    start = np.random.normal(fitted, max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
+    pos_lo, pos_hi = _rli_start_interval(frontier, slope)
+    start = np.random.normal(0.5 * (pos_lo + pos_hi), max((pos_hi - pos_lo) / (2 * 1.282), 0), n)
     days_to = np.maximum((_logit(target_pct / 100) - start) / proj_slope, 0.0)
     return _pc_eta_out(frontier[-1]['date'], days_to, samples)
 
