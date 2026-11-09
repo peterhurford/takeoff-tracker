@@ -1536,6 +1536,7 @@ class TestTakeoffTab:
         # The line under the RSI definition quotes the card's median.
         odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
         assert f"probably by {median} (50%)" in odds
+        assert re.search(r"possible (in \S+ (months?|years)|within a month) \(10%\)", odds)
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"

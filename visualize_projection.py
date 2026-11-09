@@ -24145,16 +24145,29 @@ def _tk_date(value, today):
             if np.isfinite(value) else "Beyond horizon")
 
 
+_TK_NUMBER_WORDS = ("zero one two three four five six seven eight nine ten eleven "
+                    "twelve thirteen fourteen fifteen sixteen seventeen eighteen").split()
+
+
+def _tk_in_time(years):
+    """A time from now in words: 'within a month', 'in nine months', 'in 2.5 years'."""
+    months = round(12 * years)
+    if months < 1:
+        return "within a month"
+    if months < len(_TK_NUMBER_WORDS):
+        return f"in {_TK_NUMBER_WORDS[months]} month{'s' if months > 1 else ''}"
+    return f"in {round(2 * years) / 2:g} years"
+
+
 def _tk_rsi_odds_text(rsi, horizon, today, end_date):
-    """The line under the RSI definition: the RSI card's 10th and 50th
-    percentile dates, so it moves with the card."""
-    def when(q, phrase):
+    """The line under the RSI definition: the RSI card's 10th percentile as a
+    time from now and its 50th as the card's date, so it moves with the card."""
+    def when(q, say):
         value = takeoff.quantile(rsi, q, horizon)
-        return (f"{phrase} {_tk_date(value, today)}" if np.isfinite(value)
-                else f"not before {end_date:%b %Y}")
+        return say(value) if np.isfinite(value) else f"not before {end_date:%b %Y}"
     return ("Based on the below evidence, we think this runaway RSI is likely to be "
-            f"technically possible {when(0.1, 'as early as')} (10%) and "
-            f"{when(0.5, 'probably by')} (50%).")
+            f"technically possible {when(0.1, _tk_in_time)} (10%) and "
+            f"{when(0.5, lambda v: 'probably by ' + _tk_date(v, today))} (50%).")
 
 
 # Steps the takeoff tab's loading bar walks through, each (share done, text).
