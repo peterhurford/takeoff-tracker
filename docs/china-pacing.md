@@ -477,7 +477,7 @@ paused stock stays distillable while a gap remains, then China runs on its
 indigenous band plus its export-control-bound compute term. The dashed US climb is drawn from the last US release, not the sim's first month at China's anchor, so it joins the actual line (`test_the_us_climb_starts_on_the_last_us_release`). Projections are dashed; the dotted *US, no pacing* and *China if the US kept going*
 are the counterfactuals, drawn only where the settings move a country off them, China's
 from the same sim and draws with the US unpaced and every lever off
-(`test_the_dotted_lines_show_only_what_the_settings_changed`). A *Project through*
+(`test_the_dotted_lines_show_only_what_the_settings_changed`). China's actual and median hovers add its gap in months to the drawn US line (actual, climb, then paced or paused) at the same ECI, interpolated as plotted so it matches the y-spike that runs from the hovered point through the US line to the axis (`_pc_gap_to_us`, `test_china_hover_gap_reads_the_drawn_us_line`); it says "behind the US line" because the China tab's figure is against a fitted US trend instead. The dotted no-levers line gives its gap to the unpaced US line, and hovers only through a markerless twin trace where it stands `_PC_HOVER_CLEAR` of the chart's range clear of China's median, so where they overlap the median's hover wins (`test_china_no_levers_hover_yields_to_the_median`). A *Project through*
 dropdown (`pc_end_year`, options 2027–2035, default 2031) sets the crossing-search horizon and — like every
 other tab's *Project through* — the x-axis of **both** charts: the timeline runs to the
 grid end (+120d pad) instead of auto-fitting to content, and the pause panel takes

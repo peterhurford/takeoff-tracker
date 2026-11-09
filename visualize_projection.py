@@ -19544,6 +19544,49 @@ def _pc_cn_takeoff_paths(today, tk, *, n_s, draw, t_day, cn_ship, anchor_eci, cn
     return crossed, grid, traj, traj_free, chan
 
 
+# Share of the race chart's ECI range (~20px of its 540) a line must stand
+# from China's median before its own hover shows there.
+_PC_HOVER_CLEAR = 0.04
+
+
+def _pc_clear_of(x, y, ref_x, ref_y, gap):
+    """Indices of points (x, y) at least `gap` from the line (ref_x, ref_y),
+    read at the same date; a point outside the line's dates counts as clear."""
+    if not ref_x:
+        return list(range(len(x)))
+    rt = np.array([d.timestamp() for d in ref_x])
+    t = np.array([d.timestamp() for d in x])
+    ry = np.interp(t, rt, np.asarray(ref_y, float))
+    out = (t < rt[0]) | (t > rt[-1])
+    return [i for i in range(len(x))
+            if out[i] or abs(y[i] - ry[i]) >= gap]
+
+
+def _pc_gap_to_us(us_line, d, e, what="the US line"):
+    """Hover line for a China point (`d`, ECI `e`) on the race chart: the
+    months since the drawn US line [(date, eci), …] first reached `e`,
+    interpolated along it as plotted, so the figure is the horizontal
+    distance the y-spike shows. '' before the US line starts."""
+    pts = sorted(us_line)
+    if not pts or e < pts[0][1]:
+        return ""
+    prev = pts[0]
+    for cur in pts:
+        if cur[1] >= e:
+            if cur[1] == prev[1]:
+                at = cur[0]
+            else:
+                f = (e - prev[1]) / (cur[1] - prev[1])
+                at = prev[0] + (cur[0] - prev[0]) * f
+            mo = (d - at).days / 30.44
+            return (f"<br>{mo:.1f}mo behind {what}" if mo >= 0.05
+                    else f"<br>{-mo:.1f}mo ahead of {what}" if mo <= -0.05
+                    else f"<br>level with {what}")
+        if cur[1] > prev[1]:
+            prev = cur
+    return f"<br>above {what}"
+
+
 def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
                         horizon=None, caps_now=None, state_out=None,
@@ -20897,11 +20940,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
 
     _ck = [i for i, t in enumerate(grid_yrs)
            if t < _tp50 and _date_of(t) > t0_us]
+    # The US line as drawn (actual, climb, then paused or paced), which
+    # China's hovers measure their gap against (`_pc_gap_to_us`).
+    _us_line = [(d + off_us_rel, s) for d, s, n in us_fr]
     if d_pause_v > t0_us:
         _cx = ([_us_last[0]] + [_date_of(grid_yrs[i]) for i in _ck]
                + [d_pause_v])
         _cy = ([_us_last[1]] + [float(np.median(us_tr_grid[:, i])) for i in _ck]
                + [lvl50])
+        _us_line += list(zip(_cx[1:], _cy[1:]))
         _climb = ((lvl50 - _us_last[1])
                   / max((d_pause_v - _us_last[0]).days / 365.25, 1e-6))
         fig.add_trace(go.Scatter(
@@ -20924,6 +20971,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             fill='toself', fillcolor='rgba(31,119,180,0.10)',
             line=dict(width=0), hoverinfo='skip', name='US, 80% range'))
     if _paused:
+        _us_line.append((max(d_pause_v, t0_us), lvl50))
         fig.add_trace(go.Scatter(
             x=[max(d_pause_v, t0_us), x_end], y=[lvl50, lvl50], mode='lines',
             line=dict(color='#1450A3', width=2.5, dash='dash'),
@@ -20939,6 +20987,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _px = [d_pause_v + timedelta(days=(grid_yrs[i] - _tp50) * 365.25)
                for i in _pk]
         _py = [float(np.median(us_tr_grid[:, i])) for i in _pk]
+        _us_line += list(zip(_px, _py))
         _prate = ((_py[-1] - _py[0]) / max((_px[-1] - _px[0]).days / 365.25,
                                            1e-6) if len(_py) > 1 else 0.0)
         fig.add_trace(go.Scatter(
@@ -20953,6 +21002,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # Where the US would be with no pacing, dotted like China's no-levers
     # line, from the first change in its pace.
     _chg = _pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
+    # The unpaced US, which China's no-levers line measures its gap against.
+    _us_free = _us_line
     if _chg:
         _d0 = _chg[0][0] + off_us
         _uk = [i for i, t in enumerate(grid_yrs)
@@ -20963,6 +21014,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             _ux = [_date_of(grid_yrs[i]) for i in _uk]
             _urate = (_un[-1] - _un[0]) / max(
                 (_ux[-1] - _ux[0]).days / 365.25, 1e-6)
+            _us_free = ([p for p in _us_line if p[0] < _d0]
+                        + [(x, float(v)) for x, v in zip(_ux, _un)])
             fig.add_trace(go.Scatter(
                 x=_ux, y=[float(v) for v in _un], mode='lines',
                 line=dict(color='#1F77B4', width=2, dash='dot'),
@@ -21034,7 +21087,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
         mode='lines+markers', line=dict(color='#D62728', width=1.5),
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
-        text=[_hover(d, s, n) + _trend_note(_cn_obs) for d, s, n in cn_fr],
+        text=[_hover(d, s, n) + _pc_gap_to_us(_us_line, d + off_cn, s, "the US line")
+              + _trend_note(_cn_obs) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
     _cfg = _cn_tk_settings()
     if _cnp is not None and _cfg["unscored"]:
@@ -21056,11 +21110,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         y=[pct[90][i] for i in keep] + [pct[10][i] for i in keep][::-1],
         fill='toself', fillcolor='rgba(214,39,40,0.18)',
         line=dict(width=0), hoverinfo='skip', name='China, 80% range'))
+    _ys50 = [pct[50][i] for i in keep]
     fig.add_trace(go.Scatter(
-        x=xs, y=[pct[50][i] for i in keep], mode='lines',
+        x=xs, y=_ys50, mode='lines',
         line=dict(color='#7F1010', width=2.5, dash='dash'),
         name='China, projected',
-        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}<extra>China median'
+        customdata=[_pc_gap_to_us(_us_line, d, y, "the US line")
+                    for d, y in zip(xs, _ys50)],
+        hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}%{customdata}<extra>China median'
                       + ("" if _cn_avg is None
                          else f", avg {_cn_avg:.1f} ECI/yr to crossing")
                       + '</extra>'))
@@ -21074,16 +21131,15 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _nl_rate = ((_nl50[_keep0[-1]] - _nl50[0])
                 / max(grid0[_keep0[-1]] - grid0[0], 1e-6)
                 if _keep0 else _cn_obs)
+    _nlx = [anchor_d + off_cn + timedelta(days=grid0[i] * 365.25)
+            for i in _keep0]
+    _nly = [float(_nl50[i]) for i in _keep0]
     if _keep0:
+        # Hover rides a separate trace (below, once the y-range is known).
         fig.add_trace(go.Scatter(
-            x=[anchor_d + off_cn + timedelta(days=grid0[i] * 365.25)
-               for i in _keep0],
-            y=[float(_nl50[i]) for i in _keep0],
+            x=_nlx, y=_nly,
             mode='lines', line=dict(color='#D62728', width=2, dash='dot'),
-            name='China if the US kept going',
-            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                          '<extra>China, no pacing or levers'
-                          f', avg {_nl_rate:.1f} ECI/yr</extra>'))
+            name='China if the US kept going', hoverinfo='skip'))
     if crossed:
         # The 80% crossing window as a neutral bracket through the diamond;
         # a red band read as part of China's own fan.
@@ -21119,6 +21175,21 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # `_PC_ECI_VIEW_PAST_ULTRA` above ultraintelligence (`_tk_ultra_eci`).
     _lows = [sc for d, sc, _n in us_fr + cn_fr if d >= datetime(2024, 1, 1)]
     _y_rng = [min(_lows or [anchor_eci]) - 5, _tk_ultra_eci() + _PC_ECI_VIEW_PAST_ULTRA]
+    # China's no-levers hover, against the unpaced US, only where the line
+    # stands clear of China's projected median: where the two overlap the
+    # median's hover wins (`test_china_no_levers_hover_yields_to_the_median`).
+    _nl_hov = _pc_clear_of(_nlx, _nly, xs, _ys50,
+                           _PC_HOVER_CLEAR * (_y_rng[1] - _y_rng[0]))
+    if _nl_hov:
+        fig.add_trace(go.Scatter(
+            x=[_nlx[i] for i in _nl_hov], y=[_nly[i] for i in _nl_hov],
+            mode='markers', marker=dict(size=0, opacity=0),
+            name='China if the US kept going (hover)', showlegend=False,
+            customdata=[_pc_gap_to_us(_us_free, _nlx[i], _nly[i],
+                                      "the unpaced US line") for i in _nl_hov],
+            hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}%{customdata}'
+                          '<extra>China, no pacing or levers'
+                          f', avg {_nl_rate:.1f} ECI/yr</extra>'))
     fig.update_layout(
         height=540, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -21133,8 +21204,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         xaxis=dict(gridcolor='rgba(0,0,0,0.12)', title_text=_xtitle,
                    range=[datetime(2024, 1, 1) + off_cn, x_end],
                    tickfont=dict(color='#222'), title_font=dict(color='#222')),
+        # A thin spike from the hovered point to the y-axis, crossing the
+        # US line where it had that ECI: the gap China's hover gives.
         yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
-                   range=_y_rng,
+                   range=_y_rng, showspikes=True, spikemode='toaxis',
+                   spikesnap='hovered data', spikethickness=1,
+                   spikedash='solid', spikecolor='#888888',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     _rank = {'US (actual)': 1, 'US, projected': 2, 'US, no pacing': 3,
              'US, 80% range': 4, 'China (actual)': 5, 'China, unscored (assumed score)': 5.5,

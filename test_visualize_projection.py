@@ -4985,6 +4985,28 @@ class TestDcCtyPlanSlip:
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
 
+    def test_china_hover_gap_reads_the_drawn_us_line(self):
+        """China's hover gap is the months since the US line, interpolated
+        as drawn, first reached its ECI; dips in the US line are ignored."""
+        us = [(datetime(2025, 1, 1), 100.0), (datetime(2025, 7, 1), 90.0),
+              (datetime(2026, 1, 1), 120.0)]
+        # 110 is halfway from 100 (Jan 2025) to 120 (Jan 2026), skipping the
+        # dip: early Jul 2025, 182.5 days before Jan 2026.
+        gap = vp._pc_gap_to_us(us, datetime(2026, 1, 1), 110.0)
+        assert gap == "<br>6.0mo behind the US line"
+        assert vp._pc_gap_to_us(us, datetime(2025, 1, 1), 120.0) == \
+            "<br>12.0mo ahead of the US line"
+        assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 130.0) == \
+            "<br>above the US line"
+        assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 50.0) == ""
+
+    def test_clear_of_keeps_points_away_from_the_reference_line(self):
+        ref_x = [datetime(2026, 1, 1), datetime(2027, 1, 1)]
+        x = [datetime(2025, 6, 1), datetime(2026, 7, 2), datetime(2026, 7, 2)]
+        # 110 sits on the line (100 -> 120); 118 is 8 clear; before it, clear.
+        assert vp._pc_clear_of(x, [0.0, 110.0, 118.0], ref_x, [100.0, 120.0],
+                               5.0) == [0, 2]
+
     def test_compute_lead_counts_china_abroad_until_remote_access_is_cut(self):
         """China's installed compute includes the compute mix's remote stock
         abroad, which a remote cut removes from its date on."""
