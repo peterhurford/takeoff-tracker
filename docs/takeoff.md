@@ -353,22 +353,16 @@ The last section runs China through the same model as a **follower** of the US s
 draw *i* of every structural setting is the US's draw *i*, and the three cards' *Behind the
 US* lines are paired per-draw gaps (`_tk_gap`, censored like the takeoff gaps). Load-bearing:
 
-1. **China's level today is uncertain on purpose** (`_cn_tk_levels`): the highest of the
-   scored frontier's blended anchor (`_cc_frontier_anchor`, uniform over its spread),
-   `_CN_TK_UNSCORED` (Kimi K3.1 Pro, unscored, uniform over `tk_cn_kimi_lo`–`_hi`, ~161)
-   and `_CN_TK_HELD_BACK_ORG`'s internal model (DeepSeek releases Flash models: about
-   `tk_cn_heldback`, default 3, over its top score, ± `_CN_TK_HELD_BACK_SPREAD`), each
-   carried to today on its own slope; the released ones also get China's internal lead
-   before release (`cn_ship_lag`, 21 days, drawn in China's settings here and in Pacing's
-   sidebar, one key; `test_chinas_internal_lead_is_one_setting_on_both_tabs`), the
-   internal DeepSeek model none
-   (`test_deepseeks_held_back_model_is_about_its_setting_and_already_internal`). A higher
-   record lifts the slope (`_cn_tk_slope` refits the frontier with it), and `_cn_tk_lift`
-   splits the extra across own research, distillation and the leak in proportion to their
-   measured rates (per draw; compute, measured apart, takes none), not all to own research,
-   the one channel that survives a US pause (`test_a_higher_slope_lifts_every_copying_channel_in_proportion`). `tk_cn_unscored` off leaves the scored anchor alone; the
-   base draw comes first, so on can only raise a scenario
-   (`test_unscored_models_only_ever_raise_chinas_level`).
+1. **China's level today is its measured frontier** (`_cn_tk_levels`): the scored
+   frontier's blended anchor (`_cc_frontier_anchor`, uniform over its spread), carried to
+   today on China's measured slope plus China's internal lead before release (`cn_ship_lag`,
+   21 days, drawn in China's settings here and in Pacing's sidebar, one key;
+   `test_chinas_internal_lead_is_one_setting_on_both_tabs`;
+   `test_chinas_level_is_the_scored_anchor_carried_to_today`). No unscored or held-back model
+   is assumed. `_cn_tk_lift` still splits any slope above the measured across own research,
+   distillation and the leak in proportion to their measured rates, not all to own research,
+   the one channel that survives a US pause
+   (`test_a_higher_slope_lifts_every_copying_channel_in_proportion`).
 2. **Every rate is the China tab's split** (`_cn_tk_calibration`, `_cc_cn_channels` at
    Pacing's default payoff): own research is the innovation residual (floored at
    `_CN_TK_INNOVATION_FLOOR`); distillation is calibrated as today's measured rate over
@@ -414,12 +408,8 @@ column is the section's key caveat: on releases the two climb at nearly the same
 trained frontier counts Anthropic's internal models, which have no Chinese counterpart in
 the data. Then the cards, the chart (US releases and the trained frontier with internal
 models drawn in, and China's start as a marker with its range), and the sources table
-(all-zero rows dropped). `test_china_section_says_where_each_side_starts`. The assumed parts
-of China's start are said in the body, not left to hovers: the table marks Kimi's score and
-the DeepSeek internal model ASSUMED and gives the measured-models-only level beside the
-assumed one, a bold body line under it (not an `st.warning`: the tab carries none) says
-China's start is partly made up (gone with `tk_cn_unscored` off), and the chart's China marker and Pacing's caption and marker say
-"assumed".
+(all-zero rows dropped). `test_china_section_says_where_each_side_starts`. China's start is
+measured models only, and the table says so.
 
 Automated coding is dated no later than ultraintelligence, on both sides (`_tk_run` caps
 `coding_at` at `eci["ultra"]`): the simulator checks the coding level on its own capability,
@@ -693,7 +683,10 @@ line, then the paper's prediction sigmoid (`_tasteval_predict_mase`) against the
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
 Epoch's ECI on one chart, Anthropic's models at their estimated end of training (`produced`, with its plausible window as a segment; METR dated by staff availability, 1.90× → 1.91×): Claude models on both indexes, internal models' projected ECI
 (`_metr_on_eci`: AECI less Claude's AECI–ECI gap, which `_metr_gap_trend` fits as growing
-~3 points a year since 2025, 80% bars from its residual sd), other labs' record-setting
+~2.7 points a year since 2025, 80% bars from its residual sd; Model 3 Early is matched to
+Fable 5.2, per its system card, and the models after it, Model 3 and Model 4, take Fable 5.2's
+own gap (2.1) instead of the trend's (~3.7), since it sits under the line where Mythos 5 and
+5.1 sit on it), other labs' record-setting
 AECI points, METR's fit carried to today, and where the takeoff model's ECI starts. Its
 caption says why the indexes differ (shape is the index, colour the models, grey diamonds today's estimates). `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4.
 

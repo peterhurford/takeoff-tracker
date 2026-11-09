@@ -7781,17 +7781,26 @@ def _metr_gap_trend(rows=None):
 def _metr_on_eci(rows=None):
     """METR's Anthropic rows on Epoch's scale: [{'model', 'date' (METR's),
     'eci', 'projected', 'sd', 'kind'}]. A model Epoch scores keeps its score;
-    the rest (internal models, Mythos) are AECI less Claude's gap trend at
-    their date (`_metr_gap_trend`), with that fit's residual sd."""
+    the rest are AECI less Claude's gap trend at their date
+    (`_metr_gap_trend`), or, after the newest scored Claude model, less that
+    model's own gap; either way with the trend's residual sd."""
     rows = rows or load_metr_aeci()
     eci = {m['version']: m['eci'] for m in _eci_rows_by_version()}
     icpt, slope, sd = _metr_gap_trend(rows)
+    # Models after the newest Claude model Epoch scores take that model's own
+    # gap, not the trend's: Fable 5.2 (Model 3 Early) sits ~2 points under the
+    # line, and its successors are read as the same line of models.
+    scored = [r for r in rows if r['chart'] == 'anthropic' and r['epoch_model'] in eci]
+    # Ties on date go to the higher AECI: Opus 5.5 shares Model 3 Early's day.
+    anchor = max(scored, key=lambda r: (r['date'], r['aeci'])) if scored else None
     out = []
     for r in rows:
         if r['chart'] != 'anthropic':
             continue
         known = r['epoch_model'] in eci
-        gap = icpt + slope * (r['date'] - _METR_BREAK).days / 365.25
+        gap = (anchor['aeci'] - eci[anchor['epoch_model']]
+               if anchor and r['date'] > anchor['date'] else
+               icpt + slope * (r['date'] - _METR_BREAK).days / 365.25)
         out.append({'model': r['model'], 'date': r['date'], 'kind': r['kind'],
                     'eci': eci[r['epoch_model']] if known else r['aeci'] - gap,
                     'projected': not known, 'sd': 0.0 if known else sd})
@@ -19555,8 +19564,8 @@ def _pc_cn_takeoff_paths(today, tk, *, n_s, draw, t_day, cn_ship, anchor_eci, cn
     if theft_weights is None:
         chan.pop("theft")
     # A crossing can only happen from today on: before it China's path is its
-    # level today run back, and with an unscored model assumed above the US's
-    # it would otherwise "cross" on dates that already passed.
+    # level today run back, and with stolen weights above the US's it would
+    # otherwise "cross" on dates that already passed.
     k0 = min(int(np.searchsorted(grid, t_day - 1e-9)), len(grid) - 1)
     crossed = _pc_cross_years(traj[:, k0:], grid[k0:] - grid[k0],
                               us_path_cn(grid)[0][:, k0:]) + grid[k0]
@@ -20771,7 +20780,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              _method)]
         if _ahead >= 0.5:
             # China's trained frontier is already level with the US's when the
-            # pacing starts (an unscored model assumed high, a late pause):
+            # pacing starts (stolen weights, a late pause):
             # say so rather than date a catch-up that does not happen.
             _cards = [
                 (_card1, f"Before the {_start}",
@@ -21110,18 +21119,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         text=[_hover(d, s, n) + _pc_gap_to_us(_us_line, d + off_cn, s, "the US line")
               + _trend_note(_cn_obs) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
-    _cfg = _cn_tk_settings()
-    if _cnp is not None and _cfg["unscored"]:
-        # China's takeoff starts above its scored record when it counts an
-        # unscored model: draw that assumption where it applies.
-        _lo, _hi = sorted(_cfg["kimi"])
-        fig.add_trace(go.Scatter(
-            x=[_CN_TK_UNSCORED[1] + off_cn], y=[0.5 * (_lo + _hi)], mode='markers',
-            marker=dict(symbol='diamond-open', size=9, color='#D62728', line=dict(width=2)),
-            error_y=dict(type='data', array=[0.5 * (_hi - _lo)], color='#D62728'),
-            name='China, unscored (assumed score)',
-            hovertemplate=f"{_CN_TK_UNSCORED[0]}: no ECI score yet, assumed "
-                          f"{_lo:g}\u2013{_hi:g} (Takeoff's China settings)<extra></extra>"))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
     # One 80% band, as the US gets: a nested 50% band read as a second cone.
@@ -21232,7 +21229,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    spikedash='solid', spikecolor='#888888',
                    tickfont=dict(color='#222'), title_font=dict(color='#222')))
     _rank = {'US (actual)': 1, 'US, projected': 2, 'US, no pacing': 3,
-             'US, 80% range': 4, 'China (actual)': 5, 'China, unscored (assumed score)': 5.5,
+             'US, 80% range': 4, 'China (actual)': 5,
              'China, projected': 6, 'China if the US kept going': 7,
              'China, 80% range': 8, 'automated coder': 9, 'RSI': 10,
              '80% crossing window': 11, 'Median crossing': 12}
@@ -21251,13 +21248,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _fn_caption(
         "Both lines are each side's best trained model, not its best release.",
         ("best trained model",
-         "The US's starts from Anthropic's latest internal model, its ECI projected from "
-         f"METR's AECI chart, carried to today; its releases trail by about "
-         f"{us_lag_d:.0f} days. China's starts from its releases plus {cn_lag_d:.0f} "
-         "days" + (", or, where higher, an assumed score for the unscored Kimi K3.1 Pro "
-                   "or an assumed, never-seen DeepSeek internal model: judgments, not "
-                   "data (Takeoff, China's takeoff settings)" if _cnp is not None else "")
-         + ". The *actual* points are releases, shifted to the sidebar's "
+         "The US's starts from the higher of Anthropic's latest internal model, its ECI "
+         "projected from METR's AECI chart and carried to today, and its latest release "
+         f"plus the about {us_lag_d:.0f} days releases trail by. China's starts from its releases plus {cn_lag_d:.0f} "
+         "days. The *actual* points are releases, shifted to the sidebar's "
            "*Date points at*."))
     st.plotly_chart(_tf(fig), width="stretch")
 
@@ -21445,8 +21439,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _notes.append(
             f"Each path also carries ±{_cc_frontier_level_sd(cn_fr):.1f} ECI of "
             "release-step scatter, and starts from China's level today as Takeoff's "
-            "section 5 draws it (the scored frontier or an unscored or held-back "
-            "model, whichever is highest), which closes no gap on average and is "
+            "section 5 draws it (the scored frontier carried to today), which closes no gap on average and is "
             "left out of the rows, as are the months models wait to deploy.")
     elif 'level' in chan:
         _notes.append(
@@ -22000,11 +21993,9 @@ _TK_DEFAULTS.update({
     "tk_hiring_growth": 100.0,
     "tk_wf_humans": 3_000,
     "tk_wf_copies": 45_000, "tk_wf_power": 10.0, "tk_ultra_eci": _TK_ULTRA_ECI,
-    # China's takeoff (section 5): the unscored and held-back models that set
-    # China's level today, its compute band, and the inflow channels as shares
-    # of today's measured rates (theft as a share of US algorithmic progress).
-    "tk_cn_unscored": True, "tk_cn_kimi_lo": 160.0, "tk_cn_kimi_hi": 162.0,
-    "tk_cn_heldback": 3.0, "tk_cn_compute": "Export-control band",
+    # China's takeoff (section 5): its compute band, and the inflow channels as
+    # shares of today's measured rates (theft as a share of US algorithmic progress).
+    "tk_cn_compute": "Export-control band",
     "tk_cn_distill": 100.0, "tk_cn_leak": 100.0, "tk_cn_theft": 0.0,
 })
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
@@ -24438,17 +24429,6 @@ def _tk_run(today, progress=None):
 
 # ── Takeoff: China's takeoff (section 5) ─────────────────────────────────
 
-# A Chinese model with no ECI score yet, (name, release date): with
-# `tk_cn_unscored` on it counts at a score drawn uniformly over
-# `tk_cn_kimi_lo`-`tk_cn_kimi_hi`.
-_CN_TK_UNSCORED = ("Kimi K3.1 Pro", datetime(2026, 10, 23))
-# The lab whose releases are deliberately not its best (DeepSeek's are Flash
-# models): with `tk_cn_unscored` on, it holds a model about `tk_cn_heldback`
-# points above its top release (uniform within a point either side), already
-# internal, so it takes no further internal lead. V4 Pro led V4 Flash by 2.9
-# points and the 0813 Pro the 0731 Flash by 0.9; ~3 is the judgment.
-_CN_TK_HELD_BACK_SPREAD = 1.0
-_CN_TK_HELD_BACK_ORG = "DeepSeek"
 # China's largest-run compute growth past the plans, OOM/yr as an 80% range:
 # the export-control band (CHINA_COMPUTE_JUDGMENTS.md §1) or the
 # China-accessible band with the offshore sites (§2).
@@ -24486,7 +24466,7 @@ def _cn_tk_calibration(mtime, src_mtime, payoff=None):
     data: {'a_partial' (ECI per 10x training compute, Pacing's default
     payoff), 'ch' (`_cc_cn_channels`: China's observed slope split into
     compute, innovation, diffusion and distillation), 'cn_fr', 'anchor'
-    (`_cc_frontier_anchor`), 'held_back' (the held-back lab's best record),
+    (`_cc_frontier_anchor`),
     'exp_hist' / 'exp_fwd' (log growth a year of China's total installed
     compute)}, or None without the fits."""
     cc_rows = load_eci_compute(mtime=mtime)
@@ -24505,8 +24485,6 @@ def _cn_tk_calibration(mtime, src_mtime, payoff=None):
     ch = _cc_cn_channels(cc_rows, cn_fr, a_partial)
     if ch is None:
         return None
-    lab = load_eci_frontier(mtime=mtime, country='China', orgs=[_CN_TK_HELD_BACK_ORG])
-    best = max(lab, key=lambda m: m['eci_score']) if lab else None
     data = load_china_compute_sources(src_mtime)
     stock = {**data["stock"], **_cn_src_projection(data)["stock"]}
 
@@ -24516,7 +24494,6 @@ def _cn_tk_calibration(mtime, src_mtime, payoff=None):
     return {"a_partial": a_partial, "ch": ch, "cn_fr": cn_fr,
             "us_obs": _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE) or 15.0,
             "anchor": _cc_frontier_anchor(cn_fr),
-            "held_back": (best['date'], best['eci_score'], best['display_name']) if best else None,
             "exp_hist": float(np.log(total(h1) / total(h0)) / (h1 - h0)),
             "exp_fwd": float(np.log(total(f1) / total(f0)) / (f1 - f0))}
 
@@ -24529,52 +24506,18 @@ def _cn_tk_lift(ch, slope):
     return np.maximum(1.0 + (np.asarray(slope, dtype=float) - ch["obs"]) / copied, 0.0)
 
 
-def _cn_tk_slope(cn_fr, date, score):
-    """China's frontier slope since `_CC_CALIB_SINCE` were a model at `score`
-    released on `date` on it (it joins the running max only if it beats it)."""
-    if score <= cn_fr[-1][1]:
-        return _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
-    rows = [r for r in cn_fr if r[0] < date] + [(date, score, "unscored")]
-    return _cc_frontier_eci_slope(rows, _CC_CALIB_SINCE)
-
-
-def _cn_tk_levels(cal, n, seed, today, lag_days, unscored=True, kimi=(160.0, 162.0),
-                  held_back=3.0):
+def _cn_tk_levels(cal, n, seed, today, lag_days):
     """Each scenario's Chinese trained frontier today, ECI, and the frontier
-    slope behind it: (level, slope, source), source naming which candidate set
-    the level. Candidates, each carried from its date to today on its own
-    slope plus China's internal lead before release (`lag_days`): the scored
-    frontier's blended anchor, uniform over its spread; with `unscored`, the
-    unscored model (`_CN_TK_UNSCORED`) at a score uniform over `kimi`, and the
-    held-back lab's internal model, about `held_back` points above its top
-    release (± `_CN_TK_HELD_BACK_SPREAD`), already internal so without the
-    lead. A higher record lifts
-    the slope through `_cn_tk_slope`, so a China already further along is
-    also climbing faster. Its own generator from `seed`."""
+    slope behind it: (level, slope, source). The scored frontier's blended
+    anchor, uniform over its spread, carried from its date to today on China's
+    measured slope plus China's internal lead before release (`lag_days`);
+    `source` names the anchor's model. Its own generator from `seed`."""
     rng = np.random.default_rng(int(seed) + 7)
     obs = cal["ch"]["obs"]
     d, mid, half, name = cal["anchor"]
-    cands = [(name, rng.uniform(mid - half, mid + half, n), np.full(n, obs), d)]
-    if unscored:
-        options = [(_CN_TK_UNSCORED[0], _CN_TK_UNSCORED[1], *sorted(kimi))]
-        if cal["held_back"] is not None:
-            hd, hs, hn = cal["held_back"]
-            up = max(float(held_back), 0.0)
-            options.append((f"{_CN_TK_HELD_BACK_ORG}'s held-back best", hd,
-                            hs + max(up - _CN_TK_HELD_BACK_SPREAD, 0.0),
-                            hs + up + _CN_TK_HELD_BACK_SPREAD))
-        for label, when, lo, hi in options:
-            value = rng.uniform(lo, hi, n)
-            grid = np.linspace(lo, hi, 9) if hi > lo else np.array([lo, lo + 1e-9])
-            slopes = [_cn_tk_slope(cal["cn_fr"], when, g) or obs for g in grid]
-            cands.append((label, value, np.interp(value, grid, slopes), when))
-    held = f"{_CN_TK_HELD_BACK_ORG}'s held-back best"
-    carried = np.array([v + s * ((today - w).days + (0 if label == held else lag_days))
-                        / 365.25 for label, v, s, w in cands])
-    pick = np.argmax(carried, axis=0)
-    rows = np.arange(n)
-    slope = np.array([s for _l, _v, s, _w in cands])[pick, rows]
-    return carried[pick, rows], slope, np.array([c[0] for c in cands])[pick]
+    level = (rng.uniform(mid - half, mid + half, n)
+             + obs * ((today - d).days + lag_days) / 365.25)
+    return level, np.full(n, obs), np.full(n, name)
 
 
 def _cn_tk_shift(paths, years, lead, back):
@@ -24612,8 +24555,7 @@ def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, 
 # The China settings' accepted ranges, shared by the sidebar inputs and
 # `_cn_tk_settings`: the Pacing tab reads them without drawing those inputs,
 # so a value off a shared URL must be checked here too.
-_CN_TK_RANGES = {"tk_cn_kimi_lo": (140.0, 180.0), "tk_cn_kimi_hi": (140.0, 180.0),
-                 "tk_cn_heldback": (0.0, 10.0), "tk_cn_distill": (0.0, 300.0),
+_CN_TK_RANGES = {"tk_cn_distill": (0.0, 300.0),
                  "tk_cn_leak": (0.0, 300.0), "tk_cn_theft": (0.0, 100.0)}
 
 
@@ -24631,13 +24573,7 @@ def _cn_tk_settings():
             return min(max(value, lo), hi) if np.isfinite(value) else _TK_DEFAULTS[key]
         return value
     compute = ss("tk_cn_compute")
-    unscored = ss("tk_cn_unscored")
-    if isinstance(unscored, str):
-        unscored = unscored.lower() not in ("false", "0", "")
-    return {"unscored": bool(unscored),
-            "kimi": (float(ss("tk_cn_kimi_lo")), float(ss("tk_cn_kimi_hi"))),
-            "held_back": float(ss("tk_cn_heldback")),
-            "compute": compute if compute in _CN_TK_COMPUTE_OPTIONS
+    return {"compute": compute if compute in _CN_TK_COMPUTE_OPTIONS
             else _TK_DEFAULTS["tk_cn_compute"],
             "distill": float(ss("tk_cn_distill")) / 100,
             "leak": float(ss("tk_cn_leak")) / 100,
@@ -24702,8 +24638,7 @@ def _cn_tk_run(today, run=None, pacing=None):
     seed = int(params["seed"])
     ch = cal["ch"]
     lag = _ship_lag("cn")
-    level, slope, source = _cn_tk_levels(cal, n, seed, day, lag, cfg["unscored"],
-                                         cfg["kimi"], cfg["held_back"])
+    level, slope, source = _cn_tk_levels(cal, n, seed, day, lag)
     rates = res["eci_rates"]
     w_c, w_s = cal["a_partial"] / np.log(10), rates["software"]
     # Any extra slope the drawn level implies (`slope` over the measured) is
@@ -24846,8 +24781,7 @@ def _cn_tk_run(today, run=None, pacing=None):
 def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
     """China's projected ECI against the US's (median, middle 80% each), with
     each side's measured frontier since 2024 (the US's released and, from
-    `eci`, trained with Anthropic's internal models) and the unscored model's
-    range."""
+    `eci`, trained with Anthropic's internal models)."""
     years = cn["years"]
     keep = years <= (view_end - today).days / 365.25 + 1 / 12
     x = [today + timedelta(days=float(y) * 365.25) for y in years[keep]]
@@ -24886,29 +24820,15 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
         name="Measured: China releases", line=dict(color="#7d5a0b", width=1.5, shape="hv"),
         marker=dict(color="#7d5a0b", size=6), text=[r[2] for r in past],
         hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
-    cfg = cn["inputs"]["settings"]
-    if cfg["unscored"]:
-        lo, hi = sorted(cfg["kimi"])
-        fig.add_trace(go.Scatter(
-            x=[_CN_TK_UNSCORED[1]], y=[0.5 * (lo + hi)], mode="markers",
-            name=f"{_CN_TK_UNSCORED[0]} (no score yet; assumed)",
-            marker=dict(color="#7d5a0b", symbol="diamond-open", size=9, line=dict(width=2)),
-            error_y=dict(type="data", array=[0.5 * (hi - lo)], color="#7d5a0b"),
-            hovertemplate=f"{_CN_TK_UNSCORED[0]}: no ECI score; assumed {lo:g}–{hi:g}"
-                          "<extra></extra>"))
     lvl = np.quantile(cn["level"], [.1, .5, .9])
     fig.add_trace(go.Scatter(
         x=[today], y=[lvl[1]], mode="markers",
-        name=("China today (trained; partly assumed)" if cn["inputs"]["settings"]["unscored"]
-              else "China today (trained, the model's start)"),
+        name="China today (trained, the model's start)",
         marker=dict(color=_CN_TK_COLOR, symbol="diamond", size=10),
         error_y=dict(type="data", symmetric=False, array=[lvl[2] - lvl[1]],
                      arrayminus=[lvl[1] - lvl[0]], color=_CN_TK_COLOR),
         hovertemplate=f"China's trained frontier today: {lvl[1]:.1f} "
-                      f"(80% {lvl[0]:.1f}–{lvl[2]:.1f})"
-                      + ("<br>Partly assumed: an unscored Kimi K3.1 Pro and an unseen "
-                         "DeepSeek internal model" if cn["inputs"]["settings"]["unscored"]
-                         else "") + "<extra></extra>"))
+                      f"(80% {lvl[0]:.1f}–{lvl[2]:.1f})<extra></extra>"))
     fig.add_vline(x=today, line_color="#555", line_width=1.5)
     fig.add_hline(y=ultra, line_dash="dash", line_color="#c0392b", line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {ultra:g}",
@@ -24957,28 +24877,23 @@ def _cn_tk_start_rows(cn, eci, today):
     trained = eci.get("trained") or []
     last_tr = trained[-1] if trained else None
     internal = {r['model'] for r in _metr_on_eci() if r['kind'] == 'internal'}
+    # Names whichever of `_tk_trained_now`'s two terms sets the start: the
+    # internal model carried to today, or the latest release plus the lag.
+    carried = (last_tr['eci_score'] + eci['ppy'] * max((today - last_tr['date']).days, 0)
+               / 365.25 if last_tr else -np.inf)
+    floor = us_rel['eci_score'] + eci['ppy'] * _ship_lag('us') / 365.25
     us_how = (f"Anthropic's internal {last_tr['name']} ({last_tr['date']:%b %d}), projected "
               f"onto Epoch's scale from METR's AECI ({last_tr['eci_score']:.1f}), carried "
-              f"to today at the pace" if last_tr and last_tr['name'] in internal else
+              f"to today at the pace" if last_tr and last_tr['name'] in internal
+              and carried >= floor else
               f"The latest release plus {_ship_lag('us'):.0f} days of climb, the US's "
               "trained-to-release lag")
     lvl = np.quantile(cn["level"], [.1, .5, .9])
     d, mid, half, name = cal["anchor"]
-    parts = [f"the scored frontier's anchor ({mid:.1f} ± {half:.1f}, measured)"]
-    if cfg["unscored"]:
-        parts.append(f"{_CN_TK_UNSCORED[0]} (ASSUMED {min(cfg['kimi']):g}–"
-                     f"{max(cfg['kimi']):g}: released, but no ECI score yet)")
-        if cal["held_back"] is not None:
-            parts.append(f"a {_CN_TK_HELD_BACK_ORG} internal model (ASSUMED: its "
-                         f"{cal['held_back'][1]:.1f} + about {cfg['held_back']:g}; no such "
-                         "model has been seen)")
-    cn_how = ("Highest of " + ", ".join(parts) + f", each carried to today on China's "
-              f"slope; released models also get the {_ship_lag('cn'):.0f} days they are "
-              "available internally before release")
+    cn_how = (f"The scored frontier's anchor ({mid:.1f} ± {half:.1f}, led by {name}), "
+              f"carried to today on China's slope plus the {_ship_lag('cn'):.0f} days "
+              "its models are available internally before release")
     sl = np.quantile(cn["slope"], [.1, .5, .9])
-    # What the measured models alone would give, beside the assumed start.
-    measured = float(np.median(_cn_tk_levels(cal, 400, 0, today, _ship_lag("cn"),
-                                             unscored=False)[0]))
     # Like with like: each side's releases since the window opened, and the
     # smoothed climb at its latest release, beside the pace the model uses.
     def recent(fr):
@@ -25003,13 +24918,10 @@ def _cn_tk_start_rows(cn, eci, today):
         {"": "China",
          "Best released": f"{cal['cn_fr'][-1][1]:.1f}, {cal['cn_fr'][-1][2]} "
                           f"({cal['cn_fr'][-1][0]:%b %d})",
-         "Where the model starts (trained, today)": (
-             f"{lvl[1]:.1f} ({lvl[0]:.1f}–{lvl[2]:.1f}), partly assumed; measured models "
-             f"alone: {measured:.1f}" if cfg["unscored"] else
-             f"{lvl[1]:.1f} ({lvl[0]:.1f}–{lvl[2]:.1f}), measured models only"),
+         "Where the model starts (trained, today)":
+             f"{lvl[1]:.1f} ({lvl[0]:.1f}–{lvl[2]:.1f}), measured models only",
          "How": cn_how,
          "Pace (ECI/yr)": f"Model: {sl[1]:.1f}, releases since {_CC_CALIB_SINCE:%b %Y} "
-                          f"(higher with an unscored model counted), "
                           f"{cal['ch']['innovation']:.1f} of it China's own research. "
                           f"Releases: {cal['ch']['obs']:.1f} since {_CC_CALIB_SINCE:%b %Y}, "
                           f"{fmt(cn_now_rel)} smoothed now"},
@@ -25037,8 +24949,6 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
         return
     ch, inp, cfg = cn["cal"]["ch"], cn["inputs"], cn["inputs"]["settings"]
     lvl = np.quantile(cn["level"], [.1, .5, .9])
-    share = {s: np.mean(cn["source"] == s) for s in np.unique(cn["source"])}
-    top_source = max(share, key=share.get)
     _fn_caption(
         "China runs the same takeoff model, scenario by scenario beside the US's, starting "
         f"from its own frontier (ECI ~{lvl[1]:.0f}), with its own compute and its own research, "
@@ -25051,16 +24961,9 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
          "behind it; its coding is automated at the ECI the US scenario automated it at."),
         (f"ECI ~{lvl[1]:.0f}",
          f"China's best trained model today, 80% range {lvl[0]:.1f}–{lvl[2]:.1f}: the "
-         "highest of the scored frontier's blended anchor and"
-         + (f" {_CN_TK_UNSCORED[0]} (no ECI score; assumed {min(cfg['kimi']):g}–"
-            f"{max(cfg['kimi']):g}) and {_CN_TK_HELD_BACK_ORG}'s best, its top released "
-            f"internal model about {cfg['held_back']:g} points above its top release, since "
-            "its releases are Flash "
-            f"models; {top_source} sets it in {100 * share[top_source]:.0f}% of scenarios"
-            if cfg["unscored"] else " nothing else (unscored models are off)")
-         + f", carried to today, released models with the {_ship_lag('cn'):.0f} days they "
-           "are internal before release (China's internal lead). A higher level also "
-         "lifts China's frontier slope, and so its own research."),
+         "scored frontier's blended anchor, carried to today with the "
+         f"{_ship_lag('cn'):.0f} days its models are internal before release (China's "
+         "internal lead)."),
         ("its own compute",
          f"Training runs grow on the {cfg['compute'].lower()} "
          f"(median ×{np.exp(np.median(inp['compute_rates'])):.2f}/yr), against "
@@ -25120,19 +25023,6 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
                                "lags by years: set both to 0 below."))
     st.markdown("**Where each side starts today**")
     st.table(_cn_tk_start_rows(cn, run["eci"], today))
-    if cfg["unscored"]:
-        # Body text, not an `st.warning`: the tab carries none
-        # (`test_default_render_and_stable_rerun`), but this must not be fine print.
-        _fn_line(
-            "**⚠ China's starting level is partly made up.** Kimi K3.1 Pro has no ECI "
-            "score yet, DeepSeek's stronger internal model has never been seen, and the "
-            "three weeks Chinese models sit internally before release is a guess: all "
-            "are judgments, set under *China's takeoff* in the sidebar. Untick *Count "
-            "unscored and held-back Chinese models* to start from measured models only.",
-            ("never been seen",
-             "Inferred from DeepSeek shipping Flash models: its V4 Pro led V4 Flash by "
-             "2.9 points. The US's internal models, by contrast, are projected from "
-             "METR's published chart: an estimate, but not a guess."))
     _fn_caption(
         "Every date on this tab compares trained models, not releases.",
         ("trained models",
@@ -25140,7 +25030,7 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
          "Anthropic's internal models, whose ECI is projected from METR's AECI chart "
          "(Takeoff's METR section); China's adds its internal lead before release (China's "
          "settings below) "
-         "to its releases, and any unscored or held-back models above. Distillation "
+         "to its releases. Distillation "
          "learns from what the US has released, a lag behind its trained frontier."))
     cols = st.columns(3)
     labels = (("automated coder", "Automated coder"), ("RSI", "RSI"),
@@ -25175,22 +25065,6 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
 def _tk_cn_sidebar(number):
     """The sidebar's *China's takeoff* settings (section 5)."""
     with st.expander("China's takeoff (section 5)"):
-        st.checkbox("Count unscored and held-back Chinese models", key="tk_cn_unscored",
-                    help=f"On: China's level today is the highest of its scored frontier, "
-                         f"{_CN_TK_UNSCORED[0]} (released {_CN_TK_UNSCORED[1]:%b %d} with no "
-                         "ECI score yet) at a score drawn from the range below, and "
-                         f"{_CN_TK_HELD_BACK_ORG}'s best, which its Flash releases are "
-                         "deliberately not. Off: the scored frontier alone.")
-        number(f"{_CN_TK_UNSCORED[0]} ECI, low", "cn_kimi_lo", *_CN_TK_RANGES["tk_cn_kimi_lo"], 0.5,
-               "Low end of the assumed score, drawn uniformly.")
-        number(f"{_CN_TK_UNSCORED[0]} ECI, high", "cn_kimi_hi", *_CN_TK_RANGES["tk_cn_kimi_hi"], 0.5,
-               "High end of the assumed score.")
-        number(f"{_CN_TK_HELD_BACK_ORG}'s internal model over its top release (ECI)",
-               "cn_heldback", *_CN_TK_RANGES["tk_cn_heldback"], 0.5,
-               f"About this many points, drawn within {_CN_TK_HELD_BACK_SPREAD:g} either "
-               "side: DeepSeek ships Flash models and keeps its best. V4 Pro led V4 Flash "
-               "by 2.9 points; the 0813 Pro the 0731 Flash by 0.9. Already internal, so "
-               "it takes no further internal lead.")
         _ss_number_input(
             st, "Chinese models' internal lead before release (days)", "cn_ship_lag",
             _SHIP_LAG_DEFAULTS["cn_ship_lag"], min_value=0, max_value=_SHIP_LAG_MAX, step=7,

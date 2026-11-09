@@ -111,7 +111,7 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 ### 8. China's compute growth over the calibration window (`_CC_CN_HIST_COMPUTE`)
 
 - **Value:** ×2.12/yr since 2024, the compute share of China's observed ECI slope in the channel split (`_cc_cn_channels`). The forward band (`_CC_CN_COMPUTE_LO/HI`, ×1.4–2.0, mid ×1.68) is unchanged, so China's forward pace sits below its observed one by the slowdown.
-- **Evidence (since 2024):** catalogue China-accessible largest site at the Johor usable share ×2.12; domestic-only ×2.08; full Johor campus ×2.64; largest actual runs ×3.05 (6 records), ×1.41 since 2025 (2 records). The two catalogue fits agree and do not depend on the Johor share. These fits run to the plan horizon, so they include planned sites; fitted to today on built sites only they are faster (×2.30 domestic, ×3.12 accessible at the Johor share), because the planned stretch is flat until a 2027 domestic step. ×2.12 is therefore the low end of the evidence, and the deceleration it implies a lower bound.
+- **Evidence (since 2024):** catalogue China-accessible largest site at the Johor usable share ×2.12; domestic-only ×2.84; full Johor campus ×2.64; largest actual runs ×3.05 (6 records), ×1.41 since 2025 (2 records). The domestic fit was ×2.08 until Epoch's Nov 2026 Huawei re-scope cut Wuhu's 2025 capacity ~3× while leaving today's level and the 2027 step: a lower start, not faster building (fitted from 2026 on it fell, ×1.91 → ×1.81). So the two catalogue fits no longer agree; the value rests on the accessible one, which the re-scope left unchanged. These fits run to the plan horizon, so they include planned sites; fitted to today on built sites only they are faster (×3.12 accessible at the Johor share; domestic ×2.30 before the re-scope, roughly double after), because the planned stretch is flat until a 2027 domestic step. ×2.12 is therefore the low end of the evidence, and the deceleration it implies a lower bound.
 - **Outcome cross-check:** ×2.12 implies a forward pace of ~13.0 ECI/yr, matching China's frontier slope since mid-2025 (13.2), after DeepSeek-R1's jump. Higher past growth would imply slower: ×2.32 gives 12.6, ×3.05 gives 11.3. Compute grew faster than this in 2024 but slowed to ~×1.4 since 2025, while Chinese models gained ~5 ECI over US models at matched compute from 2025 (none through 2024): a level step, plausibly distillation or DeepSeek's reasoning training, that kept the slope up.
 - **Effect (Pacing, no pacing, default payoff):** China's lag rises from 5.0 / 4.9 / 7.5 months (coder / RSI / ultraintelligence) at ×1.68 to ~6.5 / 6.8 / 10.2. At ×2.64: 8.1 / 9.0 / 13.4.
 - **Revisit when:** new Chinese frontier runs are disclosed, a catalogue refresh moves the China fits, or late disclosure of 2025–26 runs changes the record.
@@ -138,23 +138,18 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
 
 ### 11. China's level today and its takeoff inputs (`_cn_tk_*`, Takeoff section 5)
 
-- **Value:** China's trained frontier today is the highest of three candidates per
-  scenario: the scored frontier's blended anchor; Kimi K3.1 Pro (released Oct 23 2026, no
-  ECI score yet) at ~161 (uniform 160–162); and an internal DeepSeek model about 3 points
-  over its top release (V4.1 Flash 1017, 158.8; uniform +2 to +4). Released candidates are
-  carried to today on China's slope plus China's internal lead before release (21 days,
-  `cn_ship_lag`, one setting on both tabs); DeepSeek's model is already internal, so takes
-  no lead. Median ~163.1 (80% 162.4–163.5); DeepSeek's internal model sets it in ~47% of
-  scenarios, Kimi in ~31%. All three are the user's judgments (Nov 2026), and the app says
-  so in the body: the DeepSeek model has never been seen and Kimi has no score. Measured
-  models alone start China at ~162.
-- **Why:** DeepSeek's releases are Flash models, deliberately not its best: V4 Pro led V4
-  Flash by 2.9 points, the 0813 Pro the 0731 Flash by 0.9. Chinese labs mostly ship open
-  weights within weeks of a run ending, hence the short internal lead; the US's is longer
-  and its trained frontier counts Anthropic's internal models, an asymmetry the Takeoff
-  section's starting table states. The Kimi range is a user
-  judgment pending Epoch's score. A higher level also implies a faster slope; the extra
-  goes to China's own research, the residual it was measured as.
+- **Value:** China's trained frontier today is the scored frontier's blended anchor, now
+  led by Kimi K3.1 Pro (Epoch, 162.02, scored 2026-11-09), carried to today on China's
+  slope plus China's internal lead before release (21 days, `cn_ship_lag`, one setting on
+  both tabs): median ~162.4. The lead is the user's judgment.
+- **Retired (2026-11-09):** an assumed 160–162 for the then-unscored Kimi K3.1 Pro, which
+  Epoch's score confirmed at the top end, and an unseen DeepSeek internal model ~3 points
+  over its top Flash release (V4 Pro had led V4 Flash by 2.9), which set China's start in
+  ~82% of scenarios at a median ~163.4. The user judged the Kimi-led measured frontier
+  enough, so China starts ~1 point lower.
+- **Why:** Chinese labs mostly ship open weights within weeks of a run ending, hence the
+  short internal lead; the US's is longer and its trained frontier counts Anthropic's
+  internal models, an asymmetry the Takeoff section's starting table states.
 - **Effect:** small. Distillation is proportional to the gap, so a higher start mostly
   means less distillation; the milestone lags move by about a week.
 - **Other inputs:** experiments grow with China's total installed AI compute
@@ -170,7 +165,7 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   Anthropic alone. That gap, like experiment compute, is already in China's measured
   innovation rate (2.4 ECI/yr), which the model calibrates to; after automation AI labor
   runs on compute, not heads.
-- **Revisit when:** Epoch scores Kimi K3.1 Pro or a DeepSeek Pro/V5, or China's compute
+- **Revisit when:** a Chinese lab is shown to hold back a model well above its releases, or China's compute
   sources are revised.
 
 ### 12. China's own innovation rate (`_cc_cn_channels`'s residual, ~2.4 ECI/yr)

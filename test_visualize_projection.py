@@ -1991,7 +1991,8 @@ class TestCcGapEndRange:
             * (horizon - us_d).days / 365.25
             - cn_v - vp._cc_frontier_eci_slope(cn_fr, vp._CC_CALIB_SINCE)
             * (horizon - cn_d).days / 365.25)
-        assert lo <= central <= hi
+        # The central is itself one of the window fits, so it can tie an end.
+        assert lo - 1e-9 <= central <= hi + 1e-9
         assert hi - lo > 2.0
         assert us_r[1] - us_r[0] < cn_r[1] - cn_r[0]
 
@@ -6753,26 +6754,21 @@ class TestChinaTakeoff:
         assert cal is not None
         return cal
 
-    def test_unscored_models_only_ever_raise_chinas_level(self):
-        """Each scenario's level is the highest of its candidates, so counting
-        the unscored and held-back models never lowers it, and an unscored
-        score above the rest sets it."""
+    def test_chinas_level_is_the_scored_anchor_carried_to_today(self):
+        """China starts from its scored frontier's anchor alone: within its
+        spread, carried to today on the measured slope plus the internal lead,
+        so a longer lead starts it higher."""
         cal, today = self._cal(), datetime(2026, 11, 8)
-        off, _s, src_off = vp._cn_tk_levels(cal, 300, 42, today, 21.0, unscored=False)
-        on, _s, _src = vp._cn_tk_levels(cal, 300, 42, today, 21.0)
-        assert set(src_off) == {cal["anchor"][3]}
-        assert np.all(on >= off - 1e-9) and np.median(on) > np.median(off)
-        high, slope, src = vp._cn_tk_levels(cal, 300, 42, today, 21.0, kimi=(170.0, 171.0))
-        assert set(src) == {vp._CN_TK_UNSCORED[0]}
-        assert np.all(high > 170.0)
-        assert np.all(slope > cal["ch"]["obs"])
-
-    def test_a_higher_record_lifts_the_slope(self):
-        cal = self._cal()
-        when = vp._CN_TK_UNSCORED[1]
-        base = vp._cn_tk_slope(cal["cn_fr"], when, 100.0)
-        assert base == pytest.approx(cal["ch"]["obs"])
-        assert vp._cn_tk_slope(cal["cn_fr"], when, 162.0) > base
+        d, mid, half, name = cal["anchor"]
+        obs = cal["ch"]["obs"]
+        lvl, slope, src = vp._cn_tk_levels(cal, 300, 42, today, 21.0)
+        assert set(src) == {name}
+        assert np.all(slope == obs)
+        carry = obs * ((today - d).days + 21.0) / 365.25
+        assert lvl.min() >= mid - half + carry - 1e-9
+        assert lvl.max() <= mid + half + carry + 1e-9
+        longer, _s, _src = vp._cn_tk_levels(cal, 300, 42, today, 60.0)
+        assert np.all(longer > lvl)
 
     def test_a_higher_slope_lifts_every_copying_channel_in_proportion(self):
         """Extra slope over the measured is shared by own research,
@@ -6793,29 +6789,7 @@ class TestChinaTakeoff:
 
     def test_settings_have_defaults_and_parse(self):
         keys = [k for k in vp._TK_DEFAULTS if k.startswith("tk_cn_")]
-        assert len(keys) == 8
+        assert len(keys) == 4
         cfg = vp._cn_tk_settings()
         assert cfg["compute"] in vp._CN_TK_COMPUTE_OPTIONS
         assert cfg["distill"] == cfg["leak"] == 1.0 and cfg["theft"] == 0.0
-
-    def test_deepseeks_held_back_model_is_about_its_setting_and_already_internal(self):
-        """DeepSeek's internal model sits about `held_back` points over its top
-        release, within the spread, and takes no further internal lead: a
-        longer lead moves the released candidates but not it."""
-        cal, today = self._cal(), datetime(2026, 11, 8)
-        held = f"{vp._CN_TK_HELD_BACK_ORG}'s held-back best"
-        top = cal["held_back"][1]
-        lvl, slope, src = vp._cn_tk_levels(cal, 400, 3, today, 21.0, kimi=(140.0, 140.0),
-                                           held_back=8.0)
-        assert set(src) == {held}
-        carry = slope * (today - cal["held_back"][0]).days / 365.25
-        base = lvl - carry - top
-        assert base.min() >= 7.0 - 1e-9 and base.max() <= 9.0 + 1e-9
-        lvl2, _s, src2 = vp._cn_tk_levels(cal, 400, 3, today, 200.0, kimi=(140.0, 140.0),
-                                          held_back=8.0)
-        # Where it still sets the level, its value is unmoved; elsewhere a
-        # released candidate, lifted by the longer lead, has overtaken it.
-        still = src2 == held
-        assert still.any() and not still.all()
-        np.testing.assert_allclose(lvl[still], lvl2[still])
-        assert np.all(lvl2[~still] > lvl[~still])

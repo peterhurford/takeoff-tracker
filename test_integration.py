@@ -1744,26 +1744,23 @@ class TestTakeoffTab:
         assert month(cards["China: Automated coder"]) <= month(cards["China: Ultraintelligence"])
 
     def test_china_section_says_where_each_side_starts(self):
-        """The starting table names the US's internal model and China's
-        unscored one, with the gap on releases and on trained models."""
+        """The starting table says where each side starts: the US from its
+        internal model or latest release, China from its measured frontier."""
         at = self._app()
         t = next(x.value for x in at.table if "How" in x.value.columns)
         assert list(t[""]) == ["United States", "China", "Gap"]
-        assert "internal" in t["How"].iloc[0]
-        assert "ASSUMED" in t["How"].iloc[1]
-        assert "measured models alone" in t["Where the model starts (trained, today)"].iloc[1]
-        # The made-up part is said in the body, not left to a hover, and goes
-        # with the assumptions.
-        assert any("partly made up" in str(m.value) for m in at.markdown)
+        # Whichever of the two starts is higher: the internal model carried
+        # to today, or the latest release plus the ship lag.
+        assert ("internal" in t["How"].iloc[0]
+                or "latest release" in t["How"].iloc[0])
+        assert "anchor" in t["How"].iloc[1]
+        assert "measured models only" in t["Where the model starts (trained, today)"].iloc[1]
+        assert not any("partly made up" in str(m.value) for m in at.markdown)
         assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
         assert "US trained (internal models projected)" in names
-        assert "China today (trained; partly assumed)" in names
-        at.checkbox(key="tk_cn_unscored").uncheck().run()
-        assert not any("partly made up" in str(m.value) for m in at.markdown)
-        t = next(x.value for x in at.table if "How" in x.value.columns)
-        assert "measured models only" in t["Where the model starts (trained, today)"].iloc[1]
+        assert "China today (trained, the model's start)" in names
 
     def test_chinas_internal_lead_is_one_setting_on_both_tabs(self):
         """Takeoff's China settings carry the internal lead Pacing uses (the
@@ -3215,7 +3212,7 @@ class TestPacingTab:
         own Takeoff date (the coder's `coding_at`, as the card) through its
         clock rather than re-finding the ECI, which landed early wherever ECI
         is flat before the event. Paced to 40%, every US date moves later.
-        Within a month, not to it: Pacing's samples cycle through the
+        Within a month (two at the 80% ends), not to it: Pacing's samples cycle through the
         scenarios China's takeoff is twinned with (`_cn_tk_rows`), a subset
         of Takeoff's at production samples."""
         monkeypatch.setenv("_VP_SAMPLES", "5000")
@@ -3234,8 +3231,10 @@ class TestPacingTab:
             lo, hi = ci80[i].removeprefix("80% CI: ").split(" \u2013 ")
             got = re.match(r"(\w{3} \d{4}) \((\w{3} \d{4}) \u2013 (\w{3} \d{4})\)", us[i])
             assert got, us[i]
-            for want, have in zip((cards[card], lo, hi), got.groups()):
-                assert abs(months(want) - months(have)) <= 1, (card, us[i])
+            # Medians within a month; the 80% ends, tail percentiles of the
+            # subset, within two.
+            for want, have, tol in zip((cards[card], lo, hi), got.groups(), (1, 2, 2)):
+                assert abs(months(want) - months(have)) <= tol, (card, us[i])
         at.select_slider(key="pc_pace").set_value(40).run()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
                  and "Gap" in x.value.columns)
@@ -3265,12 +3264,11 @@ class TestPacingTab:
         assert all(abs(g - b) <= 4 for g, b in zip(gaps, behind)), (gaps, behind)
 
     def test_china_already_level_reads_so_not_a_negative_span(self):
-        """With an unscored Chinese model assumed above the US, or the US's
-        weights stolen every month, China is level before the pause: the cards
+        """With the US's weights stolen every month, China is level before the
+        pause: the cards
         say so instead of dating a crossing in the past or a negative span, and
         the breakdown, which times a catch-up, is left out."""
-        for params in (dict(tk_cn_kimi_lo="180", tk_cn_kimi_hi="180"),
-                       dict(pc_theft_weights="true", pc_wt_mode="Ongoing")):
+        for params in (dict(pc_theft_weights="true", pc_wt_mode="Ongoing"),):
             at = _fresh_app()
             at.query_params.update(tab="pacing", pc_pace="0", **params)
             at.run()
@@ -3284,8 +3282,8 @@ class TestPacingTab:
         """Pacing reads Takeoff's China settings without drawing their inputs,
         so a shared link's out-of-range or garbled value is clamped there."""
         for params in (dict(tk_cn_theft="500", tk_cn_distill="-50"),
-                       dict(tk_cn_kimi_lo="abc", tk_cn_heldback="nan"),
-                       dict(tk_cn_compute="Bogus", tk_cn_unscored="false")):
+                       dict(tk_cn_distill="abc", tk_cn_leak="nan"),
+                       dict(tk_cn_compute="Bogus")):
             at = _fresh_app()
             at.query_params.update(tab="pacing", pc_pace="0", **params)
             at.run()
