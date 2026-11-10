@@ -19199,40 +19199,43 @@ def _wc_world_h100e(when):
     return h0 * g ** ((when - d0).days / 365.25)
 
 
-def _pc_cn_abroad(today, mix, years):
-    """China's remote compute abroad as a multiple of its no-lever mainland
-    compute, `years` from today: the compute mix's remote stock under `mix`
-    (`_cn_src_with_policy`) over its no-lever in-China stock, linear between
-    year-ends, held past the last; 0 from a remote cut."""
-    pol = _cn_src_with_policy(today, **(mix or {}))["stock"]
-    base = _cn_src_with_policy(today, **_cn_src_growth_kw(mix))["stock"]
+def _pc_cn_installed(today, mix, years):
+    """China's total installed AI compute (H100e), `years` from today: the
+    compute mix's in-China and remote stocks under `mix`
+    (`_cn_src_with_policy`), each log-linear between year-ends and, past the
+    mix's last year, on at its own last-year growth; the remote stock counts
+    until a remote cut."""
+    m = dict(mix or {})
+    cut = m.pop("remote_cut", None)
+    pol = _cn_src_with_policy(today, **m)["stock"]
     ps = sorted(pol, key=int)
-    t = [(datetime(int(p), 12, 31) - today).days / 365.25 for p in ps]
-    frac = [pol[p]["remote"][0]
-            / max(sum(base[p][k][0] for k in _CN_SRC_IN_CHINA), 1.0)
-            for p in ps]
+    t = np.array([(datetime(int(p), 12, 31) - today).days / 365.25
+                  for p in ps])
     yrs = np.asarray(years, dtype=float)
-    out = np.interp(yrs, t, frac)
-    cut = (mix or {}).get("remote_cut")
+
+    def _path(vals):
+        lv = np.log(np.maximum(vals, 1.0))
+        slope = (lv[-1] - lv[-2]) / (t[-1] - t[-2])
+        return np.exp(np.where(yrs > t[-1], lv[-1] + slope * (yrs - t[-1]),
+                               np.interp(yrs, t, lv)))
+
+    in_cn = _path([sum(pol[p][k][0] for k in _CN_SRC_IN_CHINA) for p in ps])
+    remote = _path([pol[p]["remote"][0] for p in ps])
     if cut is not None:
-        out = np.where(yrs >= (cut - today).days / 365.25, 0.0, out)
-    return out
+        remote = np.where(yrs >= (cut - today).days / 365.25, 0.0, remote)
+    return in_cn + remote
 
 
-def _pc_wc_ratio(years, dom_keep=1.0, abroad=0.0):
-    """US over China in total installed AI compute, `years` from today: the
-    world-share centrals grown at their central rates (`_WC_REGIONS`,
-    `_WC_GROWTH`), mainland China's log-rate scaled by `dom_keep` (the
-    domestic-growth levers), plus `abroad` (`_pc_cn_abroad`) times its
-    no-lever level for the compute it reaches remotely. The US keeps
-    installing through a pause, which stops frontier training, not chip
-    deliveries."""
+def _pc_us_installed(today, years):
+    """The US's total installed AI compute (H100e), `years` from today: its
+    world-share central (`_WC_REGIONS`) of `_wc_world_h100e`, grown at its
+    central rate (`_WC_GROWTH`). It keeps installing through a pause, which
+    stops frontier training, not chip deliveries."""
     lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
     g = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
-    us, cn = _WC_LABELS[0], _WC_LABELS[1]
-    yrs = np.asarray(years, dtype=float)
-    return ((lev[us] / lev[cn]) * (g[us] ** yrs)
-            / (g[cn] ** (yrs * dom_keep) + abroad * g[cn] ** yrs))
+    us = _WC_LABELS[0]
+    return (_wc_world_h100e(today) * lev[us] / 100
+            * g[us] ** np.asarray(years, dtype=float))
 
 
 def _pc_render_compute_mix(ci):
@@ -19375,21 +19378,22 @@ def _pc_ratio_paths(ci):
 
 
 def _pc_compute_lead(ci):
-    """US over China in total installed compute (`_pc_wc_ratio`), at the
-    crossing (or end of *Project through*): (ratio, date, crossed), or None."""
+    """US over China in total installed compute (`_pc_us_installed` over
+    `_pc_cn_installed`), at the crossing (or end of *Project through*):
+    (ratio, date, crossed), or None."""
     rp = _pc_ratio_paths(ci)
     if rp is None:
         return None
-    return (float(_pc_wc_ratio(
-                rp['t_x'], ci.get('dom_keep', 1.0),
-                _pc_cn_abroad(ci['today'], ci.get('mix'), rp['t_x']))),
+    return (float(_pc_us_installed(ci['today'], rp['t_x'])
+                  / _pc_cn_installed(ci['today'], ci.get('mix'), rp['t_x'])),
             rp['end_d'], rp['cross'])
 
 
 def _pc_render_compute_ratios(ci):
     """How far ahead the US is in compute (`_pc_ratio_paths`), the gap
     between its clusters and its trained run being the overhang; and total
-    installed compute from the world shares (`_pc_wc_ratio`). Solid lines
+    installed compute, the US from the world shares and China from its
+    compute mix (`_pc_us_installed`, `_pc_cn_installed`). Solid lines
     are these settings, dashed the same with no compute levers. A table
     gives the readings at the pacing date and at the crossing.
     """
@@ -19479,30 +19483,24 @@ def _pc_render_compute_ratios(ci):
     _layout(fig1)
     _cc_logop_yaxis(fig1, "Largest run (log\u2081\u2080 OP)")
 
-    # Chart 2: total installed compute, millions of H100e: each side's share
-    # of today's world stock, grown at its central rate.
-    lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
-    gro = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
-    us_l, cn_l = _WC_LABELS[0], _WC_LABELS[1]
-    keep = ci.get('dom_keep', 1.0)
-    world_m = _wc_world_h100e(today) / 1e6
+    # Chart 2: total installed compute, millions of H100e: the US's world
+    # share grown at its central rate, China's compute mix under the levers
+    # and, dashed, with none.
+    mix = ci.get('mix')
+    mix_base = _cn_src_growth_kw(mix)
 
-    def _cn_inst(t, keep_, mix):
-        """China's installed compute (M H100e) at `t`: mainland, slowed by
-        `keep_`, plus what it reaches abroad under `mix`."""
-        return world_m * lev[cn_l] / 100 * (
-            gro[cn_l] ** (t * keep_)
-            + _pc_cn_abroad(today, mix, t) * gro[cn_l] ** t)
+    def _cn_inst(t, m):
+        return _pc_cn_installed(today, m, t) / 1e6
 
-    us_tot = world_m * lev[us_l] / 100 * gro[us_l] ** ts
-    cn_tot = _cn_inst(ts, keep, ci.get('mix'))
+    us_tot = _pc_us_installed(today, ts) / 1e6
+    cn_tot = _cn_inst(ts, mix)
     fig2 = go.Figure()
     _unit = "M H100e"
     _line(fig2, "US (keeps installing whatever it trains)", '#1F77B4',
           list(us_tot), unit=" " + _unit)
     _line(fig2, "China, incl. remote access abroad", '#D62728', list(cn_tot),
           unit=" " + _unit, ratio=list(us_tot / cn_tot))
-    cn_base = _cn_inst(ts, 1.0, None)
+    cn_base = _cn_inst(ts, mix_base)
     if levers and not np.allclose(cn_base, cn_tot):
         _line(fig2, "China, no compute levers", '#D62728', list(cn_base),
               dash='dash', unit=" " + _unit, ratio=list(us_tot / cn_base))
@@ -19528,9 +19526,9 @@ def _pc_render_compute_ratios(ci):
             return "\u2014"
         return f"{a:.1f} vs {b:.1f} log OP \u2192 {_ratio(10 ** (a - b), lead)}"
 
-    def _inst(t, keep_, mix):
-        us_v = world_m * lev[us_l] / 100 * gro[us_l] ** t
-        cn_v = float(_cn_inst(t, keep_, mix))
+    def _inst(t, m):
+        us_v = float(_pc_us_installed(today, t)) / 1e6
+        cn_v = float(_cn_inst(t, m))
         return (f"{us_v:,.0f}M vs {cn_v:,.0f}M H100e \u2192 "
                 f"{_ratio(us_v / cn_v)}")
 
@@ -19559,10 +19557,10 @@ def _pc_render_compute_ratios(ci):
                      c_p: _over(t_p), c_x: _over(t_x),
                      **({c_b: _over(t_x)} if ci.get('levers') else {})})
     trow = {"Compares": "Installed compute: US vs. China, incl. remote access abroad",
-            c_p: _inst(t_p, keep, ci.get('mix')),
-            c_x: _inst(t_x, keep, ci.get('mix'))}
+            c_p: _inst(t_p, mix),
+            c_x: _inst(t_x, mix)}
     if ci.get('levers'):
-        trow[c_b] = _inst(t_x, 1.0, None)
+        trow[c_b] = _inst(t_x, mix_base)
     rows.append(trow)
 
     st.markdown("##### Compute: largest run, trained and trainable")
@@ -22010,7 +22008,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         'now': caps_now or {},
         'today': today, 'pause_d': pause_d, 'use_dom': _use_dom,
         'horizon': horizon if horizon is not None else _PC_HORIZON,
-        'dom_keep': dom_keep * (1.0 - _sup_avg),
         # The US clusters' own pace (log10/yr) and the pace slider: capacity
         # keeps growing through a pause; the run actually trained does not.
         'g_us': us_fit['g'] if us_fit else None, 'pace': pace,
@@ -22036,10 +22033,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "US over China in total installed AI compute, "
             + ("at the median crossing date" if _rx else
                f"at the end of {_rd:%Y}, since China has not caught up by then")
-            + ": the world-share centrals grown at their central rates, "
-              "China's slowed by the chip levers, plus the compute Chinese "
-              "labs reach abroad (the compute mix's remote-access stock, "
-              "gone once remote access is cut). The US keeps installing "
+            + ": the US's world-share central grown at its central rate; "
+              "China's compute mix under these levers (domestic, legal, "
+              "smuggled, and the compute its labs reach abroad until remote "
+              "access is cut), log-linear between year-ends and on at its "
+              "last year's growth past the mix's end-"
+              f"{max(_CN_SRC_PROJ_YEARS)}. The US keeps installing "
               "through a pause. Only the chip and remote-access levers and "
               "the date move it; the model-access levers move it only "
               "through the crossing date. The table under *Compute: total installed* gives both "

@@ -478,7 +478,7 @@ wait** (unlike the CC 161 section — a queue delays both sides alike); dates fo
 sidebar's *Date points at* (`off_us`, `off_us_rel`, `off_cn`; see *Trained-to-release
 lags* in `docs/conventions.md`); the
 chart (actual points included) rides the same clock, x-axis titled by milestone.
-The three crossing cards (date, time to surpass, and the US lead in total installed compute at the crossing or the horizon's end, `_pc_compute_lead`, the ratio table's own installed reading: mainland plus the compute mix's remote stock abroad (`_pc_cn_abroad`), so only the chip and remote-access levers and the crossing date move it, `test_compute_lead_counts_china_abroad_until_remote_access_is_cut`; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
+The three crossing cards (date, time to surpass, and the US lead in total installed compute at the crossing or the horizon's end, `_pc_compute_lead`, the ratio table's own installed reading: `_pc_us_installed` over `_pc_cn_installed`, so only the chip and remote-access levers, the chip-growth sliders and the crossing date move it, `test_compute_lead_reads_china_from_its_compute_mix`, `test_compute_lead_moves_once_per_lever`; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
 turning each total into months to close the gap; the average's months are the actual
 catch-up, net of China's release lag `cn_ship_lag` as the card nets it (`test_why_table_nets_out_the_cards_china_lag`). Each source's average is its own median post-pause ECI over
@@ -492,10 +492,18 @@ Under it, drawn with or without a crossing (`test_compute_ratios_show_without_a_
 (US ÷ China, log axis, to *Project through*): largest trainable run (cluster capacity,
 `_pc_capacity_at`, read for today and the pause off one projection via `also=`) for China's
 usable run and its domestic clusters, against a US run frozen at the pause; and total
-installed compute in millions of H100e, the Data Centers tab's world shares of Epoch's chip-sales
-total, 31.7M H100e by June 2026 (`_WC_WORLD_H100E`, grown by `_wc_world_h100e`; ratios `_pc_wc_ratio`), the US still
-installing through the pause and the DUV/domestic levers slowing China's. Dashed lines and a
-last table column give the same date with no compute levers. The table (`Compares` column)
+installed compute in millions of H100e. The US is its Data Centers world share of Epoch's
+chip-sales total, 31.7M H100e by June 2026 (`_WC_WORLD_H100E`, grown by `_wc_world_h100e`, at
+its `_WC_GROWTH` central; `_pc_us_installed`), still installing through the pause. China is
+its compute mix under `_mix` (`_pc_cn_installed`: domestic + legal + smuggled + remote from
+`_cn_src_with_policy`), so every lever moves it exactly once through the mix and none
+through the sim's `dom_keep`/`_sup`, which stay in the crossing only. The in-China and
+remote series are each log-linear between Dec-31 stocks and, past the mix's last year
+(2030) while *Project through* runs to 2035, continue at their own 2029→30 log growth, so a
+lever's slower last year carries on. The remote stock drops out at the `remote_cut` date
+rather than year-end. `pc_dom_slow` now slows domestic output's growth from next year
+(`dom_cut`), not the whole mainland's world-share rate. Dashed lines and a last table column
+give the same date with no compute levers (the mix at the chip-growth sliders only). The table (`Compares` column)
 gives one row per comparison, each cell both values then the ratio, columns dated by the
 pacing start and the crossing card's date (end of *Project through* when China does not catch up; no pacing, a bare date); no caption sits under it. Capacity is not the China
 tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`). Under it, `_pc_render_compute_mix()` stacks China's installed compute by source

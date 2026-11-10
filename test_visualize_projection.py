@@ -5141,17 +5141,51 @@ class TestPacing:
         assert vp._pc_clear_of(x, [0.0, 110.0, 118.0], ref_x, [100.0, 120.0],
                                5.0) == [0, 2]
 
-    def test_compute_lead_counts_china_abroad_until_remote_access_is_cut(self):
-        """China's installed compute includes the compute mix's remote stock
-        abroad, which a remote cut removes from its date on."""
+    def test_compute_lead_reads_china_from_its_compute_mix(self):
+        """China's installed compute is the compute mix's stock: its total at
+        each year-end, log-linear between them per series, on at the last
+        year's growth after, the remote stock dropped from a remote cut. With
+        no levers the US leads ~35x at end-2030 (~1,020M vs ~28.9M)."""
         today = datetime(2026, 10, 23)
-        ab = vp._pc_cn_abroad(today, {}, [0.0, 2.0])
-        assert (ab > 0.2).all()
-        cut = {"remote_cut": today + timedelta(days=365)}
-        ab_cut = vp._pc_cn_abroad(today, cut, [0.5, 1.0, 2.0])
-        assert ab_cut[0] > 0.2 and ab_cut[1] == ab_cut[2] == 0.0
-        assert vp._pc_wc_ratio(2.0) / vp._pc_wc_ratio(2.0, abroad=ab[1]) \
-            == pytest.approx(1.0 + ab[1])
+        st = vp._cn_src_with_policy(today)["stock"]
+        ins = sum(st["2030"][k][0] for k in vp._CN_SRC_IN_CHINA)
+        rem = st["2030"]["remote"][0]
+        t30 = (datetime(2030, 12, 31) - today).days / 365.25
+        t29 = (datetime(2029, 12, 31) - today).days / 365.25
+        cn = vp._pc_cn_installed
+        assert cn(today, {}, t30) == pytest.approx(ins + rem)
+        assert ins + rem == pytest.approx(28.9e6, rel=0.01)
+        lead = vp._pc_us_installed(today, t30) / cn(today, {}, t30)
+        assert lead == pytest.approx(35, rel=0.05)
+        # Between year-ends each series is geometric; after, it keeps its
+        # 2029->30 growth.
+        ins29 = sum(st["2029"][k][0] for k in vp._CN_SRC_IN_CHINA)
+        rem29 = st["2029"]["remote"][0]
+        mid = 0.5 * (t29 + t30)
+        assert cn(today, {}, mid) == pytest.approx(
+            (ins29 * ins) ** 0.5 + (rem29 * rem) ** 0.5)
+        assert cn(today, {}, t30 + 1.0) == pytest.approx(
+            ins * ins / ins29 + rem * rem / rem29, rel=1e-3)
+        # A remote cut drops the remote stock from its date, no sooner.
+        cut = {"remote_cut": datetime(2029, 1, 1)}
+        t_cut = (cut["remote_cut"] - today).days / 365.25
+        assert cn(today, cut, t_cut - 0.01) == pytest.approx(
+            cn(today, {}, t_cut - 0.01))
+        assert cn(today, cut, t30) == pytest.approx(ins)
+
+    def test_compute_lead_moves_once_per_lever(self):
+        """Every lever in the mix lowers China's installed compute, the
+        growth sliders raise or lower it, and none touches the US side."""
+        today = datetime(2026, 10, 23)
+        t = (datetime(2030, 12, 31) - today).days / 365.25
+        base = vp._pc_cn_installed(today, {}, t)
+        for m in (dict(smug_cut=0.5), dict(stop_legal=True),
+                  dict(remote_cut=today), dict(dom_cut=0.3),
+                  dict(hbm_cut=vp._PC_HBM_CUT),
+                  dict(dom_cut_path={"2028": 0.3, "2029": 0.3, "2030": 0.3}),
+                  dict(smug_growth=0.0), dict(legal_growth=0.0)):
+            assert vp._pc_cn_installed(today, m, t) < base, m
+        assert vp._pc_cn_installed(today, dict(legal_growth=0.3), t) > base
 
     def test_race_bar_is_the_us_median_run_at_the_pause(self):
         caps = {vp._DC_CTY_US: (1e26, 3e26, 9e26),
