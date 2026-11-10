@@ -1241,6 +1241,20 @@ def _rli_start_interval(frontier, slope):
     return float(lo), float(hi)
 
 
+def _rli_start_draws(pos_lo_pct, pos_hi_pct, dist, n):
+    """`n` starting RLI levels in logit space, drawn across the 80% interval
+    (pos_lo_pct, pos_hi_pct) in percent: normal in logit, or lognormal on
+    logit + 10 for "Lognormal". The RLI and Employment tabs' linear fits
+    both start here."""
+    lo, hi = _logit(pos_lo_pct / 100), _logit(pos_hi_pct / 100)
+    if dist == "Lognormal":
+        off = 10  # shift so values are safely positive
+        sigma = (np.log(hi + off) - np.log(lo + off)) / (2 * 1.282)
+        mu = 0.5 * (np.log(lo + off) + np.log(hi + off))
+        return np.random.lognormal(mu, max(sigma, 0), n) - off
+    return np.random.normal(0.5 * (lo + hi), max((hi - lo) / (2 * 1.282), 0), n)
+
+
 @st.cache_data
 def load_rli_data():
     models = []
@@ -6283,21 +6297,8 @@ def render_rli():
         # Convert doubling times to logit slopes: slope = ln(2) / dt
         rli_proj_logit_slope = np.log(2) / rli_proj_dt
 
-        # Position samples in logit space
-        if rli_custom_pos_dist == "Lognormal":
-            _rli_pos_logit_lo = _logit(rli_custom_pos_lo / 100)
-            _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
-            _rli_pos_offset = 10  # shift so values are safely positive
-            _rli_pos_sigma = (np.log(_rli_pos_logit_hi + _rli_pos_offset) - np.log(_rli_pos_logit_lo + _rli_pos_offset)) / (2 * 1.282)
-            _rli_pos_mu = 0.5 * (np.log(_rli_pos_logit_lo + _rli_pos_offset)
-                                 + np.log(_rli_pos_logit_hi + _rli_pos_offset))
-            rli_proj_start_logit = np.random.lognormal(_rli_pos_mu, max(_rli_pos_sigma, 0), n_rli) - _rli_pos_offset
-        else:
-            _rli_pos_logit_lo = _logit(rli_custom_pos_lo / 100)
-            _rli_pos_logit_hi = _logit(rli_custom_pos_hi / 100)
-            _rli_pos_sigma = (_rli_pos_logit_hi - _rli_pos_logit_lo) / (2 * 1.282)
-            rli_proj_start_logit = np.random.normal(0.5 * (_rli_pos_logit_lo + _rli_pos_logit_hi),
-                                                    max(_rli_pos_sigma, 0), n_rli)
+        rli_proj_start_logit = _rli_start_draws(
+            rli_custom_pos_lo, rli_custom_pos_hi, rli_custom_pos_dist, n_rli)
 
     elif rli_proj_basis == "Superexponential (logit)":
         # In logit space: logit = A + K * 2^(d/halflife)
@@ -10938,6 +10939,10 @@ def _render_rev_us_china_ratio(us_series, cn_series, start, as_of):
 _EMP_POS_HELP = ("Sets how uncertain today's RLI level is: the gap between low and high "
                  "is the 80% width, in log-odds, of the starting point. The draw is "
                  "centred on the fitted trend today, not on these two values.")
+_EMP_START_HELP = ("Where the RLI frontier stands at its newest record, 80% range; the "
+                   "starting level is drawn across it, as the RLI tab's linear fits "
+                   "start. Default: the newest record averaged with the one before "
+                   "carried on the trend, widened by how far releases scatter around it.")
 
 _EMP_RESET_KEYS = [
     "emp_custom_dt_lo", "emp_custom_dt_hi",
@@ -11098,15 +11103,16 @@ def render_employment():
                     st.error("Odds 2× time CI low must be ≤ CI high.")
                     st.stop()
 
-                _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
-                _emp_def_score = _emp_cur['rli_score']
+                _emp_def_lo, _emp_def_hi = _rli_start_interval(_emp_pre_fr, _emp_pre_params[1])
                 _emp_pos_lo_col, _emp_pos_hi_col = st.columns(2)
                 emp_custom_pos_lo = _ss_number_input(_emp_pos_lo_col,
-                    "Start spread low (%)", "emp_custom_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
+                    "Start CI low (%)", "emp_custom_pos_lo",
+                    round(max(100 * _inv_logit(_emp_def_lo), 0.1), 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_START_HELP)
                 emp_custom_pos_hi = _ss_number_input(_emp_pos_hi_col,
-                    "Start spread high (%)", "emp_custom_pos_hi", round(_emp_def_score + 1.0, 2),
-                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
+                    "Start CI high (%)", "emp_custom_pos_hi",
+                    round(100 * _inv_logit(_emp_def_hi), 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_START_HELP)
 
                 emp_custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -11270,16 +11276,6 @@ def render_employment():
         else:
             _emp_params = fit_line(days_used, logit_used)
 
-        _emp_current_day = (emp_frontier_used[-1]['date'] - base_date).days
-        if emp_piecewise_n_segments >= 2:
-            _emp_seg_d = days_used[_emp_last_seg_range]
-            _emp_seg_y = logit_used[_emp_last_seg_range]
-        else:
-            _emp_seg_d = days_used
-            _emp_seg_y = logit_used
-        _emp_intercept = np.mean(_emp_seg_y - _emp_params[1] * _emp_seg_d)
-        _emp_fitted_logit = _emp_intercept + _emp_params[1] * _emp_current_day
-
         if emp_custom_dt_dist == "Log-log":
             emp_proj_dt = _log_lognormal_from_ci(emp_custom_dt_lo, emp_custom_dt_hi, n_emp)
         elif emp_custom_dt_dist == "Lognormal":
@@ -11289,18 +11285,8 @@ def render_employment():
 
         emp_proj_logit_slope = np.log(2) / emp_proj_dt
 
-        if emp_custom_pos_dist == "Lognormal":
-            _emp_pos_logit_lo = _logit(emp_custom_pos_lo / 100)
-            _emp_pos_logit_hi = _logit(emp_custom_pos_hi / 100)
-            _emp_pos_offset = 10
-            _emp_pos_sigma = (np.log(_emp_pos_logit_hi + _emp_pos_offset) - np.log(_emp_pos_logit_lo + _emp_pos_offset)) / (2 * 1.282)
-            _emp_pos_mu = np.log(_emp_fitted_logit + _emp_pos_offset)
-            emp_proj_start_logit = np.random.lognormal(_emp_pos_mu, max(_emp_pos_sigma, 0), n_emp) - _emp_pos_offset
-        else:
-            _emp_pos_logit_lo = _logit(emp_custom_pos_lo / 100)
-            _emp_pos_logit_hi = _logit(emp_custom_pos_hi / 100)
-            _emp_pos_sigma = (_emp_pos_logit_hi - _emp_pos_logit_lo) / (2 * 1.282)
-            emp_proj_start_logit = np.random.normal(_emp_fitted_logit, max(_emp_pos_sigma, 0), n_emp)
+        emp_proj_start_logit = _rli_start_draws(
+            emp_custom_pos_lo, emp_custom_pos_hi, emp_custom_pos_dist, n_emp)
 
     elif emp_proj_basis == "Superexponential (logit)":
         _emp_se_days = np.array([(m['date'] - base_date).days for m in emp_frontier_used], dtype=float)

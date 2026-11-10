@@ -1054,18 +1054,35 @@ class TestEmploymentDefaults:
         assert 3.0 <= dt_hi / dt_lo <= 5.0, \
             f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
 
-    @pytest.mark.parametrize("basis,pre", [("Linear (logit)", "custom"),
-                                           ("Superexponential (logit)", "superexp")])
-    def test_start_inputs_say_they_set_only_the_width(self, basis, pre):
-        """The start is drawn around the fitted trend, so its inputs are
-        labelled a spread whose help says so, and stay below 100% (logit)."""
+    def test_superexp_start_inputs_say_they_set_only_the_width(self):
+        """The superexponential start is drawn around the fitted curve, as on
+        the RLI tab, so its inputs are labelled a spread whose help says so,
+        and stay below 100% (logit)."""
         at = _emp_app()
-        at.radio(key="emp_proj_basis").set_value(basis).run()
-        _assert_no_error(at, f"Employment / {basis}")
+        at.radio(key="emp_proj_basis").set_value("Superexponential (logit)").run()
+        _assert_no_error(at, "Employment / superexponential")
         for side in ("lo", "hi"):
-            ni = at.number_input(key=f"emp_{pre}_pos_{side}")
+            ni = at.number_input(key=f"emp_superexp_pos_{side}")
             assert ni.label.startswith("Start spread")
             assert "centred on the fitted trend" in ni.help
+            assert ni.max == 99.9
+
+    def test_starting_rli_level_is_the_rli_tabs(self):
+        """The linear start is the RLI tab's: the same 80% interval
+        (`_rli_start_interval`) as its default, drawn by the same
+        `_rli_start_draws`, and the inputs say so."""
+        at = _fresh_app()
+        at.query_params["tab"] = "rli"
+        at.run()
+        _assert_no_error(at, "RLI tab")
+        rli = [at.number_input(key=f"rli_custom_pos_{s}").value
+               for s in ("lo", "hi")]
+        _switch_tab(at, "Employment")
+        emp = [at.number_input(key=f"emp_custom_pos_{s}") for s in ("lo", "hi")]
+        assert [ni.value for ni in emp] == rli
+        for ni in emp:
+            assert ni.label.startswith("Start CI")
+            assert "as the RLI tab" in ni.help
             assert ni.max == 99.9
 
     def test_cards_are_dated_after_today(self):
