@@ -6691,6 +6691,15 @@ def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
     assert span(np.inf) == "not by 2040"
 
 
+def test_takeoff_card_dates_round_to_the_nearest_month():
+    """Jul 29 reads Aug, matching `_tk_in_time`'s rounded months."""
+    today = datetime(2026, 11, 10)
+    date = lambda d: vp._tk_date((d - today).days / 365.25, today)
+    assert date(datetime(2027, 7, 29)) == "Aug 2027"
+    assert date(datetime(2027, 7, 15)) == "Jul 2027"
+    assert date(datetime(2027, 12, 20)) == "Jan 2028"
+    assert vp._tk_date(np.inf, today) == "Beyond horizon"
+
 class TestPcPassed:
     """A card whose own series already reached its bar reads "Passed" and,
     under the hard "not crossed yet" cut, carries no blend weight."""

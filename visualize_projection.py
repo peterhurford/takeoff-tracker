@@ -16,6 +16,7 @@ import csv
 import statistics
 import re
 import html
+import calendar
 import textwrap
 import os
 import json
@@ -24485,8 +24486,14 @@ def _tk_ci(col, level, label):
 
 
 def _tk_date(value, today):
-    return ((today + timedelta(days=value * 365.25)).strftime("%b %Y")
-            if np.isfinite(value) else "Beyond horizon")
+    """The month nearest the date, so a card matches `_tk_in_time`'s rounded
+    months: Jul 29 reads Aug."""
+    if not np.isfinite(value):
+        return "Beyond horizon"
+    d = today + timedelta(days=value * 365.25)
+    if 2 * (d.day - 1) >= calendar.monthrange(d.year, d.month)[1]:
+        d = d.replace(day=28) + timedelta(days=4)
+    return d.strftime("%b %Y")
 
 
 _TK_NUMBER_WORDS = "zero one two three four five six seven eight nine".split()

@@ -185,7 +185,9 @@ the tab, above the evidence: they render into a `st.container()` slot made befor
 followed by `_tk_rsi_odds_text`, the RSI card's 10th and 50th percentiles as times from now
 (`_tk_in_time`: "in nine months", "within 15 months"), drawn into a
 slot filled once the scenarios run so it always matches the card
-(`test_grounded_thresholds_and_workflow_floor`).
+(`test_grounded_thresholds_and_workflow_floor`). The cards' dates (`_tk_date`) round to the
+nearest month the same way, so 8.6 months from Nov 10 reads Aug, not Jul
+(`test_takeoff_card_dates_round_to_the_nearest_month`).
 One seed, `tk_seed` (default 42, *Random seed* in the sidebar), fixes every draw on the tab:
 `_render_takeoff` seeds numpy's global generator for the evidence fans, and the cached
 `_pc_milestone_components` and `_pc_rsi_projection_samples` take it as an argument and
