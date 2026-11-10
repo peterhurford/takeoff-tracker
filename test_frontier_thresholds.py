@@ -54,9 +54,11 @@ def test_tab_filters_url_reset_and_empty_state():
     assert not at.exception
     assert len(at.get('plotly_chart')) == 3  # Archive filters do not erase the overview.
     assert any('No events match' in v.value for v in at.info)
+    at.radio(key='ft_category').set_value('Persuasion').run()
     next(b for b in at.button if b.label == 'Reset timeline filters').click().run()
     assert not at.exception
     assert at.selectbox(key='ft_lab').value == 'All labs'
+    assert at.radio(key='ft_category').value == 'Persuasion'  # Not a timeline filter.
     assert len(at.dataframe[-1].value) == 55
     assert 'ft_search' not in at.query_params
     at.selectbox(key='ft_status').set_value('Precaution').run()

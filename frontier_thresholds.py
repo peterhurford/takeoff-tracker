@@ -197,7 +197,7 @@ def render(st):
         st.caption('Includes earlier Medium ratings, framework revisions, unchanged releases, and operational updates.')
         domains = sorted({d for e in events for d in e['domains']})
         def reset():
-            st.session_state.update(DEFAULTS)
+            st.session_state.update({k: v for k, v in DEFAULTS.items() if k != 'ft_category'})
         options_by_key = [('ft_lab', ['All labs'] + LABS),
                           ('ft_domain', ['All domains'] + domains),
                           ('ft_status', ['All event types'] + list(SYMBOLS))]
