@@ -4437,11 +4437,11 @@ def _eci_yearly_gain_range(frontier):
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
 
 
-# Where the ECI piecewise fit breaks by default, per entity: Claude Fable 5
-# starts the 2026 speed-up on the whole-US frontiers (their best two-segment fit
-# with Anthropic's internal models); GLM-5.1 on China's. Other entities take
-# their own best fit.
-_ECI_DEFAULT_BREAK = "Claude Fable 5"
+# Where the ECI piecewise fit breaks by default, per entity: Mythos Preview
+# (internal) starts the 2026 speed-up on the whole-US frontiers; GLM-5.1 on
+# China's. Other entities, or a frontier without the named model, take their
+# own best fit.
+_ECI_DEFAULT_BREAK = "Mythos Preview (internal)"
 _ECI_DEFAULT_BREAKS = {"US best": _ECI_DEFAULT_BREAK,
                        "Frontier (any lab)": _ECI_DEFAULT_BREAK,
                        "China best": "GLM-5.1"}

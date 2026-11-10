@@ -342,7 +342,7 @@ class TestEciTab:
         by = lambda pre: [t for t in traces if (t.get("name") or "").startswith(pre)]
         to, since, seg2 = by("US trend to "), by("US trend since "), by("Segment 2")
         assert len(to) == len(since) == len(seg2) == 1, [t.get("name") for t in traces]
-        # The US line splits at its own break (Claude Fable 5), not China's.
+        # The US line splits at its own break (Mythos Preview (internal)), not China's.
         assert to[0]["x"][-1] == since[0]["x"][0] != seg2[0]["x"][0]
         assert any("trend since" in c.body for c in at.get("caption")
                    if "takes one off per" in c.body)
@@ -454,7 +454,7 @@ class TestDefaultValues:
         _switch_tab(at, "ECI")
         assert at.radio(key="eci_proj_basis").value == "Piecewise linear"
         assert at.radio(key="eci_piecewise_n_seg").value == 2
-        assert at.selectbox(key="eci_bp1_select").value == "Claude Fable 5"
+        assert at.selectbox(key="eci_bp1_select").value == "Mythos Preview (internal)"
         # A single lab takes its own best split, not the US-wide name.
         at.selectbox(key="eci_entity_a").set_value("Anthropic").run()
         assert at.selectbox(key="eci_bp1_select").value == "Claude Sonnet 4.5"
