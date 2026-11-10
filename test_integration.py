@@ -220,22 +220,35 @@ class TestEciTab:
                at.number_input(key="eci_custom_ppy_hi").value)
         assert got == vp._eci_yearly_gain_range(vp._eci_entity_data("China best")[1])
 
-    def test_two_labs_cannot_both_fall_behind_each_other(self):
-        drift = []
-        for a, b in (("Anthropic", "OpenAI"), ("OpenAI", "Anthropic")):
-            at = _fresh_app()
-            at.run()
-            _switch_tab(at, "ECI")
-            at.selectbox(key="eci_entity_a").set_value(a).run()
-            at.selectbox(key="eci_entity_b").set_value(b).run()
-            _assert_no_error(at, f"ECI / {a} vs {b}")
-            spec = json.loads(at.get("plotly_chart")[-1].proto.spec)
-            [med] = [t for t in spec["data"] if t.get("name") == "Projected median"]
-            ys = [float(h.split("Median: ")[1].split("mo")[0])
-                  * (1 if "behind" in h.split("Median: ")[1].split("<br>")[0] else -1)
-                  for h in med["hovertext"]]
-            drift.append(ys[-1] - ys[0])
-        assert drift[0] * drift[1] <= 0, drift
+    def test_entity_is_always_the_one_ahead(self):
+        # Picking a leader under Compare to, or deep-linking one as ?b=, swaps
+        # it into Entity.
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        at.selectbox(key="eci_entity_a").set_value("China best").run()
+        at.selectbox(key="eci_entity_b").set_value("US best").run()
+        _assert_no_error(at, "ECI / China vs US")
+        assert (at.selectbox(key="eci_entity_a").value,
+                at.selectbox(key="eci_entity_b").value) == ("US best", "China best")
+        assert any("Swapped" in c.body for c in at.caption)
+        assert at.query_params.get("b") in ("china", ["china"])
+        at = _fresh_app()
+        at.query_params.update(tab="eci", a="china", b="us")
+        at.run()
+        _assert_no_error(at, "ECI / ?a=china&b=us")
+        assert (at.selectbox(key="eci_entity_a").value,
+                at.selectbox(key="eci_entity_b").value) == ("US best", "China best")
+
+    def test_a_shared_link_keeps_its_rate_ci(self):
+        # The per-entity CI reset fires on a change of frontier, not its first sight.
+        at = _fresh_app()
+        at.query_params.update(tab="eci", b="china", eci_custom_ppy_lo="13.0",
+                               eci_custom_ppy_hi="24.5")
+        at.run()
+        _assert_no_error(at, "ECI / shared CI")
+        assert (at.number_input(key="eci_custom_ppy_lo").value,
+                at.number_input(key="eci_custom_ppy_hi").value) == (13.0, 24.5)
 
     @pytest.mark.parametrize("basis, fit", [
         ("Piecewise linear", "Segment 2"), ("Linear", "OLS trend")])

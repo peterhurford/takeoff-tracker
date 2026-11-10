@@ -1124,6 +1124,14 @@ class TestEciGap:
         fr = [{'date': d0 + timedelta(days=60 * i)} for i in range(5)]
         assert vp._eci_label_positions(fr) == [
             'bottom right', 'top right', 'bottom right', 'top left', 'bottom right']
+        # A model days after the one before goes above it, else each name sits
+        # beside the other's point (China's DeepSeek V4.1 Flash 1017, Kimi K3.1 Pro).
+        fr.append({'date': fr[-1]['date'] + timedelta(days=6)})
+        fr.append({'date': fr[-1]['date'] + timedelta(days=60)})
+        assert vp._eci_label_positions(fr)[3:] == [
+            'top left', 'bottom right', 'top left', 'bottom right']
+        fr[4]['date'] = fr[3]['date'] + timedelta(days=6)
+        assert vp._eci_label_positions(fr)[3:5] == ['bottom right', 'top left']
 
     def test_a_lab_inside_the_reference_is_at_it_not_ahead_of_it(self):
         assert vp._eci_level_word("US best", "Anthropic") == "At US best"

@@ -4506,6 +4506,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
+            st.query_params.pop(k, None)  # or the rerun rehydrates it
         st.session_state.update(_eci_tab_defaults(p))
         st.rerun()
 
@@ -4514,9 +4515,11 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             st.session_state[k] = v
     # The CIs, breakpoints and vantage default off the projected frontier, so a
     # new entity under Entity or Compare to takes its own, not the last one's.
+    # The first run keeps them, so a shared link's settings survive loading.
     _data_key = tuple(tab_frontier_names)
-    if st.session_state.get(f"_{p}_data_key") != _data_key:
-        st.session_state[f"_{p}_data_key"] = _data_key
+    _last_key = st.session_state.get(f"_{p}_data_key")
+    st.session_state[f"_{p}_data_key"] = _data_key
+    if _last_key is not None and _last_key != _data_key:
         for k in ("custom_ppy_lo", "custom_ppy_hi", "custom_pos_lo", "custom_pos_hi",
                   "superexp_ppy_ci_lo", "superexp_ppy_ci_hi", "superexp_pos_lo",
                   "superexp_pos_hi", "bp1_select", "bp2_select"):
@@ -4611,8 +4614,9 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
                 # Auto-update PPY CIs when segment config changes
                 _eci_seg_config = (eci_piecewise_n_segments, tuple(eci_piecewise_breakpoints))
-                if st.session_state.get(f"_{p}_seg_config") != _eci_seg_config:
-                    st.session_state[f"_{p}_seg_config"] = _eci_seg_config
+                _eci_last_seg = st.session_state.get(f"_{p}_seg_config")
+                st.session_state[f"_{p}_seg_config"] = _eci_seg_config
+                if _eci_last_seg is not None and _eci_last_seg != _eci_seg_config:
                     st.session_state.pop(f"{p}_custom_ppy_lo", None)
                     st.session_state.pop(f"{p}_custom_ppy_hi", None)
 
@@ -5479,17 +5483,22 @@ def _eci_entity_short(label):
     return label[:-len(" best")] if label.endswith(" best") else label
 
 
-def _eci_label_positions(frontier, edge_days=120):
+def _eci_label_positions(frontier, edge_days=120, close_days=30):
     """Frontier names alternate above-left and below-right of their points: the
     trend rises, so those sides are empty and two neighbours' names point away
-    from each other. Points within `edge_days` of the first stay right of it,
-    off the plot's left edge."""
-    pos = []
-    for i, m in enumerate(frontier):
-        above = i % 2 == 1
-        right = not above or (m['date'] - frontier[0]['date']).days < edge_days
-        pos.append(('top ' if above else 'bottom ') + ('right' if right else 'left'))
-    return pos
+    from each other. A model within `close_days` of the one before always goes
+    above it and that one below, or each name lands beside the other's point.
+    Points within `edge_days` of the first stay right of it, off the plot's
+    left edge."""
+    above = [i % 2 == 1 for i in range(len(frontier))]
+    for i in range(1, len(frontier)):
+        if (above[i - 1] and not above[i]
+                and (frontier[i]['date'] - frontier[i - 1]['date']).days < close_days):
+            above[i - 1], above[i] = False, True
+    return [('top ' if up else 'bottom ')
+            + ('right' if not up or (m['date'] - frontier[0]['date']).days < edge_days
+               else 'left')
+            for up, m in zip(above, frontier)]
 
 
 def _eci_edge_label_groups(labels, min_gap):
@@ -5615,6 +5624,34 @@ def _eci_entity_data(label):
     return all_, fr, [m['display_name'] for m in fr]
 
 
+def _eci_best_score(label, internal):
+    return max((m['eci_score'] for m in
+                _eci_entity_models(label, full_window=True, internal=internal)),
+               default=float('-inf'))
+
+
+def _eci_leader_first(a, b, internal):
+    """(a, b) with the entity whose best scores higher first, so Entity is
+    always the reference ahead and Compare to the one projected behind it."""
+    if b in (_ECI_NONE_LABEL, a, None):
+        return a, b
+    return (b, a) if _eci_best_score(b, internal) > _eci_best_score(a, internal) else (a, b)
+
+
+def _eci_order_entities():
+    """on_change for Entity, Compare to and the internal-models toggle: swap the
+    two when Compare to now leads, noting it for the sidebar."""
+    ss = st.session_state
+    a, b = ss.get("eci_entity_a"), ss.get("eci_entity_b")
+    if a is None or b is None:
+        return
+    a2, b2 = _eci_leader_first(a, b, ss.get(
+        "eci_internal", _eci_tab_defaults("eci")["eci_internal"]))
+    if (a2, b2) != (a, b):
+        ss["eci_entity_a"], ss["eci_entity_b"] = a2, b2
+        ss["_eci_swapped"] = (a2, b2)
+
+
 def render_eci():
     # Two dropdowns. The first is the benchmark/reference (default "US best");
     # the second is the subject projected against it (default none). With no
@@ -5625,17 +5662,29 @@ def render_eci():
     _b_opts = [_ECI_NONE_LABEL] + _ECI_ENTITY_OPTIONS
     _url_a = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("a", "").lower())
     _url_b = _ECI_ENTITY_FOR_SLUG.get(st.query_params.get("b", "").lower())
-    _a_idx = _ECI_ENTITY_OPTIONS.index(_url_a) if _url_a in _ECI_ENTITY_OPTIONS else 0
+    if _url_a not in _ECI_ENTITY_OPTIONS:
+        _url_a = _ECI_ENTITY_OPTIONS[0]
+    if _url_b in _b_opts:
+        _url_a, _url_b = _eci_leader_first(_url_a, _url_b, st.session_state.get(
+            "eci_internal", _eci_tab_defaults("eci")["eci_internal"]))
+    _a_idx = _ECI_ENTITY_OPTIONS.index(_url_a)
     _b_idx = _b_opts.index(_url_b) if _url_b in _b_opts else 0
 
     with st.sidebar:
         entity_a = st.selectbox(
-            "Entity", _ECI_ENTITY_OPTIONS, index=_a_idx, key="eci_entity_a")
+            "Entity", _ECI_ENTITY_OPTIONS, index=_a_idx, key="eci_entity_a",
+            on_change=_eci_order_entities)
         entity_b = st.selectbox(
-            "Compare to", _b_opts, index=_b_idx, key="eci_entity_b")
+            "Compare to", _b_opts, index=_b_idx, key="eci_entity_b",
+            on_change=_eci_order_entities,
+            help="Entity is always the one ahead: picking a lab or country "
+                 "that leads it swaps the two.")
+        if swapped := st.session_state.pop("_eci_swapped", None):
+            st.caption(f"Swapped: {swapped[0]} leads {swapped[1]}, so it is the Entity.")
         st.session_state.setdefault("eci_internal", _eci_tab_defaults("eci")["eci_internal"])
         internal = st.toggle(
             "Anthropic internal models", key="eci_internal",
+            on_change=_eci_order_entities,
             help="Adds Anthropic's internal models (Mythos Preview, Model 2-4 and "
                  "their early versions) from METR's October 2026 assessment, at "
                  "projected ECI scores: METR's AECI less Claude's AECI-minus-ECI "
