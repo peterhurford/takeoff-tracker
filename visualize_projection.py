@@ -26290,7 +26290,8 @@ def render_release_lag():
     c1.metric("Snapshot lag (median)", f"{_rl_median(pub):.0f} days",
               help=f"Training finish to release for the {len(pub)} public Claude "
                    f"models in METR's assessment (range {min(pub)}-{max(pub)} days). "
-                   "Training finish is METR's availability date less ~14 days "
+                   "Training finish is the date METR gives for availability to most "
+                   "Anthropic staff, less ~14 days "
                    "(`metr_aeci.csv` header), so this is partly assumed.")
     c2.metric("Frontier lead, Anthropic (median)", f"{_rl_median(lead_a):.0f} days",
               help=f"Over the {len(lead_a)} internal models a Claude release has since "
@@ -26347,7 +26348,7 @@ def render_release_lag():
 
     st.subheader("Snapshot lag: each released Claude model")
     st.table([{"Model": r['epoch_model'], "Training finished (est.)": f"{r['produced']:%b %d, %Y}",
-               "METR availability": f"{r['available']:%b %d, %Y}",
+               "Available to Anthropic staff": f"{r['available']:%b %d, %Y}",
                "Released": f"{r['released']:%b %d, %Y}",
                "Days": r['days'] if not r['internal_first']
                else f"{r['days']} (first used internally as {r['model']})"}
