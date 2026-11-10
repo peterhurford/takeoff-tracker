@@ -341,6 +341,8 @@ class TestEciTab:
         names = [t.get("name") or "" for t in
                  json.loads(at.get("plotly_chart")[0].proto.spec)["data"]]
         assert any(n.startswith("US trend since ") for n in names), names
+        # The reference's earlier segment stays drawn, up to the same break.
+        assert any(n.startswith("US trend to ") for n in names), names
         assert any("trend since" in c.body for c in at.get("caption")
                    if "takes one off per" in c.body)
 

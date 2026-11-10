@@ -5084,16 +5084,37 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     # Piecewise: the last segment starts at the last breakpoint's date, and the
     # overlay and the months-behind rate fit the reference from there too.
     _eci_seg_start = None
+    _eci_bp_dates = []
     if eci_proj_basis == "Piecewise linear" and eci_piecewise_n_segments >= 2:
         _eci_used_names = [m['display_name'] for m in eci_frontier_used]
-        _bps = [b for b in eci_piecewise_breakpoints if b in _eci_used_names]
-        if _bps:
-            _eci_seg_start = eci_frontier_used[_eci_used_names.index(_bps[-1])]['date']
+        _eci_bp_dates = [eci_frontier_used[_eci_used_names.index(b)]['date']
+                         for b in eci_piecewise_breakpoints if b in _eci_used_names]
+        if _eci_bp_dates:
+            _eci_seg_start = _eci_bp_dates[-1]
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
     _ovl_seg = ([] if _eci_seg_start is None or overlay_frontier is None
                 else [m for m in overlay_frontier if m['date'] >= _eci_seg_start])
     if len(_ovl_seg) >= 2:
+        # Its earlier segments too, between the same breakpoint dates, each
+        # model at a breakpoint in both pieces as on the subject's fit.
+        _ovl_edges = [overlay_frontier[0]['date']] + _eci_bp_dates
+        for _lo, _hi in zip(_ovl_edges[:-1], _ovl_edges[1:]):
+            _piece = [m for m in overlay_frontier if _lo <= m['date'] <= _hi]
+            if len(_piece) < 2:
+                continue
+            _pb = _piece[0]['date']
+            _pp = fit_line(
+                np.array([(m['date'] - _pb).days for m in _piece], dtype=float),
+                np.array([m['eci_score'] for m in _piece]))
+            fig.add_trace(go.Scatter(
+                x=[_pb, _hi], y=[_pp[0], _pp[0] + _pp[1] * (_hi - _pb).days],
+                mode='lines',
+                line=dict(color='#1565c0', width=1.25, dash='dot'),
+                name=(f'{overlay_label or "Overlay"} to {_hi:%b %Y} '
+                      f'({_pp[1] * 365.25:.1f} pts/yr)'),
+                hoverinfo='skip',
+            ))
         _ovl_base = _ovl_seg[0]['date']
         _ovl_params = fit_line(
             np.array([(m['date'] - _ovl_base).days for m in _ovl_seg], dtype=float),
