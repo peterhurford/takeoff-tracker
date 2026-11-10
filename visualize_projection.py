@@ -4436,16 +4436,46 @@ def _eci_yearly_gain_range(frontier):
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
 
 
+# Where the ECI piecewise fit breaks by default on the whole-US frontiers:
+# Claude Fable 5 starts the 2026 speed-up (their best two-segment fit with
+# Anthropic's internal models). Other entities take their own best fit.
+_ECI_DEFAULT_BREAK = "Claude Fable 5"
+_ECI_NAMED_BREAK_ENTITIES = ("US best", "Frontier (any lab)")
+
+
+def _eci_default_break_idx(frontier, named=True, min_side=3):
+    """Index of the default breakpoint in `frontier`: with `named`,
+    `_ECI_DEFAULT_BREAK` when it leaves `min_side` models on each side; else the
+    split with the least two-segment squared error, else the middle model."""
+    names = [m['display_name'] for m in frontier]
+    n = len(names)
+    if named and _ECI_DEFAULT_BREAK in names:
+        i = names.index(_ECI_DEFAULT_BREAK)
+        if min_side - 1 <= i <= n - min_side:
+            return i
+    if n < 2 * min_side - 1:
+        return n // 2
+    base = frontier[0]['date']
+    d = np.array([(m['date'] - base).days for m in frontier], dtype=float)
+    y = np.array([m['eci_score'] for m in frontier], dtype=float)
+
+    def sse(lo, hi):
+        b, k = fit_line(d[lo:hi], y[lo:hi])
+        return float(np.sum((y[lo:hi] - (b + k * d[lo:hi])) ** 2))
+    return min(range(min_side - 1, n - min_side + 1),
+               key=lambda i: sse(0, i + 1) + sse(i, n))
+
+
 def _eci_tab_defaults(p):
     return {
-        f"{p}_proj_basis": "Linear",
-        f"{p}_piecewise_n_seg": 1,
+        f"{p}_proj_basis": "Piecewise linear",
+        f"{p}_piecewise_n_seg": 2,
         f"{p}_custom_dpp_dist": "Lognormal",
         f"{p}_custom_pos_dist": "Normal",
         f"{p}_milestones": True,
         f"{p}_labels": True,
         f"{p}_eci_metr_proj": False,
-        f"{p}_internal": False,
+        f"{p}_internal": True,
         f"{p}_end_year": 2027,
     }
 
@@ -4467,7 +4497,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
                     us_match_marker=None, us_match_label=None,
-                    overlay_name="US", subject_name=None):
+                    overlay_name="US", subject_name=None, named_break=False):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -4542,8 +4572,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     eci_piecewise_n_segments = 1
                     st.session_state.pop(f"{p}_piecewise_n_seg", None)
                 if eci_piecewise_n_segments >= 2:
-                    _eci_default_bp1 = _eci_bp_names[len(_eci_bp_names) // 2]
-                    _eci_bp1_idx = _eci_bp_names.index(_eci_default_bp1) if _eci_default_bp1 in _eci_bp_names else len(_eci_bp_names) // 2
+                    _eci_bp1_idx = max(1, _eci_default_break_idx(
+                        tab_frontier_all[:eci_proj_as_of_idx + 1], named_break))
                     eci_bp1_name = st.selectbox(
                         "Breakpoint", _eci_bp_names[1:],
                         index=max(0, _eci_bp1_idx - 1), key=f"{p}_bp1_select")
@@ -5543,6 +5573,7 @@ def render_eci():
             "Entity", _ECI_ENTITY_OPTIONS, index=_a_idx, key="eci_entity_a")
         entity_b = st.selectbox(
             "Compare to", _b_opts, index=_b_idx, key="eci_entity_b")
+        st.session_state.setdefault("eci_internal", _eci_tab_defaults("eci")["eci_internal"])
         internal = st.toggle(
             "Anthropic internal models", key="eci_internal",
             help="Adds Anthropic's internal models (Mythos Preview, Model 2-4 and "
@@ -5597,7 +5628,8 @@ def _render_eci_projection(entity_a, entity_b):
         milestones = _ECI_US_MILESTONES if entity_a == "US best" else []
         return _render_eci_tab(
             s_all, s_fr, s_names, "eci",
-            f"{_a_name} ECI Projection", milestones)
+            f"{_a_name} ECI Projection", milestones,
+            named_break=entity_a in _ECI_NAMED_BREAK_ENTITIES)
 
     # Comparison view: project the subject (B), overlay the benchmark (A) trend.
     bench_all, bench_fr, bench_names = _eci_entity_data(entity_a)
@@ -5642,6 +5674,7 @@ def _render_eci_projection(entity_a, entity_b):
         us_match_label=(None if bench_match is None
                         else f"{_b_name} best {subj_current['eci_score']:.1f}"),
         subject_name=_b_name,
+        named_break=entity_b in _ECI_NAMED_BREAK_ENTITIES,
     )
 
 
@@ -17125,7 +17158,7 @@ _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 # ran restricted first); Chinese labs, mostly open-weight, ship soon after
 # the run ends. App-wide sidebar settings, drawn on Takeoff and Pacing
 # (`_ship_lag_inputs`); every date there is on trained models.
-_SHIP_LAG_DEFAULTS = {"us_ship_lag": 70, "cn_ship_lag": 21}
+_SHIP_LAG_DEFAULTS = {"us_ship_lag": 30, "cn_ship_lag": 21}
 _SHIP_LAG_MAX = 365
 
 
@@ -17141,8 +17174,10 @@ def _ship_lag_inputs(parent, china=True):
             ("us_ship_lag", "US trained-to-release lag (days)",
              "How long the US's best trained model leads its best released "
              "one. Dates on Takeoff and Pacing are for trained models, so "
-             "release-dated evidence is pulled back by this. Default 70: "
-             "GPT-5.5 Pro took ~60 days, and holdbacks are growing."),
+             "release-dated evidence is pulled back by this. Default 30: "
+             "Anthropic's releases shipped 14-39 days (median 21) after their "
+             "estimated training finish in METR's assessment; models held back "
+             "longer are tracked directly as internal models."),
             ("cn_ship_lag", "Chinese models' internal lead before release (days)",
              "How long a Chinese lab has a model internally before it ships: "
              "China's trained-to-release lag. Labs mostly ship open weights soon "
@@ -17229,6 +17264,7 @@ _PC_WIN_MAX = 3   # extra pacing windows the Advanced expander offers
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
+                  "pc_internal",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_wafer",
                   "pc_duv_growth",
@@ -17351,6 +17387,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pace": 100,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
+                "pc_internal": True,
                 "pc_cut_smuggling": 0, "pc_stop_legal": False,
                 "pc_dist_cut": 95,
                 "pc_duv_service": False,
@@ -20986,11 +21023,23 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end)
     # US: actual frontier, then the climb to the bar, flat once it pauses.
+    # Releases sit at their training date (off_us_rel); internal models, dated
+    # at first internal use, are trained events (off_us). Running max only.
+    _us_pts = sorted(
+        [(d + off_us_rel, s, _hover(d, s, n)) for d, s, n in us_fr]
+        + ([(m['date'] + off_us, m['eci_score'],
+             f"{m['display_name']}<br>ECI {m['eci_score']:.0f}"
+             f"<br>internal use {m['date']:%b %Y}")
+            for m in _eci_internal_models()]
+           if st.session_state.get("pc_internal", _PC_DEFAULTS["pc_internal"])
+           else []))
+    _us_act = [p for i, p in enumerate(_us_pts)
+               if all(p[1] > q[1] for q in _us_pts[:i])]
     fig.add_trace(go.Scatter(
-        x=[d + off_us_rel for d, s, n in us_fr], y=[s for d, s, n in us_fr],
+        x=[x for x, s, h in _us_act], y=[s for x, s, h in _us_act],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
-        text=[_hover(d, s, n) + _trend_note(_us_obs) for d, s, n in us_fr],
+        text=[h + _trend_note(_us_obs) for x, s, h in _us_act],
         hoverinfo='text', name='US (actual)'))
     # One dashed projection in two pieces, the climb to the pacing date and
     # the path from it, both medians of the per-sample bar China is crossed
@@ -20999,7 +21048,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # The sim's months start at China's anchor (`t0_us`); the climb is drawn
     # from the last US release to them, so it joins the actual line.
     t0_us = max(us_best[0] + off_us_rel, anchor_d + off_us)
-    _us_last = (us_fr[-1][0] + off_us_rel, us_fr[-1][1])
+    _us_last = _us_act[-1][:2]
     _tp50 = float(np.median(t_pause_s))
 
     def _date_of(t):
@@ -21009,7 +21058,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
            if t < _tp50 and _date_of(t) > t0_us]
     # The US line as drawn (actual, climb, then paused or paced), which
     # China's hovers measure their gap against (`_pc_gap_to_us`).
-    _us_line = [(d + off_us_rel, s) for d, s, n in us_fr]
+    _us_line = [(x, s) for x, s, h in _us_act]
     if d_pause_v > t0_us:
         _cx = ([_us_last[0]] + [_date_of(grid_yrs[i]) for i in _ck]
                + [d_pause_v])
@@ -21582,6 +21631,13 @@ def render_pacing():
                          "Country races countries instead, with China shown both "
                          "as the mainland alone and as China-accessible (mainland "
                          "+ Chinese labs' sites abroad).")
+        st.toggle(
+            "Anthropic internal models", key="pc_internal",
+            value=_PC_DEFAULTS["pc_internal"],
+            help="Draws Anthropic's internal models (Mythos Preview, Model 2-4) on "
+                 "the race chart's US line, at their ECI projected from METR's AECI "
+                 "and dated at first internal use, so China's gap reads against "
+                 "them. The US projection starts from them either way.")
         if st.session_state.get("pc_end_year") not in _PC_END_YEARS:
             st.session_state.pop("pc_end_year", None)
         pc_end_year = st.selectbox(

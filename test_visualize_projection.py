@@ -1072,6 +1072,17 @@ class TestEciGap:
         x = vp._split_from_ci(20.0, 30.0, 40.0, 200_000)  # a fit outside is held inside
         assert np.median(x) == pytest.approx(30, rel=0.01)
 
+    def test_piecewise_breaks_at_fable_5_else_at_the_best_fit(self):
+        fr = [{"date": datetime(2025, m, 1), "eci_score": float(s),
+               "display_name": f"M{m}"}
+              for m, s in zip(range(1, 10), [100, 101, 102, 103, 104, 110, 116, 122, 128])]
+        assert vp._eci_default_break_idx(fr) == 4          # the kink
+        fr[6]["display_name"] = "Claude Fable 5"
+        assert vp._eci_default_break_idx(fr) == 6          # named wins
+        assert vp._eci_default_break_idx(fr, named=False) == 4
+        fr[6]["display_name"], fr[7]["display_name"] = "M7", "Claude Fable 5"
+        assert vp._eci_default_break_idx(fr) == 4          # <3 after it: best fit
+
     def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self, monkeypatch):
         d = lambda y, m: datetime(y, m, 1)
         fr = [{"date": d(2025, 1), "eci_score": 100.0},

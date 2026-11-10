@@ -166,19 +166,20 @@ class TestEciTab:
     projection, then the subject's months behind the reference."""
 
     def test_internal_models_toggle_adds_anthropic_internal_frontier(self):
-        """Off by default; on, Anthropic's internal models (METR's AECI projected
+        """On by default: Anthropic's internal models (METR's AECI projected
         onto ECI) join US best's frontier, and only while the ECI tab renders."""
         import visualize_projection as vp
         at = _fresh_app()
         at.run()
         _switch_tab(at, "ECI")
         names = lambda: " ".join(str(c.proto.spec) for c in at.get("plotly_chart"))
-        assert at.toggle(key="eci_internal").value is False
-        assert "Model 4 (internal)" not in names()
-        at.toggle(key="eci_internal").set_value(True).run()
-        _assert_no_error(at, "ECI / internal on")
+        assert at.toggle(key="eci_internal").value is True
         assert "Model 4 (internal)" in names()
-        assert at.query_params.get("eci_internal") in ("1", ["1"])
+        assert "eci_internal" not in at.query_params
+        at.toggle(key="eci_internal").set_value(False).run()
+        _assert_no_error(at, "ECI / internal off")
+        assert "Model 4 (internal)" not in names()
+        assert at.query_params.get("eci_internal") in ("0", ["0"])
         assert not at.session_state[vp._ECI_INTERNAL_ON]
         assert all(not m.get('internal') for m in vp._eci_entity_models("US best"))
 
@@ -197,6 +198,7 @@ class TestEciTab:
         at.run()
         _switch_tab(at, "ECI")
         at.selectbox(key="eci_entity_b").set_value("China best").run()
+        at.radio(key="eci_proj_basis").set_value("Linear").run()
         _assert_no_error(at, "ECI / China best")
         got = (at.number_input(key="eci_custom_ppy_lo").value,
                at.number_input(key="eci_custom_ppy_hi").value)
@@ -219,18 +221,21 @@ class TestEciTab:
             drift.append(ys[-1] - ys[0])
         assert drift[0] * drift[1] <= 0, drift
 
-    def test_projection_carries_the_trend_on_without_a_kink(self):
+    @pytest.mark.parametrize("basis, fit", [
+        ("Piecewise linear", "Segment 2"), ("Linear", "OLS trend")])
+    def test_projection_carries_the_trend_on_without_a_kink(self, basis, fit):
         at = _fresh_app()
         at.run()
         _switch_tab(at, "ECI")
-        _assert_no_error(at, "ECI default")
+        at.radio(key="eci_proj_basis").set_value(basis).run()
+        _assert_no_error(at, f"ECI / {basis}")
         spec = json.loads(at.get("plotly_chart")[0].proto.spec)
 
         def slope(prefix):
             t = next(t for t in spec["data"] if t.get("name", "").startswith(prefix))
             x = [datetime.fromisoformat(v[:19]) for v in (t["x"][0], t["x"][-1])]
             return (t["y"][-1] - t["y"][0]) / (x[1] - x[0]).days
-        assert slope("Projection") == pytest.approx(slope("OLS trend"), rel=1e-3)
+        assert slope("Projection") == pytest.approx(slope(fit), rel=1e-3)
 
     def test_a_model_is_named_once_and_close_edge_labels_stack(self):
         at = _fresh_app()
@@ -410,19 +415,35 @@ class TestDefaultValues:
         assert dt_lo > 0 and dt_hi > dt_lo
         assert 3.0 <= dt_hi / dt_lo <= 5.0
 
+    def test_eci_defaults_to_a_two_segment_piecewise_fit(self):
+        """Like METR: two segments, the rate CI half to twice the last segment's fit."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+        assert at.radio(key="eci_proj_basis").value == "Piecewise linear"
+        assert at.radio(key="eci_piecewise_n_seg").value == 2
+        assert at.selectbox(key="eci_bp1_select").value == "Claude Fable 5"
+        # A single lab takes its own best split, not the US-wide name.
+        at.selectbox(key="eci_entity_a").set_value("Anthropic").run()
+        assert at.selectbox(key="eci_bp1_select").value == "Claude Sonnet 4.5"
+        lo = at.number_input(key="eci_custom_ppy_lo").value
+        hi = at.number_input(key="eci_custom_ppy_hi").value
+        assert hi == pytest.approx(4 * lo, rel=0.05)
+
     def test_eci_linear_defaults(self):
         """ECI linear PPY CI defaults + toggles."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "ECI")
-        # ECI default basis is "Linear", so no segments radio
+        at.radio(key="eci_proj_basis").set_value("Linear").run()
         ppy_lo = at.number_input(key="eci_custom_ppy_lo").value
         ppy_hi = at.number_input(key="eci_custom_ppy_hi").value
         assert ppy_lo > 0 and ppy_hi > ppy_lo
         # The record's slowest and fastest year, not half to twice the fit.
         import visualize_projection as vp
         assert (ppy_lo, ppy_hi) == vp._eci_yearly_gain_range(
-            vp._eci_entity_data("US best")[1])
+            [m for m in vp._eci_entity_models("US best", internal=True)
+             if m['is_frontier']])
         assert at.toggle(key="eci_milestones").value is True
         assert at.toggle(key="eci_labels").value is True
         assert not _has_widget(at, "radio", "eci_piecewise_n_seg"), \
@@ -2193,6 +2214,25 @@ class TestPacingTab:
         at.run()
         assert cards() == china
 
+    def test_internal_models_join_the_race_charts_us_line_by_default(self):
+        """Anthropic's internal models are on the drawn US line (which China's
+        gap hovers read) unless the toggle is off."""
+        import json
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+
+        def us_line():
+            for el in at.get("plotly_chart"):
+                for t in json.loads(el.proto.spec)["data"]:
+                    if t.get("name") == "US (actual)":
+                        return " ".join(t["text"])
+        assert at.toggle(key="pc_internal").value is True
+        assert "Model 4 (internal)" in us_line()
+        at.toggle(key="pc_internal").set_value(False).run()
+        _assert_no_error(at, "Pacing / internal off")
+        assert "(internal)" not in us_line()
+
     def test_the_dotted_lines_show_only_what_the_settings_changed(self):
         """Projections are dashed; the no-pacing, no-lever counterfactuals
         are dotted and drawn only once the settings move a country off them.
@@ -2936,7 +2976,7 @@ class TestPacingTab:
         assert abs(s_rel - s_con) <= 1
         clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
         assert "Dates are model releases" in clock
-        assert "China's dates sit 49 days nearer" in clock
+        assert "China's dates sit 9 days nearer" in clock
 
     def test_a_longer_us_release_lag_raises_the_trained_bar(self):
         """The bar is the best model the US has trained by the pause: the
