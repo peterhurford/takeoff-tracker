@@ -23811,7 +23811,7 @@ def _tk_eci_fig(result, today, eci, markers=()):
     fig.add_trace(go.Scatter(
         x=[m['date'] for m in past], y=[m['eci_score'] for m in past],
         mode="lines+markers", name="Measured: US frontier",
-        line=dict(color="#333", width=1.5, shape="hv"), marker=dict(color="#333", size=6),
+        line=dict(color=_TK_US["light"], width=1.5, shape="hv"), marker=dict(color=_TK_US["light"], size=6),
         text=[m['name'] for m in past],
         hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
     # The trained frontier: public models plus Anthropic's internal ones
@@ -23824,27 +23824,27 @@ def _tk_eci_fig(result, today, eci, markers=()):
             x=[m['date'] for m in trained] + [today],
             y=[m['eci_score'] for m in trained] + [trained[-1]['eci_score']],
             mode="lines", name="Trained frontier (internal models included)",
-            line=dict(color="#d8774f", width=1.5, shape="hv"), hoverinfo="skip"))
+            line=dict(color=_TK_US["dark"], width=1.5, shape="hv"), hoverinfo="skip"))
         fig.add_trace(go.Scatter(
             x=[m['date'] for m in inner], y=[m['eci_score'] for m in inner],
             mode="markers", name="Anthropic internal (ECI projected)",
-            marker=dict(color="#d8774f", symbol="square-open", size=8, line=dict(width=2)),
+            marker=dict(color=_TK_US["dark"], symbol="square-open", size=8, line=dict(width=2)),
             text=[m['name'] for m in inner],
             hovertemplate="%{text} (internal)<br>%{x|%b %d, %Y}: ECI %{y:.1f} "
                           "projected<extra></extra>"))
         fig.add_trace(go.Scatter(
             x=[trained[-1]['date'], today], y=[trained[-1]['eci_score'], eci["now"]],
-            mode="lines", line=dict(color="#c0392b", width=1.5, dash="dot"),
+            mode="lines", line=dict(color=_TK_US["line"], width=1.5, dash="dot"),
             hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
                              name="Projected ECI: 10th percentile",
                              hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=q[:, 2], mode="lines", line=dict(width=0),
-                             fill="tonexty", fillcolor="rgba(192,57,43,0.15)",
+                             fill="tonexty", fillcolor=_TK_US["band"],
                              name="Middle 80% of scenarios", hoverinfo="skip"))
     fig.add_trace(go.Scatter(
         x=x, y=q[:, 1], mode="lines", name="Projected ECI",
-        line=dict(color="#c0392b", width=2.5),
+        line=dict(color=_TK_US["line"], width=2.5),
         hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>Median, best trained "
                       "model</extra>"))
     fig.add_trace(go.Scatter(
@@ -23857,9 +23857,9 @@ def _tk_eci_fig(result, today, eci, markers=()):
         fig.add_annotation(x=when, y=1.0 - 0.07 * (i % 2), yref="paper",
                            text=label, showarrow=False, xanchor="left",
                            font=dict(size=11, color="#888"))
-    fig.add_hline(y=eci["ultra_level"], line_dash="dash", line_color="#c0392b", line_width=1,
+    fig.add_hline(y=eci["ultra_level"], line_dash="dash", line_color=_TK_ULTRA_COLOR, line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {eci['ultra_level']:g}",
-                  annotation_position="top left", annotation_font_color="#c0392b")
+                  annotation_position="top left", annotation_font_color=_TK_ULTRA_COLOR)
     fig.update_layout(
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[past[0]['date'] if past else x[0], x[-1]]),
@@ -23902,11 +23902,11 @@ def _tk_eci_rate_fig(result, today, eci, markers=()):
     fig.add_trace(go.Scatter(x=x, y=q[:, 0], mode="lines", line=dict(width=0),
                              hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=q[:, 2], mode="lines", line=dict(width=0),
-                             fill="tonexty", fillcolor="rgba(192,57,43,0.15)",
+                             fill="tonexty", fillcolor=_TK_US["band"],
                              name="Middle 80% of scenarios", hoverinfo="skip"))
     fig.add_trace(go.Scatter(
         x=x, y=q[:, 1], mode="lines", name="ECI gained a year (median)",
-        line=dict(color="#c0392b", width=2.5),
+        line=dict(color=_TK_US["line"], width=2.5),
         hovertemplate="%{x|%b %Y}<br>%{y:.0f} ECI points a year<extra>Median</extra>"))
     for y, name, dash in ((eci["ppy"], f"Today's setting: {eci['ppy']:g}/yr", "dash"),
                           (base, f"2024–25 average: {base:.1f}/yr", "dot")):
@@ -24004,7 +24004,15 @@ def _tk_yearly_progress(result, eci, today, last_year):
 
 
 # Bar colour per kind of year on the yearly-progress chart.
-_TK_YEARLY_COLORS = {"measured": "#7f8c8d", "partly": "#d98880", "projected": "#c0392b"}
+# The US and China, as on Pacing (`_DC_CTY_COLORS`): blue and red, a darker
+# shade for the trained frontier, a lighter one for releases.
+_TK_US = {"line": "#1F77B4", "dark": "#1450A3", "light": "#9DC3E6",
+          "band": "rgba(31,119,180,0.15)"}
+_TK_CN = {"line": "#D62728", "light": "#F1A3A3", "band": "rgba(214,39,40,0.15)"}
+_TK_ULTRA_COLOR = "#555555"
+
+
+_TK_YEARLY_COLORS = {"measured": "#7f8c8d", "partly": _TK_US["light"], "projected": _TK_US["line"]}
 
 
 def _tk_yearly_fig(rows, today):
@@ -24639,7 +24647,7 @@ _CN_TK_EXP_SPREAD = 0.3
 _CN_TK_INNOVATION_FLOOR = 0.3
 # Years of each grid the section's source table reads.
 _CN_TK_TABLE_YEARS = (2027, 2028, 2030)
-_CN_TK_COLOR = "#d68910"
+_CN_TK_COLOR = "#D62728"
 # China's takeoff runs on at most this many of the US run's scenarios, every
 # k-th, each with its US twin's draws (`takeoff.simulate(draw_rows=...)`):
 # a run costs about as much as the US one per scenario, and the Pacing tab
@@ -24972,8 +24980,8 @@ def _cn_tk_run(today, run=None, pacing=None):
 
 # Section 5's two sides: each a hue, the measured lines thin, the projection
 # bold, the release line lighter than the trained one it trails.
-_CN_TK_US = {"line": "#c0392b", "band": "rgba(192,57,43,0.12)", "light": "#e8a598"}
-_CN_TK_CN = {"line": _CN_TK_COLOR, "band": "rgba(214,137,16,0.18)", "light": "#e9b96e"}
+_CN_TK_US = _TK_US
+_CN_TK_CN = _TK_CN
 
 
 def _cn_tk_band(fig, x, q, side, name, rank, dash=None):
@@ -25010,8 +25018,8 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
             fig.add_trace(go.Scatter(
                 x=[m['date'] for m in tr], y=[m['eci_score'] for m in tr],
                 mode="lines+markers", name="US trained (internal models in)",
-                line=dict(color=_CN_TK_US["line"], width=1.5, shape="hv"),
-                marker=dict(color=_CN_TK_US["line"], size=6, line=dict(color="white", width=1)),
+                line=dict(color=_CN_TK_US["dark"], width=1.5, shape="hv"),
+                marker=dict(color=_CN_TK_US["dark"], size=6, line=dict(color="white", width=1)),
                 text=[m['name'] for m in tr], legendrank=12,
                 hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US trained</extra>"))
             # Carried on pace from the last trained model to the projection's start.
@@ -25050,9 +25058,9 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
         hovertemplate=f"China's trained frontier today: {lvl[1]:.1f} "
                       f"(80% {lvl[0]:.1f}–{lvl[2]:.1f})<extra></extra>"))
     fig.add_vline(x=today, line_color="#999", line_width=1)
-    fig.add_hline(y=ultra, line_dash="dash", line_color="#c0392b", line_width=1,
+    fig.add_hline(y=ultra, line_dash="dash", line_color=_TK_ULTRA_COLOR, line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {ultra:g}",
-                  annotation_position="top left", annotation_font_color="#c0392b")
+                  annotation_position="top left", annotation_font_color=_TK_ULTRA_COLOR)
     fig.update_layout(
         height=440, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[past[0][0] if past else x[0], x[-1]]),
@@ -25146,8 +25154,9 @@ def _cn_tk_pace_fig(pace, today):
         fig.add_trace(go.Scatter(
             x=[qs[i] for i in m], y=[meas[i] for i in m], mode="lines+markers",
             name=f"{name} {'trained' if name == 'US' else 'releases'} (measured)",
-            line=dict(color=side["line"], width=1.8),
-            marker=dict(color=side["line"], size=6, line=dict(color="white", width=1)),
+            line=dict(color=side.get("dark", side["line"]), width=1.8),
+            marker=dict(color=side.get("dark", side["line"]), size=6,
+                        line=dict(color="white", width=1)),
             text=[lbl[i] for i in m], legendrank=rank + 2,
             hovertemplate="%{text}: %{y:.1f} ECI/yr<extra>" + name + "</extra>"))
         if name == "US":
