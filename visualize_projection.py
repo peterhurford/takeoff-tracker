@@ -15772,6 +15772,10 @@ _CC_TRAIN_FLOOR_DAYS = _DAYS_2MO   # 60d
 # existing match (Google New Albany → Gemini 2.0 Flash, 6d early) and that one
 # moves *into* agreement with the backward match.
 _CC_EARLY_GRACE_DAYS = 7
+# A release within _CC_ON_TIME_DAYS of its implied date counts as capacity-gated
+# (green connector, the headline's "within" count); past _CC_LATE_DAYS it is red.
+_CC_ON_TIME_DAYS = 60
+_CC_LATE_DAYS = 120
 # Curated pins: {(lab, Epoch `Model name`): site} for a release whose training
 # site is known, overriding the backward rule's "latest record step online a
 # training run earlier". The rule reads the lab's *largest* site, so a model
@@ -16143,7 +16147,8 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
         if m['pred'] is None:
             continue
         ae = abs(m['err'])
-        c = '#2CA02C' if ae <= 45 else '#FF7F0E' if ae <= 120 else '#D62728'
+        c = ('#2CA02C' if ae <= _CC_ON_TIME_DAYS else '#FF7F0E'
+             if ae <= _CC_LATE_DAYS else '#D62728')
         fig.add_trace(go.Scatter(
             x=[m['pred'], m['date']], y=[Y_PRED, Y_ACT], mode='lines',
             line=dict(color=c, width=1.4), hoverinfo='skip', showlegend=False))
@@ -16228,7 +16233,7 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
                 "timed against a buildout.")
     elif errs:
         med = int(np.median(errs))
-        within = sum(1 for x in errs if abs(x) <= 60)
+        within = sum(1 for x in errs if abs(x) <= _CC_ON_TIME_DAYS)
         orphan_note = (f" {n_orphan} release(s) predate any tracked {lab} cluster."
                        if n_orphan else "")
         fb_note = (f" {n_fb} further release(s) shown (hollow) for clusters that "
@@ -16237,11 +16242,12 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
         _fn_line(
             f"**{lab}: frontier models ship a median {med:+d} days from the date "
             f"their largest cluster's capacity implies** — {within}/{len(errs)} "
-            "within 60 days of it."
+            f"within {_CC_ON_TIME_DAYS} days of it."
             + (" Some clusters match nothing." if (orphan_note + fb_note).strip()
                else ""),
             ("their largest cluster's capacity implies",
-             f"Capacity online + {_CC_RELEASE_LAG_DAYS}d. Landing within 60 days of "
+             f"Capacity online + {_CC_RELEASE_LAG_DAYS}d. Landing within "
+             f"{_CC_ON_TIME_DAYS} days of "
              "it is capacity-gated; large positive gaps mean the model was limited "
              "by something other than compute."),
             *([("Some clusters match nothing", (orphan_note + fb_note).strip())]
@@ -16258,7 +16264,8 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
     _fn_caption(
         f"Diamonds = capacity steps + {_CC_RELEASE_LAG_DAYS}d (hollow = "
         "planned) \u00b7 circles = releases \u00b7 connector colour = days off "
-        "the implied date (green \u226445, orange \u2264120, red >120). Dates "
+        f"the implied date (green \u2264{_CC_ON_TIME_DAYS}, orange "
+        f"\u2264{_CC_LATE_DAYS}, red >{_CC_LATE_DAYS}). Dates "
         "only, never capability.",
         ("circles = releases", "A release matches only a cluster online "
                                f"\u2265 one training run "

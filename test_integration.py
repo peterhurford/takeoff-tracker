@@ -2292,6 +2292,17 @@ class TestDataCentersByCountry:
         assert "Mainland China alone" in head[0]
         assert at.radio(key="dc_cty_since").value == 2024
 
+    def test_buildout_headline_counts_the_green_connectors(self):
+        """The release-timing headline's "within N days" and the green
+        connector threshold are one constant."""
+        at = self._dc_app()
+        heads = [str(m.value) for m in at.markdown
+                 if "frontier models ship a median" in str(m.value)]
+        assert heads
+        within = {int(d) for h in heads for d in re.findall(r"within (\d+) days", h)}
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert {int(re.search(r"green ≤(\d+)", caps).group(1))} == within
+
     def test_sits_above_the_buildout_panel_and_shares_the_sidebar_selector(self):
         at = self._dc_app()
         heads = [str(h.value) for h in at.subheader]
