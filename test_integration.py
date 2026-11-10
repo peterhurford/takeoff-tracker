@@ -2218,20 +2218,23 @@ class TestPacingTab:
         """Anthropic's internal models are on the drawn US line (which China's
         gap hovers read) unless the toggle is off."""
         import json
-        at = _fresh_app()
-        at.run()
-        _switch_tab(at, "Pacing")
+        at = self._app()
 
         def us_line():
             for el in at.get("plotly_chart"):
                 for t in json.loads(el.proto.spec)["data"]:
                     if t.get("name") == "US (actual)":
                         return " ".join(t["text"])
+        def behind():
+            return [v for v in self._state(at)["Behind the US"] if v != "—"]
         assert at.toggle(key="pc_internal").value is True
         assert "Model 4 (internal)" in us_line()
+        on = behind()
         at.toggle(key="pc_internal").set_value(False).run()
         _assert_no_error(at, "Pacing / internal off")
         assert "(internal)" not in us_line()
+        # The state-of-play gap reads the same line, so it moves with it.
+        assert on and behind() and on != behind()
 
     def test_the_dotted_lines_show_only_what_the_settings_changed(self):
         """Projections are dashed; the no-pacing, no-lever counterfactuals

@@ -5580,7 +5580,11 @@ def render_eci():
                  "their early versions) from METR's October 2026 assessment, at "
                  "projected ECI scores: METR's AECI less Claude's AECI-minus-ECI "
                  "gap at that date. Dated when METR dates them, at first internal "
-                 "use, not at a public release.")
+                 "use, not at a public release. "
+                 "China has no internal models in the data, and none are left out: "
+                 "Chinese labs mostly ship open weights within weeks of a run "
+                 "ending (the 21-day China lag), so US internal against China "
+                 "released is close to like for like.")
 
     # Keep the URL in sync (omit params at their defaults).
     if entity_a == "US best":
@@ -17419,6 +17423,15 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
 _PC_END_YEARS = list(range(2027, 2036))
 
 
+def _pc_internal_pts(names=False):
+    """Anthropic's internal models as (first internal use, ECI[, name]) when
+    Pacing's *Anthropic internal models* toggle is on, else none."""
+    if not st.session_state.get("pc_internal", _PC_DEFAULTS["pc_internal"]):
+        return []
+    return [(m['date'], m['eci_score']) + ((m['display_name'],) if names else ())
+            for m in _eci_internal_models()]
+
+
 def _pc_when_options(today, end=_PC_HORIZON):
     """['Now', 'Sep 2026', …]: month labels for the cut-off date sliders.
 
@@ -20720,11 +20733,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     def _us_date_at(score):
         """When the US line on the chart below reaches `score`: the recorded
         frontier where it covers the score, this panel's own climb beyond
-        it. Read off the same line the chart draws, so "months behind" and
-        the picture agree."""
-        if score <= us_best[1]:
-            return _ecg_frontier_date_at_score(
-                [(d, sc) for d, sc, _n in us_fr], score)
+        it. Read off the same line the chart draws (releases at their
+        training date, internal models under `pc_internal`), so "months
+        behind" and the picture agree."""
+        pts = sorted([(d - timedelta(days=us_lag_d), sc) for d, sc, _n in us_fr]
+                     + _pc_internal_pts())
+        pts = [p for i, p in enumerate(pts) if all(p[1] > q[1] for q in pts[:i])]
+        if score <= pts[-1][1]:
+            return _ecg_frontier_date_at_score(pts, score)
         if tk is not None:
             # The released US frontier's median Takeoff path.
             med = np.median(tk['paths'], axis=0)
@@ -21027,12 +21043,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # at first internal use, are trained events (off_us). Running max only.
     _us_pts = sorted(
         [(d + off_us_rel, s, _hover(d, s, n)) for d, s, n in us_fr]
-        + ([(m['date'] + off_us, m['eci_score'],
-             f"{m['display_name']}<br>ECI {m['eci_score']:.0f}"
-             f"<br>internal use {m['date']:%b %Y}")
-            for m in _eci_internal_models()]
-           if st.session_state.get("pc_internal", _PC_DEFAULTS["pc_internal"])
-           else []))
+        + [(d + off_us, s, f"{n}<br>ECI {s:.0f}<br>internal use {d:%b %Y}")
+           for d, s, n in _pc_internal_pts(names=True)])
     _us_act = [p for i, p in enumerate(_us_pts)
                if all(p[1] > q[1] for q in _us_pts[:i])]
     fig.add_trace(go.Scatter(
@@ -21637,7 +21649,11 @@ def render_pacing():
             help="Draws Anthropic's internal models (Mythos Preview, Model 2-4) on "
                  "the race chart's US line, at their ECI projected from METR's AECI "
                  "and dated at first internal use, so China's gap reads against "
-                 "them. The US projection starts from them either way.")
+                 "them. The US projection starts from them either way. "
+                 "China has no internal models in the data, and none are left out: "
+                 "Chinese labs mostly ship open weights within weeks of a run "
+                 "ending (the 21-day China lag), so US internal against China "
+                 "released is close to like for like.")
         if st.session_state.get("pc_end_year") not in _PC_END_YEARS:
             st.session_state.pop("pc_end_year", None)
         pc_end_year = st.selectbox(
