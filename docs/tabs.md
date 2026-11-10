@@ -43,6 +43,11 @@ Revenue and Employment arrival tables come from `_arrival_row()`: percentiles ov
 sample, a non-crosser counting as past the window, so a median inside the window does not
 move with *Project through*; under half crossing reads "Beyond range"
 (`TestArrivalIgnoresTheWindow`).
+On Revenue (not backtesting) a milestone above the latest report whose median month is
+already past gets *(implied by trend, not yet reported)* (`_rev_median_past`); the caption
+names OpenAI's TickerTrends tracker line from `_REV_OAI_TRACKER_FROM` and Anthropic's one
+press-reported point, `_REV_ANT_PRESS_POINT`; the doubling table gives full dates and growth
+in percent (`test_sources_and_tables_say_what_they_are`).
 
 ## UK Cyber tab caveats
 

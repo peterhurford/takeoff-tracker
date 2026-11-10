@@ -10075,6 +10075,21 @@ _REV_MILESTONES = [
 ]
 
 
+# Where each US line's sourcing changes class (see the comments in each table).
+_REV_OAI_TRACKER_FROM = datetime(2025, 12, 31)
+_REV_ANT_PRESS_POINT = datetime(2026, 7, 31)
+
+
+def _rev_median_past(median):
+    """True when a milestone's median month ("Oct 2026") is before this one."""
+    try:
+        m = datetime.strptime(median, "%b %Y")
+    except ValueError:
+        return False
+    t = datetime.now()
+    return (m.year, m.month) < (t.year, t.month)
+
+
 def render_revenue():
     st.header("Revenue Projections (ARR)")
     st.warning("Warning: projections assume lines go up indefinitely, which is "
@@ -10509,8 +10524,12 @@ def render_revenue():
                 for val, label in _REV_MILESTONES:
                     if val <= reached:
                         continue
-                    arrival_rows.append(_arrival_row(traj, val, p_dates[0], label,
-                                                     cis=(50, 80)))
+                    row = _arrival_row(traj, val, p_dates[0], label, cis=(50, 80))
+                    # Live, `reached` is the latest report: a median already
+                    # past is the trend's reading, not a reported crossing.
+                    if not _rev_backtesting and _rev_median_past(row["Median"]):
+                        row["Median"] += " (implied by trend, not yet reported)"
+                    arrival_rows.append(row)
                 if arrival_rows:
                     st.markdown(f"**{name}**")
                     st.table(arrival_rows)
@@ -10532,8 +10551,8 @@ def render_revenue():
                         if growth > 1 and days > 0:
                             doubling_days = days * np.log(2) / np.log(growth)
                             rows.append({
-                                "Period": f"{dates[i-1].strftime('%b %Y')} → {dates[i].strftime('%b %Y')}",
-                                "Growth": f"{growth:.1f}x",
+                                "Period": f"{dates[i-1]:%b %d, %Y} → {dates[i]:%b %d, %Y}",
+                                "Growth": f"{growth - 1:+.0%}",
                                 "Doubling Time": f"{doubling_days:.0f} days",
                             })
                 if rows:
@@ -10549,6 +10568,11 @@ def render_revenue():
          "levels are therefore not like-for-like, and no source states either "
          "on the other's basis. Each line's growth rate is unaffected."),
         ("public reports and media sources",
+         f"OpenAI's line from {_REV_OAI_TRACKER_FROM:%b %Y} is TickerTrends' "
+         "alt-data tracker estimate, not a company figure, and can differ from "
+         "press-reported figures. Anthropic's points are company-disclosed, "
+         f"except {_REV_ANT_PRESS_POINT:%b %Y}'s, a press report of an investor "
+         "update. "
          "Anthropic's Dec 2025 figure is averaged from a reported $8\u201310B "
          "range. May 2026 figures from The Information "
          "(theinformation.com/articles/"

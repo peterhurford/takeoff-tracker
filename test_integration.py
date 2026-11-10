@@ -1264,6 +1264,28 @@ class TestRevenueDefaults:
         assert [m.label for m in at.metric][-4:] == [
             "US labs' ARR", "Chinese labs' ARR", "US ÷ China", "China's lag"]
 
+    def test_sources_and_tables_say_what_they_are(self):
+        """The caption names OpenAI's tracker source and Anthropic's
+        disclosures; doubling periods carry full dates and growth in percent;
+        a milestone median already past reads as the trend's, not a report."""
+        at = self._rev_app()
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "TickerTrends" in caps and "company-disclosed" in caps
+        doubling = [t.value for t in at.table if "Doubling Time" in t.value.columns]
+        assert doubling
+        for t in doubling:
+            assert all(re.fullmatch(r"\+\d+%", g) for g in t["Growth"]), list(t["Growth"])
+            assert all(re.search(r"[A-Z][a-z]{2} \d{2}, \d{4} → ", p) for p in t["Period"])
+        now = datetime.now()
+        for t in (t.value for t in at.table if "Milestone" in t.value.columns):
+            for med in t["Median"]:
+                try:
+                    m = datetime.strptime(med.split(" (")[0], "%b %Y")
+                except ValueError:
+                    continue
+                if (m.year, m.month) < (now.year, now.month):
+                    assert med.endswith("(implied by trend, not yet reported)"), med
+
 
 # ===========================================================================
 # Compute vs Capabilities tab
