@@ -41,9 +41,9 @@ PROJ_DISCLAIMER = " These are projections assuming current progress continues, t
 # Trajectories drawn per fan chart. Every tab samples this many paths, and that
 # sampling is most of what a render costs — so the test suite turns it down via
 # _VP_SAMPLES. Nothing the tests assert on depends on the count (the CI defaults
-# they check come from the OLS fits, which are deterministic), and the app is
-# already unseeded, so a smaller sample is only a noisier version of the same
-# picture. Don't lower the default: the band edges are percentiles and get
+# they check come from the OLS fits, which are deterministic), so a smaller
+# seeded sample is only a noisier version of the same picture. Don't lower the
+# default: the band edges are percentiles and get
 # visibly ragged well before 5000.
 N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
 
@@ -2862,32 +2862,24 @@ def _dc_hidden_companies(dcs, now=None):
 
     The exclude list names companies that aren't AI labs — colocation and
     neutral-host operators whose recorded "company" is a landlord rather than
-    whoever trains on the hardware. Hiding them unconditionally was fine only
-    while they were small, and they are not: QTS Cedar Rapids is the single
-    largest site in Epoch's data, so dropping it made "Largest single data
-    center" understate the frontier and name a smaller site as record holder.
-    Size now gates the exclusion — a listed company disappears only while its
-    biggest site stays under _DC_EXCLUDE_MIN_H100.
+    whoever trains on the hardware. Some of them run sites large enough that
+    hiding them would make "Largest single data center" understate the
+    frontier, so size gates the exclusion: a listed company disappears only
+    while its biggest site stays under _DC_EXCLUDE_MIN_H100.
 
     Three things about how the test is framed:
 
     1. **H100-equivalents, always** — never the metric currently selected. The
-       same number in megawatts or dollars means something else entirely, and
-       two of the tab's metrics are inverted (bigger site = smaller value), so a
-       ">= threshold" test would read backwards on them.
+       same number in megawatts, dollars or training runs per window means
+       something else entirely.
     2. **A rolling `_DC_EXCLUDE_HORIZON_DAYS` horizon, not the uncapped peak.**
        Uncapped, every listed company eventually clears 100k on buildout
        announced for 2028 and later, and the exclusion stops meaning anything.
        A year out is the span where the plans are firm enough to chart.
-       The roster now moves as that horizon rolls, and the movement is the
-       catalogue densifying rather than a refresh: Vantage qualified on
-       2026-09-01 on data unchanged from the week before, when its planned
-       154k-H100e TX1 step (2027-08-31) came inside the year. STACK (250k)
-       is next, about six months out. So expect
-       `test_current_roster_is_what_the_tab_says_it_is` to fail roughly
-       whenever a new site's plan crosses the line, and retarget it
-       deliberately — the alternatives are a higher bar or a shorter horizon,
-       and both only postpone the same call.
+       The roster moves as that horizon rolls, on unchanged data, whenever a
+       listed company's planned step comes inside the year, so
+       `test_current_roster_is_what_the_tab_says_it_is` fails then and is
+       retargeted deliberately.
     3. **Not the user's projection window.** dc_end_year caps the *charts*, but
        who appears on the tab is a property of the company, not of a slider —
        a roster that changed with the controls would read as sites blinking in
