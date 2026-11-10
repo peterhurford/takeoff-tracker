@@ -5111,7 +5111,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         fig.add_trace(go.Scatter(
             x=dates_proj, y=y_proj.tolist(),
             mode='lines', line=dict(color='#2980b9', width=2.5),
-            name=f'Projection (DPP={_eci_user_dpp:.0f}d, CI {eci_superexp_dpp_ci_lo:.0f}\u2013{eci_superexp_dpp_ci_hi:.0f}d)',
+            name=(f'Projection ({_eci_user_dpp:.0f} days per point, CI '
+                  f'{eci_superexp_dpp_ci_lo:.0f}\u2013{eci_superexp_dpp_ci_hi:.0f})'),
             hovertext=hover_proj, hoverinfo='text',
         ))
 
@@ -5464,59 +5465,60 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             eci_milestone_thresholds + list(extra_table_milestones),
             key=lambda x: x[0])
 
-    with st.expander("Milestone details"):
-        tcol1, tcol2 = st.columns(2)
+    if eci_milestone_thresholds:
+        with st.expander("Milestone details"):
+            tcol1, tcol2 = st.columns(2)
 
-        with tcol1:
-            st.markdown("**Probabilities**")
-            rows = []
-            for score_threshold, ms_label in eci_milestone_thresholds:
-                row = {"Milestone": ms_label}
-                for eoy_label, target_date in eoy_targets:
-                    elapsed = (target_date - eci_current['date']).days
-                    proj_scores = _proj_score_at(
-                        elapsed, eci_start_samples, eci_proj_dpp,
-                        eci_is_superexp, eci_superexp_halflife,
-                        eci_superexp_dpp_floor if eci_is_superexp else None)
-                    prob = np.mean(proj_scores >= score_threshold) * 100
-                    row[eoy_label] = f"{prob:.0f}%"
-                rows.append(row)
-            st.table(rows)
+            with tcol1:
+                st.markdown("**Probabilities**")
+                rows = []
+                for score_threshold, ms_label in eci_milestone_thresholds:
+                    row = {"Milestone": ms_label}
+                    for eoy_label, target_date in eoy_targets:
+                        elapsed = (target_date - eci_current['date']).days
+                        proj_scores = _proj_score_at(
+                            elapsed, eci_start_samples, eci_proj_dpp,
+                            eci_is_superexp, eci_superexp_halflife,
+                            eci_superexp_dpp_floor if eci_is_superexp else None)
+                        prob = np.mean(proj_scores >= score_threshold) * 100
+                        row[eoy_label] = f"{prob:.0f}%"
+                    rows.append(row)
+                st.table(rows)
 
-        with tcol2:
-            st.markdown("**Estimated arrival**")
-            arrival_rows = []
-            for score_threshold, ms_label in eci_milestone_thresholds:
-                pts_needed = score_threshold - eci_start_samples
-                if eci_is_superexp and eci_superexp_halflife is not None:
-                    dpp_floor = eci_superexp_dpp_floor
-                    t_cap = np.where(eci_proj_dpp > dpp_floor,
-                                     eci_superexp_halflife * np.log2(eci_proj_dpp / dpp_floor), 0.0)
-                    pts_at_cap = (eci_superexp_halflife / (eci_proj_dpp * np.log(2))) * (2**(t_cap / eci_superexp_halflife) - 1)
-                    # If needed points fit in superexp phase
-                    arg = 1 + pts_needed * eci_proj_dpp * np.log(2) / eci_superexp_halflife
-                    arg = np.maximum(arg, 1e-10)
-                    days_se_only = eci_superexp_halflife * np.log2(arg)
-                    # If not, use cap + linear remainder
-                    leftover = np.maximum(pts_needed - pts_at_cap, 0)
-                    days_with_floor = t_cap + leftover * dpp_floor
-                    days_to = np.where(pts_needed <= pts_at_cap, days_se_only, days_with_floor)
-                else:
-                    days_to = pts_needed * eci_proj_dpp
-                # Filter out negative/zero days (already past milestone)
-                days_to = np.maximum(days_to, 0)
-                if score_threshold <= eci_current_score:
-                    days_to = np.zeros_like(days_to)   # already measured
-                p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
-                med_date = eci_current['date'] + timedelta(days=max(p50_d, 0))
-                early_date = eci_current['date'] + timedelta(days=max(p10_d, 0))
-                late_date = eci_current['date'] + timedelta(days=max(p90_d, 0))
-                arrival_rows.append({
-                    "Milestone": ms_label,
-                    "Median": med_date.strftime('%b %Y'),
-                    "80% CI": f"{early_date.strftime('%b %Y')} \u2013 {late_date.strftime('%b %Y')}",
-                })
-            st.table(arrival_rows)
+            with tcol2:
+                st.markdown("**Estimated arrival**")
+                arrival_rows = []
+                for score_threshold, ms_label in eci_milestone_thresholds:
+                    pts_needed = score_threshold - eci_start_samples
+                    if eci_is_superexp and eci_superexp_halflife is not None:
+                        dpp_floor = eci_superexp_dpp_floor
+                        t_cap = np.where(eci_proj_dpp > dpp_floor,
+                                         eci_superexp_halflife * np.log2(eci_proj_dpp / dpp_floor), 0.0)
+                        pts_at_cap = (eci_superexp_halflife / (eci_proj_dpp * np.log(2))) * (2**(t_cap / eci_superexp_halflife) - 1)
+                        # If needed points fit in superexp phase
+                        arg = 1 + pts_needed * eci_proj_dpp * np.log(2) / eci_superexp_halflife
+                        arg = np.maximum(arg, 1e-10)
+                        days_se_only = eci_superexp_halflife * np.log2(arg)
+                        # If not, use cap + linear remainder
+                        leftover = np.maximum(pts_needed - pts_at_cap, 0)
+                        days_with_floor = t_cap + leftover * dpp_floor
+                        days_to = np.where(pts_needed <= pts_at_cap, days_se_only, days_with_floor)
+                    else:
+                        days_to = pts_needed * eci_proj_dpp
+                    # Filter out negative/zero days (already past milestone)
+                    days_to = np.maximum(days_to, 0)
+                    if score_threshold <= eci_current_score:
+                        days_to = np.zeros_like(days_to)   # already measured
+                    p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
+                    med_date = eci_current['date'] + timedelta(days=max(p50_d, 0))
+                    early_date = eci_current['date'] + timedelta(days=max(p10_d, 0))
+                    late_date = eci_current['date'] + timedelta(days=max(p90_d, 0))
+                    arrival_rows.append({
+                        "Milestone": ms_label,
+                        "Median": med_date.strftime('%b %Y'),
+                        "80% CI": f"{early_date.strftime('%b %Y')} \u2013 {late_date.strftime('%b %Y')}",
+                    })
+                st.table(arrival_rows)
 
     _fn_caption(
         "ECI = Epoch Capabilities Index. +Pts/Yr = ECI points gained per year. "
@@ -5584,11 +5586,16 @@ _ECI_ENTITY_OPTIONS = list(_ECI_ENTITY_SPECS.keys())
 _ECI_FRONTIER_LABEL = "Frontier (any lab)"
 _ECI_NONE_LABEL = "—"  # em-dash: "no comparison" for the second dropdown
 
-# Absolute milestone lines shown for the default US-best frontier.
-_ECI_US_MILESTONES = [
-    (155, "ECI 155", '#888888'), (160, "ECI 160", '#666666'),
-    (165, "ECI 165", '#c0392b'), (170, "ECI 170", '#8e44ad'),
-]
+# Milestone lines for the default US-best frontier: the next round scores
+# above its record, so none is already passed.
+_ECI_MILESTONE_STEP = 5
+_ECI_MILESTONE_COLORS = ('#888888', '#666666', '#c0392b', '#8e44ad')
+
+
+def _eci_next_milestones(record, step=_ECI_MILESTONE_STEP, colors=_ECI_MILESTONE_COLORS):
+    """[(score, label, color)] for the len(colors) multiples of `step` above `record`."""
+    first = (int(record // step) + 1) * step
+    return [(first + i * step, f"ECI {first + i * step}", c) for i, c in enumerate(colors)]
 
 # Deep-link slugs for ?a= / ?b= URL params, derived from the registry above.
 _ECI_ENTITY_SLUG = {
@@ -5847,7 +5854,12 @@ def render_eci():
 
 
 def _render_eci_views(entity_a, entity_b):
-    st.subheader("Projection")
+    _tab_intro(
+        "Epoch ECI",
+        "**How capable is the best AI model, on one scale?** Epoch's Capabilities "
+        "Index (ECI) combines many benchmarks into a single score, so models tested "
+        "on different benchmarks can be compared. Each point is a new best score; "
+        "the fan shows where the frontier goes if the fitted trend continues.")
     if entity_b not in (_ECI_NONE_LABEL, entity_a) and _eci_same_frontier(entity_a, entity_b):
         st.info(f"{entity_a} and {entity_b} have the same frontier: every model that "
                 f"set one set the other, so there is no gap to chart. Showing "
@@ -5872,8 +5884,9 @@ def _render_eci_projection(entity_a, entity_b):
         if len(s_fr) < 2:
             st.warning(f"Not enough {_a_name} models on the ECI frontier to project.")
             return
-        # The ECI 155-170 thresholds go in the milestone table only, not as chart lines.
-        milestones = ([(s, l) for s, l, _c in _ECI_US_MILESTONES]
+        # The next round scores go in the milestone table only, not as chart lines.
+        milestones = ([(s, l) for s, l, _c in
+                       _eci_next_milestones(max(m['eci_score'] for m in s_fr))]
                       if entity_a == "US best" else None)
         return _render_eci_tab(
             s_all, s_fr, s_names, "eci",

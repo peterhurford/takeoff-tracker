@@ -34,7 +34,9 @@ gives what a session opened there gives (`TestAsOfRederivesCi`).
 
 Their frontiers are running maxima, so readings floor at the newest record, a milestone it
 passed reads 100% and arrives at its date, and the record's own card says "measured" with no
-CI (`TestMeasuredCard`, `TestRliMilestones`).
+CI (`TestMeasuredCard`, `TestRliMilestones`). ECI's US-best milestone lines are generated,
+the next four multiples of 5 above the record (`_eci_next_milestones`), and a view with no
+milestone lines shows no "Milestone details" expander (`TestEciExplains`).
 
 Revenue and Employment arrival tables come from `_arrival_row()`: percentiles over every
 sample, a non-crosser counting as past the window, so a median inside the window does not

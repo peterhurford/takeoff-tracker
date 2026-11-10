@@ -827,6 +827,47 @@ class TestMetrExplains:
         assert vp._metr_card_hrs(17.4) == "17h24m"
 
 
+class TestEciExplains:
+    def test_title_lead_and_milestones_ahead_of_the_record(self):
+        """The tab opens on its label and a lead; the US-best milestones are
+        the next round scores above the record, none already passed."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.run()
+        _assert_no_error(at, "eci")
+        assert "Epoch ECI" in [h.value for h in at.header]
+        assert any(m.value.startswith("**How capable is the best AI model, on one scale?**")
+                   for m in at.markdown)
+        record = float(at.metric[0].value)
+        probs = next(t.value for t in at.table if "Median" not in t.value.columns)
+        scores = [float(ms.split()[-1]) for ms in probs["Milestone"]]
+        step = vp._ECI_MILESTONE_STEP
+        assert scores[0] > record >= scores[0] - step
+        assert len(scores) == 4 and all(b - a == step for a, b in zip(scores, scores[1:]))
+
+    def test_no_empty_milestone_tables(self):
+        """An entity with no milestone lines shows no milestone expander."""
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.query_params["a"] = "china"
+        at.run()
+        _assert_no_error(at, "eci")
+        assert "Milestone details" not in [e.label for e in at.expander]
+        assert not at.table
+
+    def test_superexp_legend_says_days_per_point(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.run()
+        at.radio(key="eci_proj_basis").set_value("Superexponential").run()
+        _assert_no_error(at, "eci")
+        names = [t.get("name", "") for c in at.get("plotly_chart")
+                 for t in json.loads(c.proto.spec)["data"]]
+        assert any("days per point" in n for n in names)
+        assert not any("DPP=" in n for n in names)
+
+
 class TestMeasuredCard:
     @pytest.mark.parametrize("tab", ["metr", "eci", "rli"])
     def test_measured_card_shows_no_ci(self, tab):
@@ -841,11 +882,17 @@ class TestMeasuredCard:
 
     def test_eci_measured_milestone_reads_as_reached(self):
         """A milestone at or below the record reads 100% at every date and
-        arrives at the record's date (RLI: `TestRliMilestones`)."""
+        arrives at the record's date (RLI: `TestRliMilestones`). The US-best
+        milestones all sit above the record, so a US lead over China's best
+        supplies the passed one."""
         at = _fresh_app()
         at.query_params["tab"] = "eci"
+        at.query_params["a"] = "china"
+        at.query_params["b"] = "us"
         at.run()
-        record = float(at.metric[0].value)
+        _assert_no_error(at, "eci")
+        import visualize_projection as vp
+        record = max(m['eci_score'] for m in vp._eci_entity_data("US best")[1])
         tables = [t.value for t in at.table]
         probs = next(t for t in tables if "Milestone" in t.columns and "Median" not in t.columns)
         arrive = next(t for t in tables if "Median" in t.columns)
