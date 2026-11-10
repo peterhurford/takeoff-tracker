@@ -720,7 +720,6 @@ class TestEmploymentDefaults:
         assert 3.0 <= dt_hi / dt_lo <= 5.0, \
             f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
 
-
     def test_cards_are_dated_after_today(self):
         """Projection cards come from today: no past June card repeating
         today's value, and the year-end cards are named by their year."""
@@ -753,6 +752,25 @@ class TestEmploymentSliderChanges:
             at.radio(key="emp_display_mode").set_value(mode).run()
         at.slider(key=key).set_value(value).run()
         _assert_no_error(at, f"Employment / {mode} / {key}={value}")
+
+
+class TestCiLowAboveHigh:
+    """A CI input pair with low above high stops the tab with an error naming
+    the pair, rather than raising inside the sampler."""
+
+    @pytest.mark.parametrize("tab,lo_key,hi_key,lo,hi", [
+        ("employment", "emp_jevons_lo", "emp_jevons_hi", 60.0, 20.0),
+        ("employment", "emp_lag_lo", "emp_lag_hi", 900.0, 300.0),
+        ("employment", "emp_base_unemp_lo", "emp_base_unemp_hi", 8.0, 3.0),
+    ])
+    def test_errors_not_raises(self, tab, lo_key, hi_key, lo, hi):
+        at = _fresh_app()
+        at.query_params["tab"] = tab
+        at.run()
+        at.number_input(key=hi_key).set_value(hi).run()
+        at.number_input(key=lo_key).set_value(lo).run()
+        _assert_no_error(at, f"{tab} / {lo_key} > {hi_key}")
+        assert any("CI low must be" in e.value for e in at.error)
 
 
 class TestEmploymentDisplayModes:

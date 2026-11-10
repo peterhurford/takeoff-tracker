@@ -11022,6 +11022,12 @@ def render_employment():
             emp_lag_hi = _ss_number_input(_emp_lag_c2,
                 "Lag CI high (days)", "emp_lag_hi", 730.0,
                 min_value=0.0, max_value=1460.0, step=30.0)
+            for _ci_name, _ci_lo, _ci_hi in (("Base unemp", emp_base_unemp_lo, emp_base_unemp_hi),
+                                             ("Jevons", emp_jevons_lo, emp_jevons_hi),
+                                             ("Lag", emp_lag_lo, emp_lag_hi)):
+                if _ci_lo > _ci_hi:
+                    st.error(f"{_ci_name} CI low must be ≤ {_ci_name} CI high.")
+                    st.stop()
 
         st.markdown("---")
         with st.expander("Projection range"):
