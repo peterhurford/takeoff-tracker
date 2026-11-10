@@ -970,6 +970,22 @@ class TestEmploymentDefaults:
         if datetime.now() > datetime(y, 6, 30):
             assert f"End of Jun {y}" not in labels
 
+    def test_today_card_and_errors_say_what_they_are(self):
+        """Today's card says its excess over the base rate is the model's
+        implied displacement; a reversed odds-doubling CI is named as such;
+        percent sliders say percent."""
+        at = _emp_app()
+        today = next(m for m in at.metric if m.label == "Today")
+        base = at.slider(key="emp_base_unemployment").value
+        val = float(str(today.value).rstrip("%"))
+        assert f"On a {base:.1f}% base rate" in today.proto.help
+        assert f"about {val - base:.1f} points" in today.proto.help
+        assert "implied displacement" in today.proto.help
+        assert at.slider(key="emp_rli_coverage").proto.help.startswith("Percent")
+        at.number_input(key="emp_custom_dt_lo").set_value(1500.0)
+        at.number_input(key="emp_custom_dt_hi").set_value(100.0).run()
+        assert any("Odds 2x time CI low" in str(e.value) for e in at.error)
+
 
 class TestEmploymentSliderChanges:
     """The economic model renders at the ends of its sliders, in both

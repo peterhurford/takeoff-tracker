@@ -10926,6 +10926,10 @@ _EMP_DEFAULTS = {
 }
 
 
+_EMP_TODAY_HELP = ("Today's figure is the model's implied displacement from "
+                   "today's RLI score and the sliders, not a measured one.")
+
+
 def render_employment():
     if st.session_state.pop("_reset_emp", False):
         for k in _EMP_RESET_KEYS:
@@ -11032,7 +11036,7 @@ def render_employment():
                     "Odds 2x time CI high (days)", "emp_custom_dt_hi", _emp_default_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if emp_custom_dt_lo > emp_custom_dt_hi:
-                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.error("Odds 2x time CI low must be ≤ CI high.")
                     st.stop()
 
                 _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
@@ -11090,7 +11094,7 @@ def render_employment():
                     "Odds 2x CI high (days)", "emp_superexp_dt_ci_hi", _emp_default_se_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if emp_superexp_dt_ci_lo > emp_superexp_dt_ci_hi:
-                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.error("Odds 2x CI low must be ≤ CI high.")
                     st.stop()
                 _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
                 _emp_def_score = _emp_cur['rli_score']
@@ -11109,13 +11113,13 @@ def render_employment():
                   on_click=lambda: st.session_state.update(_reset_emp=True))
         emp_rli_coverage = st.slider("RLI Coverage of Remote/Digital Work (%)",
                                       0.0, 100.0, key="emp_rli_coverage",
-                                      help="Fraction of remote/digital task-hours the RLI benchmark represents.")
+                                      help="Percent of remote/digital task-hours the RLI benchmark represents.")
         emp_supervision = st.slider("AI Supervision Overhead (%)",
                                      0.0, 50.0, key="emp_supervision_overhead",
                                      help="New overhead for human QA/supervision of AI outputs.")
         emp_remote_share = st.slider("Remote/Digital Share of US Jobs (%)",
                                       0.0, 100.0, key="emp_remote_digital_share",
-                                      help="Fraction of all US jobs that are remote/digital.")
+                                      help="Percent of all US jobs that are remote/digital.")
         emp_base_unemp = st.slider("Base Unemployment Rate (%)",
                                     0.0, 15.0, key="emp_base_unemployment",
                                     help="Baseline unemployment rate before AI displacement.")
@@ -11537,11 +11541,15 @@ def render_employment():
                 if _is_jobs_mode:
                     _jobs_samples = jobs_above_baseline[:, _t_idx]
                     p10_j, p50_j, p90_j = np.percentile(_jobs_samples, [10, 50, 90])
-                    st.metric(label=label, value=_fmt_jobs(p50_j))
+                    st.metric(label=label, value=_fmt_jobs(p50_j),
+                              help=(_EMP_TODAY_HELP if label == "Today" else None))
                     st.caption(f"80% CI: {_fmt_jobs(p10_j)} – {_fmt_jobs(p90_j)}\nRLI: {p50_r:.1f}%")
                 else:
                     p10_u, p50_u, p90_u = np.percentile(unemp_samples, [10, 50, 90])
-                    st.metric(label=label, value=f"{p50_u:.1f}%")
+                    st.metric(label=label, value=f"{p50_u:.1f}%", help=(
+                        f"On a {emp_base_unemp:.1f}% base rate, so the model puts AI "
+                        f"displacement so far at about {p50_u - emp_base_unemp:.1f} "
+                        "points. " + _EMP_TODAY_HELP if label == "Today" else None))
                     st.caption(f"80% CI: {p10_u:.1f}% – {p90_u:.1f}%\nRLI: {p50_r:.1f}%")
 
     # ── Model breakdown at a reference date ──────────────────────────────
