@@ -762,6 +762,8 @@ class TestCiLowAboveHigh:
         ("employment", "emp_jevons_lo", "emp_jevons_hi", 60.0, 20.0),
         ("employment", "emp_lag_lo", "emp_lag_hi", 900.0, 300.0),
         ("employment", "emp_base_unemp_lo", "emp_base_unemp_hi", 8.0, 3.0),
+        ("revenue", "oai_dt_lo", "oai_dt_hi", 400.0, 200.0),
+        ("revenue", "ant_dt_lo", "ant_dt_hi", 400.0, 200.0),
     ])
     def test_errors_not_raises(self, tab, lo_key, hi_key, lo, hi):
         at = _fresh_app()

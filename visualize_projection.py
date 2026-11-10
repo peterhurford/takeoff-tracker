@@ -10093,6 +10093,13 @@ def render_revenue():
                 else:
                     st.caption("Need ≥3 data points to project")
 
+    _rev_cis = ([(oai_dt_lo, oai_dt_hi)] if oai_can_project else []) + \
+               ([(ant_dt_lo, ant_dt_hi)] if ant_can_project else []) + [(comb_dt_lo, comb_dt_hi)]
+    for _ci_lo, _ci_hi in _rev_cis:
+        if _ci_lo is not None and _ci_hi is not None and _ci_lo > _ci_hi:
+            st.error("DT CI low must be ≤ DT CI high.")
+            st.stop()
+
     proj_end = _proj_end(rev_end_year, max(
         [d[-1] for d in (oai_dates_fit, ant_dates_fit) if len(d)] or [datetime.now()]))
 
