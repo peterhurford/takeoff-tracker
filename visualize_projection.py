@@ -5698,10 +5698,13 @@ def _render_eci_projection(entity_a, entity_b):
         if len(s_fr) < 2:
             st.warning(f"Not enough {_a_name} models on the ECI frontier to project.")
             return
-        milestones = _ECI_US_MILESTONES if entity_a == "US best" else []
+        # The ECI 155-170 thresholds go in the milestone table only, not as chart lines.
+        milestones = ([(s, l) for s, l, _c in _ECI_US_MILESTONES]
+                      if entity_a == "US best" else None)
         return _render_eci_tab(
             s_all, s_fr, s_names, "eci",
-            f"{_a_name} ECI Projection", milestones,
+            f"{_a_name} ECI Projection", [],
+            extra_table_milestones=milestones,
             named_break=entity_a in _ECI_NAMED_BREAK_ENTITIES)
 
     # Comparison view: project the subject (B), overlay the benchmark (A) trend.
