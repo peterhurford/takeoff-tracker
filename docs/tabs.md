@@ -36,7 +36,8 @@ Their frontiers are running maxima, so readings floor at the newest record, a mi
 passed reads 100% and arrives at its date, and the record's own card says "measured" with no
 CI (`TestMeasuredCard`, `TestRliMilestones`). ECI's US-best milestone lines are generated,
 the next four multiples of 5 above the record (`_eci_next_milestones`), and a view with no
-milestone lines shows no "Milestone details" expander (`TestEciExplains`).
+milestone lines shows no "Milestone details" expander (`TestEciExplains`). RLI's are the next
+four of `_RLI_MILESTONE_LEVELS` above the record (`test_milestones_are_the_next_round_levels`).
 
 Revenue and Employment arrival tables come from `_arrival_row()`: percentiles over every
 sample, a non-crosser counting as past the window, so a median inside the window does not

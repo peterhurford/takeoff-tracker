@@ -734,6 +734,34 @@ class TestRliMilestones:
                 assert all(v == "100%" for v in list(row)[1:]), row
                 assert arrive.iloc[i]["Median"] == record['date'].strftime('%b %Y')
 
+    def test_milestones_are_the_next_round_levels(self):
+        """The milestone lines lie ahead of the record, at most four of them."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "rli"
+        at.run()
+        _assert_no_error(at, "RLI tab")
+        record = vp.rli_frontier_all[-1]['rli_score']
+        probs = next(t.value for t in at.table if "Median" not in t.value.columns)
+        pcts = [float(m.split()[1].rstrip("%")) for m in probs["Milestone"]]
+        ahead = [v for v in vp._RLI_MILESTONE_LEVELS if v > record]
+        assert pcts == ahead[:4] and min(pcts) > record
+
+
+class TestRliExplains:
+    def test_title_lead_and_error_name_the_control(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "rli"
+        at.run()
+        _assert_no_error(at, "rli")
+        assert "Remote Labor Index" in [h.value for h in at.header]
+        assert any(m.value.startswith("**How much paid remote work can AI already do?**")
+                   for m in at.markdown)
+        at.number_input(key="rli_custom_dt_lo").set_value(1000.0)
+        at.number_input(key="rli_custom_dt_hi").set_value(100.0)
+        at.run()
+        assert [e.value for e in at.error] == ["Odds 2x time CI low must be ≤ CI high."]
+
 
 class TestNormalTrendLegend:
     @pytest.mark.parametrize("tab,p", [("metr", ""), ("rli", "rli_")])

@@ -5944,6 +5944,17 @@ def _render_eci_projection(entity_a, entity_b):
 
 # ── Remote Labor Index ───────────────────────────────────────────────────
 
+# Round RLI scores (%); the milestone lines are the next four above the record.
+_RLI_MILESTONE_LEVELS = (5, 10, 25, 50, 75, 90, 95, 99)
+_RLI_MILESTONE_COLORS = ('#888888', '#666666', '#c0392b', '#8e44ad')
+
+
+def _rli_next_milestones(record):
+    """[(score, label, color)] for the round levels above `record`, at most four."""
+    ahead = [v for v in _RLI_MILESTONE_LEVELS if v > record]
+    return [(v, f"RLI {v}%", c) for v, c in zip(ahead, _RLI_MILESTONE_COLORS)]
+
+
 _RLI_RESET_KEYS = [
     "rli_custom_dt_lo", "rli_custom_dt_hi",
     "rli_custom_pos_lo", "rli_custom_pos_hi",
@@ -6089,7 +6100,7 @@ def render_rli():
                     min_value=5.0, max_value=5000.0, step=5.0,
                     help="Slow scenario: days for odds to double.")
                 if rli_custom_dt_lo > rli_custom_dt_hi:
-                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.error("Odds 2x time CI low must be ≤ CI high.")
                     st.stop()
 
                 # Position CI in percentage points: an 80% interval for where
@@ -6157,7 +6168,7 @@ def render_rli():
                     "Odds 2x CI high (days)", "rli_superexp_dt_ci_hi", _rli_default_se_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if rli_superexp_dt_ci_lo > rli_superexp_dt_ci_hi:
-                    st.error("DT CI low must be ≤ DT CI high.")
+                    st.error("Odds 2x CI low must be ≤ CI high.")
                     st.stop()
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
@@ -6435,15 +6446,11 @@ def render_rli():
         ))
 
     # --- Milestone hlines ---
+    _rli_milestones = _rli_next_milestones(rli_frontier_all[-1]['rli_score'])
     if rli_show_milestones:
         x_lo = rli_all[0]['date'] - timedelta(days=30)
         x_hi = proj_end_date
-        for score_val, label, color in [
-            (5,  "RLI 5%",  '#888888'),
-            (10, "RLI 10%", '#666666'),
-            (25, "RLI 25%", '#c0392b'),
-            (50, "RLI 50%", '#8e44ad'),
-        ]:
+        for score_val, label, color in _rli_milestones:
             fig.add_trace(go.Scatter(
                 x=[x_lo, x_hi], y=[score_val, score_val],
                 mode='lines', line=dict(color=color, width=1.2, dash='dot'),
@@ -6586,6 +6593,12 @@ def render_rli():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
+    _tab_intro(
+        "Remote Labor Index",
+        "**How much paid remote work can AI already do?** The Remote Labor Index "
+        "scores the share of real freelance projects an AI completes to a standard "
+        "a client would accept. Scores are fitted in log-odds, so the trend slows "
+        "as it nears 100%.")
     st.plotly_chart(_tf(fig), width="stretch")
     if rli_is_backtesting and rli_backtest_results:
         _backtest_summary(rli_backtest_results)
@@ -6635,12 +6648,7 @@ def render_rli():
                        else f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
 
     # Milestone tables
-    rli_milestone_thresholds = [
-        (5,  "RLI 5%"),
-        (10, "RLI 10%"),
-        (25, "RLI 25%"),
-        (50, "RLI 50%"),
-    ]
+    rli_milestone_thresholds = [(s, l) for s, l, _c in _rli_milestones]
 
     with st.expander("Milestone details"):
         tcol1, tcol2 = st.columns(2)
