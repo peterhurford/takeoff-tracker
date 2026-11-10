@@ -3259,6 +3259,18 @@ class TestPacingTab:
             race = next(t for t in titles if t.startswith("First \u2265"))
             assert race.startswith(f"First \u2265{us} log OP"), (us, race)
 
+    def test_domestic_only_never_reads_above_china_accessible(self):
+        """Domestic-only China is the accessible paths less the compute the
+        sites abroad bought, so it can't read higher, even today."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        _assert_no_error(at, "Pacing default")
+        t = next(el.value for el in at.table if "Frontier ECI" in el.value.columns)
+        eci = {r[t.columns[0]]: float(r["Frontier ECI"].split()[0].lstrip("~"))
+               for _, r in t.iterrows()}
+        assert eci["China (domestic only)"] <= eci["China-accessible"], eci
+
     def test_state_of_play_describes_both_sides_at_the_pause(self):
         """The panel opens with what each side has when the music stops:
         the US ahead of China on compute and on capability, China's lag in

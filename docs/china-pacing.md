@@ -352,7 +352,9 @@ China domestic-only) of each side's
 largest training run, frontier ECI (US = the sim's bar, China = its own sampled
 paths at that date, the domestic row those paths less the compute the sites
 abroad bought — `chan['compute'] - chan['compute_domestic']`, the same shadow term
-the breakdown prices, so the two Chinese rows cannot disagree), the ECI→METR
+the breakdown prices, so the two Chinese rows cannot disagree; floored at 0, since before
+today plus the ship lag the channel runs back negative,
+`test_domestic_only_never_reads_above_china_accessible`), the ECI→METR
 p50/p80 horizons (capped at `_PC_METR_CAP_HRS`,
 past which the bridge reads in centuries) and China's lag in months, taken off the
 same US line the chart draws. It renders **before** the crossing bail, so a

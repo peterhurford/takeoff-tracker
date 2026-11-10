@@ -20959,9 +20959,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # Domestic-only China is the same sampled paths with the compute the
     # sites abroad bought subtracted — the shadow term the breakdown below
     # prices — so the two Chinese rows can never disagree with each other.
+    # Before today plus the ship lag the compute channel runs back negative,
+    # so the abroad part is floored at 0 rather than added back.
     if 'compute_domestic' in chan:
         dom_pause_s = _pc_at_years(
-            traj0 - (chan['compute'] - chan['compute_domestic']),
+            traj0 - np.maximum(chan['compute'] - chan['compute_domestic'], 0.0),
             grid0, t_pause_s)
         state_rows.append(_state_row(_DC_CTY_CN_DOMESTIC, dom_pause_s,
                                      _behind_us(dom_pause_s)))
