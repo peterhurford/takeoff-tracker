@@ -1414,6 +1414,67 @@ class TestComputeVsCapabilities:
 # UK Cyber (AISI narrow cyber tasks)
 # ===========================================================================
 
+class TestCcExplains:
+    """The China tab states its question, defines its units, and its prose
+    reads the numbers it describes."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "china"
+        at.run()
+        _assert_no_error(at, "China")
+        return at
+
+    def test_lead_and_glossary(self):
+        import visualize_projection as vp
+        at = self._app()
+        assert at.header[0].value == "China"
+        assert vp._CC_LEAD in [m.value for m in at.markdown]
+        caps = " ".join(str(c.value) for c in at.caption)
+        for term in ("H100-equivalents", "Capabilities Index",
+                     "a factor of 10", "+1 is ten times more compute"):
+            assert term in caps, term
+        assert "deep-ultraviolet" in " ".join(str(m.value) for m in at.markdown)
+
+    def test_gap_cards_share_one_months_conversion(self):
+        at = self._app()
+        cards = {m.label: m for m in at.metric}
+        today = cards["ECI gap today"]
+        end = next(m for k, m in cards.items() if k.startswith("ECI gap end-"))
+        rate = re.search(r"climb, ([\d.]+) ECI a year", today.proto.help).group(1)
+        assert f"climb, {rate} ECI a year" in end.proto.help
+        for m in (today, end):
+            pts = float(re.search(r"([\d.]+) pts", m.value).group(1))
+            months = float(re.search(r"~(-?\d+) mo", m.proto.delta).group(1))
+            assert abs(months - pts / float(rate) * 12) <= 0.6 + 12 / float(rate)
+
+    def test_prose_reads_the_live_fits(self):
+        import visualize_projection as vp
+        at = self._app()
+        text = " ".join(str(m.value) for m in at.markdown)
+        caps = " ".join(str(c.value) for c in at.caption)
+        margin = vp._cc_tight_fg(vp.load_eci_compute(mtime=vp._eci_mtime()))[1]
+        assert f"up to the ±{margin:g} near-frontier refit" in text
+        assert "Chart-A" not in caps and "widens only slowly" not in caps
+        assert re.search(r"the gap (keeps widening|narrows|holds roughly steady)", caps)
+        assert "about half or about twice" not in text
+        assert "the share could be anywhere from about" in text
+
+    def test_eci_projections_say_projected(self):
+        at = self._app()
+        names, ann = [], []
+        for c in at.get("plotly_chart"):
+            spec = json.loads(c.proto.spec)
+            names += [t.get("name") for t in spec["data"]]
+            texts = [a.get("text", "") for a in spec["layout"].get("annotations", [])]
+            if spec["layout"].get("yaxis", {}).get("title", {}).get("text") == "Frontier ECI score":
+                ann.append(texts)
+        assert ann and all("projected →" in t and
+                           "planned / under construction →" not in t for t in ann)
+        assert "China estimate, 2026 (IFP)" in names
+        assert "China actual, 2026 (IFP)" not in names
+
+
 class TestCcDuvCeilingTab:
     """The CTS lithography ceiling, last section of the CC tab."""
 

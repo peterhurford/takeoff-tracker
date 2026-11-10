@@ -12870,8 +12870,10 @@ def _dc_layout(log_scale, y_title, x_start, x_end, y_range=None,
     )
 
 
-def _dc_add_projection_band(fig, today, x_end):
-    """Shade the post-today region and draw a labelled 'Today' divider."""
+def _dc_add_projection_band(fig, today, x_end,
+                            label='planned / under construction \u2192'):
+    """Shade the post-today region and draw a labelled 'Today' divider; `label`
+    names what lies past it (a buildout plan, or a projection)."""
     fig.add_vrect(x0=today, x1=x_end, fillcolor='rgba(120,120,120,0.08)',
                   line_width=0, layer='below')
     fig.add_vline(x=today, line=dict(color='#999999', width=1.5, dash='dot'))
@@ -12880,9 +12882,12 @@ def _dc_add_projection_band(fig, today, x_end):
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#777777'))
     fig.add_annotation(x=x_end, yref='paper', y=1.0,
-                       text='planned / under construction →',
+                       text=label,
                        showarrow=False, xanchor='right', yanchor='bottom',
                        font=dict(size=10, color='#999999'))
+
+
+_CC_PROJECTED = 'projected \u2192'
 
 
 def _dc_fan_bands(fig, grid, traj, color, name, legendgroup):
@@ -14170,6 +14175,18 @@ def _cc_cn_pace_band(cn_fr, r_central):
     return 0.85, 1.15, None
 
 
+def _cc_tight_fg(cc_rows, eci_all=None):
+    """(fit, margin): the frontier-grade refit at margin 3 when it has the rows
+    to fit, else at the default margin; fit is None when neither fits.
+    `eci_all` defaults to the full-window frontier."""
+    if eci_all is None:
+        eci_all = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
+    fg = _cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
+    if fg:
+        return fg, 3.0
+    return _cc_frontier_grade_algo(cc_rows, eci_all), _cc_frontier_grade_algo.__defaults__[0]
+
+
 def _cc_innovation_algo_band(cc_rows, eci_all=None):
     """(lo, hi) ECI/yr for algorithmic progress with no stronger teacher.
 
@@ -14190,9 +14207,7 @@ def _cc_innovation_algo_band(cc_rows, eci_all=None):
     hi = float(top['slope'])
     if eci_all is None:
         eci_all = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
-    # Margin 3 when it has the rows to fit, else the default margin.
-    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    fg = _cc_tight_fg(cc_rows, eci_all)[0]
     a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     if fg:
@@ -14212,9 +14227,7 @@ def _cc_pure_innovation_band(cc_rows, eci_all=None):
         return None
     if eci_all is None:
         eci_all = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
-    # Margin 3 when it has the rows to fit, else the default margin.
-    fg = (_cc_frontier_grade_algo(cc_rows, eci_all, margin=3.0)
-          or _cc_frontier_grade_algo(cc_rows, eci_all))
+    fg = _cc_tight_fg(cc_rows, eci_all)[0]
     a_ref = fg['a_partial'] if fg else dec['a_partial']
     lo = _CC_PRETRAIN_ALGO_OOM * a_ref
     hi = band[0]
@@ -14371,7 +14384,7 @@ def _cc_eci_forecast(cc_rows, frontier, today, obs_slope, g_recent, g_planned,
     base = '#6A3D9A'
     r, g, b = int(base[1:3], 16), int(base[3:5], 16), int(base[5:7], 16)
     fig = go.Figure()
-    _dc_add_projection_band(fig, today, horizon)
+    _dc_add_projection_band(fig, today, horizon, label=_CC_PROJECTED)
 
     # Decompose the median line into its two engines. The physical-compute
     # contribution is the median compute coefficient × the projected Δlog FLOP
@@ -14876,7 +14889,12 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # Each side climbs from its own last frontier model, not from today.
     gap_end = ((us_anc[1] + us_eci_smid * (horizon - us_anc[0]).days / 365.25)
                - (cn_anc[1] + cn_eci_smid * (horizon - cn_anc[0]).days / 365.25))
-    mo_end = (gap_end / us_eci_smid * 12.0) if us_eci_smid > 0 else float('nan')
+    def _gap_months(pts):
+        return (pts / us_eci_smid * 12.0) if us_eci_smid > 0 else float('nan')
+    mo_now, mo_end = _gap_months(gap_now), _gap_months(gap_end)
+    _mo_help = (f"Months = the gap in points \u00f7 the US frontier's projected "
+                f"climb, {us_eci_smid:.1f} ECI a year, the same conversion on "
+                "both cards.")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Compute gap (largest actual run)",
@@ -14887,12 +14905,12 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                    "instead (the largest run each side's clusters could "
                    "train, sites abroad included), a much smaller gap.")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
-              f"~{mo_now:.0f} mo behind", delta_color="off")
+              f"~{mo_now:.0f} mo behind", delta_color="off", help=_mo_help)
     _rng = _cc_gap_end_range(us_fr, cn_fr, horizon)
     c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
               f"~{gap_end:.0f} pts",
               f"~{mo_end:.0f} mo behind", delta_color="off",
-              help=(f"Each country's rate fits its frontier since "
+              help=_mo_help + " " + (f"Each country's rate fits its frontier since "
                     f"{_CC_CALIB_SINCE.year}. Starting the fit at any half-year "
                     f"from 2024 to mid-2025 instead gives {_rng[0][0]:.0f}"
                     f"\u2013{_rng[0][1]:.0f} pts (US {_rng[1][0]:.1f}\u2013"
@@ -14900,7 +14918,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                     f"{_rng[2][1]:.1f} ECI/yr). The US rate barely moves; "
                     "China's swings on DeepSeek-R1's Jan 2025 jump, which "
                     "lifts the slope mid-window and lowers it at the "
-                    "window's start." if _rng else None))
+                    "window's start." if _rng else ""))
 
     # ── Chart A: actual training runs (grounded) vs cluster capacity (est.) ────
     figc = go.Figure()
@@ -14962,6 +14980,12 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         hoverinfo='skip', name='China capacity (est.)'))
     _cap_cone(cn_cap_d, cn_cap_apex_lo, cn_cap_apex_hi, g_cn_lo, g_cn_hi, (214, 39, 40))
 
+    _widen_x = 10 ** (0.5 * (g_us_lo + g_us_hi) - 0.5 * (g_cn_lo + g_cn_hi))
+    _widen_phrase = (
+        f"the gap keeps widening, about {_widen_x:.1f}\u00d7 a year at the mid rates"
+        if _widen_x >= 1.05 else
+        f"the gap narrows, about {1 / _widen_x:.1f}\u00d7 a year at the mid rates"
+        if _widen_x <= 1 / 1.05 else "the gap holds roughly steady at the mid rates")
     figc.update_layout(
         height=420, plot_bgcolor='white', paper_bgcolor='white',
         margin=dict(l=70, r=20, t=20, b=40), font=dict(color='#222222'),
@@ -14979,7 +15003,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
         f"<b>~{10 ** run_gap_oom:.0f}\u00d7 ({run_gap_oom:.1f} OOM)</b> gap. "
         f"<b>Dashed/shaded</b> = capacity, the largest single cluster's "
-        f"{run_days // 30}-month run \u2014 and the gap widens only slowly.",
+        f"{run_days // 30}-month run \u2014 and {_widen_phrase}.",
         (f"~{_logop_lbl(us_run_lf)} (US)",
          f"Capacity ~{_logop_lbl(us_cap_lf)} today, riding announced "
          f"megaclusters (Stargate, Hyperion\u2026) to "
@@ -14991,7 +15015,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
          f"{_logop_num(cn_cap_hi_lf)} (estimated): plenty of chips (smuggled "
          "NVIDIA + domestic Ascend), but too dispersed and its networking too "
          "export-controlled to fuse into one run."),
-        ("the gap widens only slowly",
+        (_widen_phrase,
          f"Capacity grows {10 ** g_us_lo:.1f}\u2013{10 ** g_us_hi:.1f}"
          f"\u00d7/yr (US, measured) vs ~{10 ** g_cn_lo:.1f}\u2013"
          f"{10 ** g_cn_hi:.1f}\u00d7/yr (China). Run points are dated at "
@@ -15026,7 +15050,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # each country's compute-growth range; algo is shared, so the divergence is
     # purely the compute gap. ──
     figf = go.Figure()
-    _dc_add_projection_band(figf, today, horizon)
+    _dc_add_projection_band(figf, today, horizon, label=_CC_PROJECTED)
     for fr, best, slo, shi, smid, kc, col, rgb, label in (
             (us_fr, us_anc, us_eci_slo, us_eci_shi, us_eci_smid, k_us,
              '#1F77B4', (31, 119, 180), 'United States'),
@@ -15080,7 +15104,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     st.plotly_chart(figf, width="stretch")
     _fn_caption(
         f"ECI = <b>~{a_partial:.0f} pts per \u00d710 compute</b> on each "
-        f"country's Chart-A compute growth, plus a shared algorithmic term of "
+        f"country's compute growth in the chart above, plus a shared algorithmic term of "
         f"<b>~{b_algo:.0f} pts/yr</b>, each country's sum scaled to its own "
         f"observed slope: a gap of ~{gap_end:.0f} pts (~{mo_end:.0f} mo) by "
         f"end-{horizon.year}. Dotted = algorithmic-only.",
@@ -15130,7 +15154,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             f"| **Innovation** (never decays) | {pure_band[0]:.1f}–"
             f"{pure_band[1]:.1f} | pretraining-efficiency prior "
             f"({_CC_PRETRAIN_ALGO_OOM:.1f} OOM/yr × {a_partial:.0f} pts/×10) "
-            "up to the ±3 near-frontier refit |\n"
+            f"up to the ±{_cc_tight_fg(cc_rows)[1]:g} near-frontier refit |\n"
             "| **Diffusion** (methods; dries up ~"
             f"{_CC_DIFF_ABSORB_YRS:.0f} yr after a pause) | ~{diff_mid:.1f} | "
             f"residual: the no-external-teacher level ({inno_band[0]:.1f}–"
@@ -15294,7 +15318,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         # frontier, distillation's share shaded, every gap on hover. The
         # US-measured and indigenous-only rates stay table rows.
         figd = go.Figure()
-        _dc_add_projection_band(figd, today, horizon)
+        _dc_add_projection_band(figd, today, horizon, label=_CC_PROJECTED)
 
         def _fr_max(fr, d):
             """A frontier's best score on or before `d`, None before its start."""
@@ -16542,6 +16566,9 @@ def _render_cc_compute_sources():
     end = years[-1]
     sh = {y: _cn_smuggled_share(flow[y]) for y in years}
     in_cn = sum(flow[last_actual][k][0] for k in _CN_SRC_IN_CHINA)
+    _smg = flow[last_actual]['smuggled']
+    # The share at each end of the smuggled interval, the rest held at its median.
+    _sh_lo, _sh_hi = (s / (in_cn - _smg[0] + s) for s in (_smg[1], _smg[2]))
     _fn_line(
         f"In {last_actual}, smuggled chips were **~{sh[last_actual]:.0%}** "
         "of the compute China added at home "
@@ -16552,8 +16579,8 @@ def _render_cc_compute_sources():
         ("smuggled chips", "Epoch's median, with a 90% interval of "
                            f"{flow[last_actual]['smuggled'][1] / 1e3:,.0f}k"
                            f"\u2013{flow[last_actual]['smuggled'][2] / 1e6:.1f}"
-                           "M H100e: the share could be about half or about "
-                           "twice this."),
+                           f"M H100e: the share could be anywhere from about "
+                           f"{_frac_words(_sh_lo)} to {_frac_words(_sh_hi)}."),
         ("IFP", "Fist, Adamson & Pilz (Oct 2026), stocks by channel for "
                 "end-2026 and end-2027. Legal sales there include ~100k "
                 "H200s and ~344k H100e of RTX gaming and workstation cards "
@@ -16692,8 +16719,10 @@ def _render_cc_duv_ceiling(today):
     _fn_line(
         f"By {last} the US and allies make **~{us[-1][2]:,.0f}M** H100e of AI "
         f"chips a year (P50). China's **ceiling** is ~{cont[-1][2]:,.0f}M if "
-        f"DUV immersion imports continue and ~{ban[-1][2]:,.0f}M if they are "
+        f"DUVi imports continue and ~{ban[-1][2]:,.0f}M if they are "
         "banned from 2027, if it pushes its fleet toward AI.",
+        ("DUVi", "Immersion deep-ultraviolet lithography, the most advanced "
+                 "chipmaking tools China can still import."),
         ("ceiling", "What its lithography fleet could print if etch, "
                     "deposition, HBM and packaging were no constraint and "
                     "yields reached TSMC's by 2031. The authors call it "
@@ -16757,12 +16786,12 @@ def _render_cc_duv_ceiling(today):
     lo, hi = _DUV_CN_2026_H100E
     mid = float(np.sqrt(lo * hi))
     fig.add_trace(go.Scatter(
-        x=[_x(yrs[0])], y=[mid], name="China actual, 2026 (IFP)",
+        x=[_x(yrs[0])], y=[mid], name="China estimate, 2026 (IFP)",
         mode='markers', marker=dict(color='#222222', size=8, symbol='diamond'),
         error_y=dict(type='data', symmetric=False, array=[hi - mid],
                      arrayminus=[mid - lo], color='#222222', width=5),
         hovertemplate=f"2026: {lo:.2f}\u2013{hi:.2f}M H100e (10th\u201390th)"
-                      "<extra>China actual (IFP)</extra>"))
+                      "<extra>China estimate (IFP)</extra>"))
     layout = _dc_layout(True, "AI chips made per year (M H100e)",
                         datetime(us[0][0], 1, 1),
                         datetime(last, 12, 31), show_legend=True, height=400)
@@ -17214,6 +17243,10 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
                      share_lo, share_mid, share_hi, horizon=horizon)
 
 
+_CC_LEAD = ("**How far behind is China, in compute and in capability, and is the "
+            "gap closing?**")
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -17237,7 +17270,16 @@ def render_compute_capabilities():
             st.session_state.update(_CC_DEFAULTS)
             st.rerun()
 
-    st.header("China")
+    _tab_intro("China", _CC_LEAD)
+    _fn_caption(
+        "Compute is in log OP and H100e, capability in ECI, gaps in OOM.",
+        ("log OP", "log10 of the operations one training run delivers; +1 is "
+                   "ten times more compute."),
+        ("H100e", "H100-equivalents: chips converted to the number of Nvidia "
+                  "H100s with the same compute."),
+        ("ECI", "Epoch's Capabilities Index, a single score combining many "
+                "benchmarks."),
+        ("OOM", "Order of magnitude, a factor of 10."))
     horizon = datetime(cc_end_year, 12, 31)
     run_key = _PC_RUN_OPTIONS[run_label]
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
@@ -21362,7 +21404,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         return "" if r is None else f"<br>frontier trend {r:.1f} ECI/yr"
 
     fig = go.Figure()
-    _dc_add_projection_band(fig, today + off_cn, x_end)
+    _dc_add_projection_band(fig, today + off_cn, x_end, label=_CC_PROJECTED)
     # US: actual frontier, then the climb to the bar, flat once it pauses.
     # Releases sit at their training date (off_us_rel); internal models, dated
     # at first internal use, are trained events (off_us). Running max only.

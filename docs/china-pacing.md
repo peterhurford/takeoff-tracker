@@ -52,6 +52,14 @@ its cut rounds to 0%.
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
+## China tab text
+
+`_CC_LEAD` opens the tab and a glossary caption footnotes log OP, H100e, ECI and OOM. The
+four ECI projection charts (three on China, Pacing's offset one) label the region past today
+`_CC_PROJECTED` rather than the buildout band's *planned / under construction*. Chart A's
+widening phrase, the smuggled-share interval and the innovation margin are computed from the
+live fits, and IFP's 2026 point is called an estimate (`TestCcExplains`).
+
 ## China's crossing simulation (Pacing tab's pause panel)
 
 `_cc_cn_crossing_sim` dates when China's ECI frontier reaches a bar. The China tab's own
@@ -76,8 +84,11 @@ is its consumer. Load-bearing:
    of levels and dates inside the 80% band (`TestCcCrossingBacktest`); a rate spread
    alone covered ~16%, and a release wait on top skewed dates late. With `channels` the
    offset is its own `level` entry, left out of Pacing's breakdown rows.
-4. **The end-year gap card's hover gives the fit-window range** (`_cc_gap_end_range` over
-   `_CC_CALIB_SENS_STARTS`): China's slope swings on DeepSeek-R1's Jan 2025 jump.
+4. **Both gap cards convert points to months one way**: the gap ÷ the US frontier's
+   projected ECI a year (`_gap_months`), said in each card's hover, so today's and the
+   end-year months compare. The end-year hover adds the fit-window range
+   (`_cc_gap_end_range` over `_CC_CALIB_SENS_STARTS`): China's slope swings on
+   DeepSeek-R1's Jan 2025 jump (`test_gap_cards_share_one_months_conversion`).
 5. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
    compute (at China's compute growth over the window, `_CC_CN_HIST_COMPUTE`, ×2.12, above
    the forward band's ×1.68 mid, so China decelerates; `compute_fwd` is the forward term),
@@ -109,8 +120,9 @@ is its consumer. Load-bearing:
    frontier-facing projection (US-vs-China slopes, the pause bar mapping and climb, the
    compute terms), with pooled as fallback; `TestCcFrontierGradeAlgo` pins the b_time
    drop, the screen's bite and the coverage guard. Its n counts models (~12 at margin 5),
-   and margin 3 is too thin to fit, so the innovation bands (`_cc_innovation_algo_band`,
-   `_cc_pure_innovation_band`) fall back to margin 5 before pooled — pooled there
+   and margin 3 may be too thin to fit, so `_cc_tight_fg` gives the innovation bands
+   (`_cc_innovation_algo_band`, `_cc_pure_innovation_band`) margin 3 when it fits, else
+   margin 5, before pooled, and the breakdown's innovation row prints the margin used — pooled there
    collapses the pure-innovation band to a point. Measured by country, distillation is
    a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
    and date, quoted live in the control caption and the Pacing distillation checkbox)
