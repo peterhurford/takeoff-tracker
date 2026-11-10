@@ -73,9 +73,9 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   - Revisit with evidence on US-hyperscaler buildout in Johor and Batam.
 - **China domestic: 1.9× (1.4–2.6), kept.** The hyperscaler power path in 1 (×1.3/yr) times compute per watt gives ×1.6–2.1, which contains it.
 
-### 4. Offshore sites counted as China-accessible (`_DC_CN_ACCESS_ABROAD` = DayOne Nusajaya only)
+### 4. Offshore sites counted as China-accessible (`_DC_CN_ACCESS_ABROAD` = DayOne Nusajaya and Bridge Data Centres MY06)
 
-- **Supported:** SemiAnalysis names DayOne among ByteDance's core offshore landlords.
+- **Supported:** SemiAnalysis names DayOne among ByteDance's core offshore landlords; MY06 is ByteDance's own site.
 - **Not added:** Oracle Batam, though it sits in the hub SemiAnalysis names. No source ties a Chinese tenant to that specific site, and the tuple requires a site-level citation.
 
 ### 5. DUVi import and servicing levers (`pc_duv_ban`, `pc_duv_service`, `_duv_policy_cut`)
@@ -156,44 +156,44 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2).
   (×1.9 over 2025–26, projected ×1.54/yr to 2030), training on the export-control band.
   The 2025–26 history is the judgment: from 2024 the stock (which counts no chips bought
   before 2022) grows ×2.45/yr, which would read today's pace as needing more input growth.
-- **Leak share, one definition:** China's measured diffusion (3.7 ECI/yr) over the US
-  frontier's algorithmic climb on the same window (~11 ECI/yr: its slope less compute's
-  share), ~33%, on both the Takeoff and Pacing tabs (`_cn_tk_leak`). An earlier draft divided
+- **Leak share, one definition:** China's measured diffusion (4.0 ECI/yr) over the US
+  frontier's algorithmic climb on the same window (~11.7 ECI/yr: its slope less compute's
+  share at the default payoff), ~34%, on both the Takeoff and Pacing tabs (`_cn_tk_leak`). An earlier draft divided
   by Takeoff's pace today (~19 ECI/yr), mixing windows, and read 19%.
 - **Headcount is not a separate input.** Moonshot has ~300 staff (401 credited on Kimi K3),
   DeepSeek ~160–420 and doubling, against ~3,000 in research, engineering and product at
   Anthropic alone. That gap, like experiment compute, is already in China's measured
-  innovation rate (2.4 ECI/yr), which the model calibrates to; after automation AI labor
+  innovation rate (3.6 ECI/yr), which the model calibrates to; after automation AI labor
   runs on compute, not heads.
 - **Revisit when:** a Chinese lab is shown to hold back a model well above its releases, or China's compute
   sources are revised.
 
-### 12. China's own innovation rate (`_cc_cn_channels`'s residual, ~2.4 ECI/yr)
+### 12. China's own innovation rate (`_cc_cn_channels`'s residual, ~3.6 ECI/yr)
 
-- **Value:** a residual, not a measurement. China's frontier slope since Jan 2024 (14.1
-  ECI/yr) less compute (3.6: Pacing's default payoff, 11.1 ECI per 10×, × log10 of the
-  ×2.12/yr largest-site growth), distillation (4.4: the pooled iso-compute bands, 14.4 / 13.6
-  / 9.1 ECI/yr at 10^23.5 / 24.5 / 25.5 FLOP, median band less the top band) and diffusion
-  (3.7: the no-external-teacher band's midpoint, 9.1–9.8, less the pure-innovation band's,
-  Epoch's 0.4 OOM/yr prior × 6.3 = 2.5 up to 9.1). China's takeoff calibrates its own
+- **Value:** a residual, not a measurement. China's frontier slope since Jan 2024 (15.5
+  ECI/yr) less compute (3.7: Pacing's default payoff, 11.4 ECI per 10×, × log10 of the
+  ×2.12/yr largest-site growth), distillation (4.1: the pooled iso-compute rate, 15.1 ECI/yr,
+  less the top band's, 11.0; the bands run 19.7 / 15.1 / 11.0 at 10^23.5 / 24.5 / 25.5 FLOP)
+  and diffusion (4.0: the no-external-teacher band's midpoint, 10.7–11.0, less the
+  pure-innovation band's, Epoch's 0.4 OOM/yr prior × 7.37 = 2.9 up to 10.7). China's takeoff calibrates its own
   research to it.
 - **Why it is weak:** distillation and diffusion come from all labs pooled and from priors,
-  not China's own models. A China-specific check partly cuts against the split: at China's
-  median compute, Chinese and US models improve at the same fixed-compute rate (12.3 vs
-  11.8 ECI/yr, `_cc_iso_compute_rate`), with China's edge a level (+5.1 ECI at matched
-  compute and date, `_cc_cn_level_offset`), not a faster rate. (US small models distill
-  too, so this is not decisive.) It moves with the payoff: 3.6 at our fit (7.3 per 10×),
-  2.4 at the average, ~1.2 at IFP's (~14.8); and with the fit window, which starts before
-  DeepSeek-R1's Jan 2025 jump. Honest range ~1–5.
-- **The US on the same arithmetic:** slope 16.5 less compute ~5.4 leaves ~11 ECI/yr
-  algorithmic; distillation ~0 (it is the teacher), diffusion from China unmeasured (0–2),
-  so own innovation ~9–11. The frontier-grade fixed-compute rate (9.1–9.8) agrees. Today's
-  trained US frontier climbs ~22, ~19 of it algorithmic. China is ~4–5× below on the same
-  window, ~8× below today's US.
+  not China's own models. A China-specific check: at each country's median compute,
+  Chinese models improve no faster at fixed compute than US ones (13.5 vs 15.7 ECI/yr,
+  `_cc_iso_compute_rate`), with China's edge a level (+5.3 ECI at matched compute and
+  date, `_cc_cn_level_offset`), not a faster rate. (US small models distill too, so this
+  is not decisive.) It moves with the payoff: 5.0 at our fit (7.4 per 10×), 3.6 at the
+  average, 2.3 at IFP's (15.5); and with the fit window, which starts before DeepSeek-R1's
+  Jan 2025 jump. Honest range ~2–5.
+- **The US on the same arithmetic:** slope 17.2 less compute ~5.5 (11.4 per 10× × 0.48
+  OOM/yr, the Data Centers tab's US largest-run fit) leaves ~11.7 ECI/yr algorithmic;
+  distillation ~0 (it is the teacher), diffusion from China unmeasured (0–2), so own
+  innovation ~10–12. The frontier-grade fixed-compute rate (10.7–11.0) agrees. China is ~3×
+  below on the same window.
 - **Cross-check:** ~10× fewer researchers per lab (Moonshot ~300, DeepSeek ~160–420,
   Anthropic ~3,000 in research, engineering and product) and maybe 5–10× less experiment
   compute predict ~a third of the US rate under the model's square-root returns, ~3–4
-  ECI/yr: 2.4 is within a factor of 2.
+  ECI/yr: 3.6 is inside that range.
 - **Revisit when:** a China-specific distillation measurement appears, or a refresh moves
   the iso-compute bands or China's slope.
 

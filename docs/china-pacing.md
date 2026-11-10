@@ -441,7 +441,7 @@ research stolen from `pc_theft_when`: China jumps by that share of the gap today
 gap does not explain, plus `a_partial`·log10 of the training compute `pc_theft_realloc` (2.5x,
 `_PC_THEFT_REALLOC`) frees, then on the stolen share moves at the faster of its own algorithmic
 channels and the US's ECI/yr times its software share (`theft_soft` in the sim). `pc_leak_cut`
-stops that share of the open leak (papers, talent; ~31% of US software progress today, stashed
+stops that share of the open leak (papers, talent; ~34% of US software progress today, stashed
 as `_pc_leak_share` for its help) from `pc_leak_when`, fading over `pc_leak_absorb` years
 (default `_CC_DIFF_ABSORB_YRS`) to the share left (`test_methods_toggle_keeps_diffusion_running`).
 The leak runs on the share not stolen, so it greys out at 100% stolen
