@@ -134,6 +134,34 @@ class TestNonDefaultProjectionBases:
         _assert_no_error(at, f"{tab} / {key}={value}")
 
 
+class TestMetrPostGpt4o:
+    """*GPT-4o+ only* fits from GPT-4o, so *Project as of* offers no earlier
+    model while it is on, and an earlier one already chosen falls back to the
+    latest."""
+
+    def _app(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "metr"
+        at.run()
+        return at
+
+    def test_as_of_options_start_at_gpt4o(self):
+        import visualize_projection as vp
+        at = self._app()
+        at.toggle(key="post_gpt4o").set_value(True).run()
+        _assert_no_error(at, "METR / GPT-4o+ only")
+        opts = at.selectbox(key="_proj_as_of").options
+        assert opts[0] == vp.frontier_names[vp.gpt4o_idx]
+
+    def test_an_earlier_as_of_then_gpt4o_only_renders(self):
+        import visualize_projection as vp
+        at = self._app()
+        at.selectbox(key="_proj_as_of").set_value(vp.frontier_names[1]).run()
+        at.toggle(key="post_gpt4o").set_value(True).run()
+        _assert_no_error(at, "METR / early as-of, GPT-4o+ only")
+        assert at.selectbox(key="_proj_as_of").value == vp.frontier_names[-1]
+
+
 # ===========================================================================
 # Mode switching: Linear vs Piecewise produce different widgets and output
 # ===========================================================================

@@ -3498,7 +3498,7 @@ def _dc_cty_lag_months(follower, leader, grid):
 
 metr_all = load_metr_all(mtime=_yaml_mtime())
 frontier_all = [m for m in metr_all if m['is_sota']]
-gpt4o_idx = next(i for i, m in enumerate(frontier_all) if m['name'] == 'gpt_4o_inspect')
+gpt4o_idx = next((i for i, m in enumerate(frontier_all) if m['name'] == 'gpt_4o_inspect'), 0)
 frontier_names = [pretty(m['name']) for m in frontier_all]
 
 eci_all = load_eci_frontier(mtime=_eci_mtime())
@@ -3647,8 +3647,12 @@ def render_metr():
         st.header("METR Projection")
 
         # Read "project as of" from session state (widget rendered at bottom of sidebar)
+        # GPT-4o+ only fits from GPT-4o on, so an earlier vantage point has nothing to fit.
+        as_of_names = (frontier_names[gpt4o_idx:] if st.session_state.get('post_gpt4o')
+                       else frontier_names)
         proj_as_of_name = st.session_state.get('_proj_as_of', frontier_names[-1])
-        if proj_as_of_name not in frontier_names:
+        if proj_as_of_name not in as_of_names:
+            st.session_state.pop('_proj_as_of', None)
             proj_as_of_name = frontier_names[-1]
         proj_as_of_idx = frontier_names.index(proj_as_of_name)
 
@@ -3835,8 +3839,8 @@ def render_metr():
         with st.expander("Projection range"):
             st.selectbox(
                 "Project as of",
-                frontier_names,
-                index=frontier_names.index(proj_as_of_name),
+                as_of_names,
+                index=as_of_names.index(proj_as_of_name),
                 key='_proj_as_of',
                 help="Backtest: project from an earlier model's vantage point.",
             )
