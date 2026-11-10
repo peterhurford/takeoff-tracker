@@ -6601,10 +6601,10 @@ _RSI_RESET_KEYS = [
 _RSI_DEFAULTS = {
     "rsi_timing": "Training run finished",
     "rsi_notyet": True,
-    "rsi_notyet_ramp": 90.0,
+    "rsi_notyet_ramp": 30.0,
     # Chance a milestone has already been crossed, unseen: the reality check
     # leaves this much at today instead of none (0 is the hard cut).
-    "rsi_already_pct": 5.0,
+    "rsi_already_pct": 10.0,
     "rsi_atc_penalty": 0,
     "rsi_custom_dt_dist": "Lognormal",
 }

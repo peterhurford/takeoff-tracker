@@ -198,13 +198,13 @@ carries a dotted ghost of the unconditioned blend (`raw_days` through
 `_pc_rsi_dist_fig`; its height at today is the mass the update removed — the
 grid start widens to the ghost's 0.5th percentile so that stays visible). A
 fully-crossed component drops out. A companion number input (`rsi_notyet_ramp`,
-default 90d, 0 = off) extends the update into the near future as a soft
+default 30d, 0 = off) extends the update into the near future as a soft
 likelihood, not a wider hard cut: a sample t days out is kept w.p. t/N inside
 the window — the closer a crossing, the more visible its run-up would already
 be. On the release clock an active window grows by that range's lower bound
 via `_pc_ramp_for()` — a model shipping that soon finished training a
 report lag earlier — and the fine print quotes the window actually applied. Survival stays the expected likelihood, so the weight × survival mixing is
-unchanged. `rsi_already_pct` (default 5%, *Chance it has already happened,
+unchanged. `rsi_already_pct` (default 10%, *Chance it has already happened,
 unseen*) softens the cut for a crossing made inside a lab and not yet visible: a
 past sample keeps likelihood q, solved so it holds that share of the kept mass, at its
 own date; inside the ramp a sample keeps max(q, t/N), so the CDF passes through today at
