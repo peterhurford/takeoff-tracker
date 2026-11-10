@@ -776,6 +776,31 @@ class TestRliProjectionLine:
             assert lo[i] - 1e-9 <= line["y"][i] <= hi[i] + 1e-9, i
 
 
+class TestArrivalIgnoresTheWindow:
+    @pytest.mark.parametrize("tab,key", [("revenue", "rev_end_year"),
+                                         ("employment", "emp_end_year")])
+    def test_medians_do_not_move_with_project_through(self, tab, key):
+        """Arrival percentiles run over every sample, a non-crosser counting
+        as past the window, so a median inside both windows is the same."""
+        def medians(at):
+            return {(i, r["Milestone"]): r["Median"]
+                    for i, el in enumerate(at.table) if "Median" in el.value.columns
+                    for _, r in el.value.iterrows()}
+        at = _fresh_app()
+        at.query_params["tab"] = tab
+        at.run()
+        _assert_no_error(at, tab)
+        opts = at.radio(key=key).options
+        at.radio(key=key).set_value(opts[-1]).run()
+        wide = medians(at)
+        at.radio(key=key).set_value(opts[1]).run()
+        short = medians(at)
+        both = [k for k in short if short[k] != "Beyond range" and wide.get(k) not in
+                (None, "Beyond range")]
+        assert both
+        assert {k: short[k] for k in both} == {k: wide[k] for k in both}
+
+
 class TestMeasuredCard:
     @pytest.mark.parametrize("tab", ["metr", "eci", "rli"])
     def test_measured_card_shows_no_ci(self, tab):

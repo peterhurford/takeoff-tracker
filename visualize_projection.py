@@ -365,6 +365,28 @@ def _proj_end(end_year, last_date):
     return max(datetime(int(end_year), 12, 31), last_date + timedelta(days=1))
 
 
+def _arrival_row(traj, threshold, base, label, cis=(80,)):
+    """A milestone's arrival row from `traj` (samples x days from `base`):
+    percentiles over every sample, one that never crosses counting as past the
+    window, so the dates do not pile up at the window's end and do not move
+    with it. The median reads "Beyond range" when under half cross; a CI end
+    past the window reads "beyond"."""
+    idx = np.argmax(traj >= threshold, axis=1)
+    first = idx.astype(float)
+    # A large finite sentinel, so interpolating next to it never gives NaN.
+    first[traj[np.arange(len(traj)), idx] < threshold] = 1e9
+
+    def _d(q):
+        v = float(np.percentile(first, q))
+        return ((base + timedelta(days=int(v))).strftime('%b %Y')
+                if v < traj.shape[1] else None)
+    row = {"Milestone": label, "Median": _d(50) or "Beyond range"}
+    for ci in cis:
+        lo, hi = _d(50 - ci / 2), _d(50 + ci / 2)
+        row[f"{ci}% CI"] = "—" if lo is None else f"{lo} – {hi or 'beyond'}"
+    return row
+
+
 def _card_targets(junes=(1,)):
     """Projection cards after today: each year end from this year's through
     three years on, plus June 30 of this year plus each offset in `junes`,
@@ -10415,32 +10437,8 @@ def render_revenue():
                 for val, label in _REV_MILESTONES:
                     if val <= reached:
                         continue
-                    # For each trajectory, find first day it crosses val
-                    crossed = np.argmax(traj >= val, axis=1)
-                    # argmax returns 0 if never crossed — check if actually crossed
-                    actually_crossed = traj[np.arange(len(traj)), crossed] >= val
-                    if actually_crossed.sum() < len(traj) * 0.05:
-                        arrival_rows.append({"Milestone": label, "Median": "Beyond range", "50% CI": "—", "80% CI": "—"})
-                        continue
-                    # Among those that crossed, get dates
-                    crossed_days = crossed[actually_crossed]
-                    p50_day = int(np.percentile(crossed_days, 50))
-                    p25_day = int(np.percentile(crossed_days, 25))
-                    p75_day = int(np.percentile(crossed_days, 75))
-                    p10_day = int(np.percentile(crossed_days, 10))
-                    p90_day = int(np.percentile(crossed_days, 90))
-                    base = p_dates[0]
-                    p50_date = base + timedelta(days=p50_day)
-                    p25_date = base + timedelta(days=p25_day)
-                    p75_date = base + timedelta(days=p75_day)
-                    p10_date = base + timedelta(days=p10_day)
-                    p90_date = base + timedelta(days=p90_day)
-                    arrival_rows.append({
-                        "Milestone": label,
-                        "Median": p50_date.strftime('%b %Y'),
-                        "50% CI": f"{p25_date.strftime('%b %Y')} – {p75_date.strftime('%b %Y')}",
-                        "80% CI": f"{p10_date.strftime('%b %Y')} – {p90_date.strftime('%b %Y')}",
-                    })
+                    arrival_rows.append(_arrival_row(traj, val, p_dates[0], label,
+                                                     cis=(50, 80)))
                 if arrival_rows:
                     st.markdown(f"**{name}**")
                     st.table(arrival_rows)
@@ -11558,23 +11556,8 @@ def render_employment():
             st.markdown("**Estimated arrival**")
             arrival_rows = []
             for threshold, ms_label in _emp_milestones:
-                crossed = np.argmax(_ms_data >= threshold, axis=1)
-                actually_crossed = _ms_data[np.arange(n_samples), crossed] >= threshold
-                if actually_crossed.sum() < n_samples * 0.05:
-                    arrival_rows.append({"Milestone": ms_label, "Median": "Beyond range", "80% CI": "—"})
-                    continue
-                crossed_days = crossed[actually_crossed]
-                p10_d = int(np.percentile(crossed_days, 10))
-                p50_d = int(np.percentile(crossed_days, 50))
-                p90_d = int(np.percentile(crossed_days, 90))
-                med_date = emp_current['date'] + timedelta(days=p50_d)
-                early_date = emp_current['date'] + timedelta(days=p10_d)
-                late_date = emp_current['date'] + timedelta(days=p90_d)
-                arrival_rows.append({
-                    "Milestone": ms_label,
-                    "Median": med_date.strftime('%b %Y'),
-                    "80% CI": f"{early_date.strftime('%b %Y')} – {late_date.strftime('%b %Y')}",
-                })
+                arrival_rows.append(_arrival_row(_ms_data, threshold,
+                                                 emp_current['date'], ms_label))
             st.table(arrival_rows)
 
     _fn_caption(

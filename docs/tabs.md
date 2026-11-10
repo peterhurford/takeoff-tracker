@@ -36,6 +36,11 @@ Their frontiers are running maxima, so readings floor at the newest record, a mi
 passed reads 100% and arrives at its date, and the record's own card says "measured" with no
 CI (`TestMeasuredCard`, `TestRliMilestones`).
 
+Revenue and Employment arrival tables come from `_arrival_row()`: percentiles over every
+sample, a non-crosser counting as past the window, so a median inside the window does not
+move with *Project through*; under half crossing reads "Beyond range"
+(`TestArrivalIgnoresTheWindow`).
+
 ## UK Cyber tab caveats
 
 Five load-bearing constraints; don't "simplify" them away:
