@@ -25639,7 +25639,10 @@ def _rl_leads_claude():
 def _cn_tk_start_rows(cn, eci, today):
     """The *Where each side starts* table: per side, its best released model,
     the trained level the takeoff model starts from today, how one becomes
-    the other, and the pace it climbs at. Every number is the live one."""
+    the other, and the pace it climbs at. Every number is the live one.
+
+    Returns `(rows, notes)`: each row's *How* is one clause, and `notes` holds
+    `(row label, full derivation)` pairs for a footnote under the table."""
     cal, cfg = cn["cal"], cn["inputs"]["settings"]
     us_rel = eci["frontier"][-1]
     trained = eci.get("trained") or []
@@ -25653,11 +25656,12 @@ def _cn_tk_start_rows(cn, eci, today):
                    f"led by {us_anchor[3]}) plus {_ship_lag('us'):.0f} days of climb, the "
                    "US's trained-to-release lag (the Release Lag tab's measured frontier "
                    "lead)")
+    _us_internal = bool(last_tr and last_tr['name'] in internal)
     us_how = (f"Per scenario, the higher of Anthropic's internal {last_tr['name']} "
               f"({last_tr['date']:%b %d}), projected onto Epoch's scale from METR's AECI "
               f"({last_tr['eci_score']:.1f}), carried to today at the pace, and "
               f"{release_how}; the internal model sets it in {100 * _share:.0f}% of scenarios"
-              if last_tr and last_tr['name'] in internal else
+              if _us_internal else
               release_how[0].upper() + release_how[1:])
     us_lvl = np.quantile(eci.get("now_draws", eci["now"]), [.1, .5, .9])
     lvl = np.quantile(cn["level"], [.1, .5, .9])
@@ -25678,13 +25682,19 @@ def _cn_tk_start_rows(cn, eci, today):
     us_fr = _cc_country_frontier(full, 'United States of America')
     us_now_rel, cn_now_rel = recent(us_fr), recent(_cc_country_frontier(full, 'China'))
     fmt = lambda v: f"{v:.1f}" if v is not None else "—"
+    gap_how = (f"The trained gap is wider: Anthropic's best trained model leads its "
+               f"releases by a median {_rl_median(_rl_leads_claude()):.0f} days (Fable "
+               "5.2 shipped 75 days after it finished as Model 3 Early), while China's "
+               f"labs ship within {_ship_lag('cn'):.0f} days")
+    notes = [("United States", us_how), ("China", cn_how), ("Gap", gap_how)]
     return [
         {"": "United States",
          "Best released": f"{us_rel['eci_score']:.1f}, {us_rel.get('name', '')} "
                           f"({us_rel['date']:%b %d})",
          "Where the model starts (trained, today)":
              f"{eci['now']:.1f} ({us_lvl[0]:.1f}–{us_lvl[2]:.1f})",
-         "How": us_how,
+         "How": ("The higher of the internal model and the latest release plus the US lag"
+                 if _us_internal else "The latest release plus the US's release lag"),
          "Pace (ECI/yr)": f"Model: {eci['ppy']:g}, the trained frontier's smoothed climb "
                           f"(internal models included). Releases: {cal['us_obs']:.1f} since "
                           f"{_CC_CALIB_SINCE:%b %Y}, {fmt(us_now_rel)} smoothed now"},
@@ -25693,7 +25703,7 @@ def _cn_tk_start_rows(cn, eci, today):
                           f"({cal['cn_fr'][-1][0]:%b %d})",
          "Where the model starts (trained, today)":
              f"{lvl[1]:.1f} ({lvl[0]:.1f}–{lvl[2]:.1f}), measured models only",
-         "How": cn_how,
+         "How": "The scored frontier's anchor carried to today, plus the internal lead",
          "Pace (ECI/yr)": f"Model: {sl[1]:.1f}, releases since {_CC_CALIB_SINCE:%b %Y} "
                           f"{cal['ch']['innovation']:.1f} of it China's own research. "
                           f"Releases: {cal['ch']['obs']:.1f} since {_CC_CALIB_SINCE:%b %Y}, "
@@ -25701,17 +25711,14 @@ def _cn_tk_start_rows(cn, eci, today):
         {"": "Gap",
          "Best released": f"{us_rel['eci_score'] - cal['cn_fr'][-1][1]:.1f} points",
          "Where the model starts (trained, today)": f"{eci['now'] - lvl[1]:.1f} points",
-         "How": (f"The trained gap is wider: Anthropic's best trained model leads its "
-                 f"releases by a median {_rl_median(_rl_leads_claude()):.0f} days (Fable "
-                 "5.2 shipped 75 days after it finished as Model 3 Early), while China's "
-                 f"labs ship within {_ship_lag('cn'):.0f} days"),
+         "How": "The trained gap is wider than the released one",
          "Pace (ECI/yr)": f"Releases, like for like: {cal['us_obs'] - cal['ch']['obs']:+.1f} "
                           "for the US since the window opened"
                           + (f", {us_now_rel - cn_now_rel:+.1f} now" if us_now_rel is not None
                              and cn_now_rel is not None else "")
                           + f". The models' starting paces differ by {eci['ppy'] - sl[1]:+.1f}, "
                             "mostly the US's internal models"},
-    ]
+    ], notes
 
 
 def _tk_render_china(run, today, view_end, end_date, horizon):
@@ -25797,7 +25804,9 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
                                "need not add up). Without either, China's own takeoff "
                                "lags by years: set both to 0 below."))
     st.markdown("**Where each side starts today**")
-    st.table(_cn_tk_start_rows(cn, run["eci"], today))
+    _rows, _how_notes = _cn_tk_start_rows(cn, run["eci"], today)
+    st.table(_rows)
+    _fn_caption("Each row's *How* in full: United States · China · Gap.", *_how_notes)
 
     _fn_caption(
         "Every date on this tab compares trained models, not releases.",

@@ -2420,7 +2420,9 @@ class TestTakeoffTab:
 
     def test_china_section_says_where_each_side_starts(self):
         """The starting table says where each side starts: the US from its
-        internal model or latest release, China from its measured frontier."""
+        internal model or latest release, China from its measured frontier.
+        Each *How* cell is one clause; its full derivation is a footnote on
+        that row's label in the caption under the table."""
         at = self._app()
         t = next(x.value for x in at.table if "How" in x.value.columns)
         assert list(t[""]) == ["United States", "China", "Gap"]
@@ -2429,6 +2431,11 @@ class TestTakeoffTab:
         assert ("internal" in t["How"].iloc[0]
                 or "latest release" in t["How"].iloc[0])
         assert "anchor" in t["How"].iloc[1]
+        assert all(len(h) < 80 and ";" not in h and "(" not in h for h in t["How"])
+        how = next(c.value for c in at.caption if "in full" in c.value)
+        assert "trained-to-release lag" in how and "days of climb" in how
+        assert "The scored frontier" in how and "carried to today on China" in how
+        assert "Model 3 Early" in how
         assert "measured models only" in t["Where the model starts (trained, today)"].iloc[1]
         assert not any("partly made up" in str(m.value) for m in at.markdown)
         assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
@@ -2436,7 +2443,6 @@ class TestTakeoffTab:
                  for d in json.loads(el.proto.spec)["data"]]
         assert "US trained (internal models in)" in names
         assert "China today (trained, the model's start)" in names
-        assert "Model 3 Early" in t["How"].iloc[2]
 
     def test_no_chart_stacks_every_traces_hover_at_a_date(self):
         """Plotly's 'x' hovermode labels every trace at the hovered date, a pile

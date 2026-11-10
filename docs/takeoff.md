@@ -416,7 +416,9 @@ and this section. `_cn_tk_simulate` caches the run (model digest in its key).
 **How the section reads**, top to bottom: a bold takeaway (`_fn_line`: the median gap to
 automated coding and ultraintelligence, and copying's share of China's ECI gain to
 end-2028); *Where each side starts today* (`_cn_tk_start_rows`), which is where internal
-models and release lags are explained, not left to hovers: each side's best release, the
+models and release lags are explained. Each *How* cell is one clause; the full derivation
+hangs off that row's label in the `_fn_caption` under the table
+(`test_china_section_says_where_each_side_starts`). The table gives each side's best release, the
 trained level the model starts from and how (both sides a range: the US's per scenario the
 higher of its latest Anthropic internal model, projected from METR's AECI with that
 projection's residual sd, and its release frontier's blended anchor plus the ship lag, each
