@@ -4,7 +4,7 @@ Cross-tab mechanisms: ship lags, section deep links, today-forward mode, and whe
 
 ## Trained-to-release lags
 
-`us_ship_lag` (30 days: Anthropic's releases ran 14–39 days, median 21, past their estimated training finish in `metr_aeci.csv`; longer holdbacks are the internal models, tracked directly) and `cn_ship_lag` (21), `_SHIP_LAG_DEFAULTS`, are app-wide sidebar
+`us_ship_lag` (70 days: the median from each Anthropic internal model's training finish to the first US release at its ECI, the *Release Lag* tab's frontier lead; a release's own snapshot lag, median 21, is not this) and `cn_ship_lag` (21), `_SHIP_LAG_DEFAULTS`, are app-wide sidebar
 settings (`_ship_lag_inputs`: US on Takeoff, both on Pacing), read by `_ship_lag` and
 reassigned at dispatch so a tab switch keeps them. Takeoff and Pacing date *trained* models.
 Takeoff's ECI paths start at today's trained frontier (`_tk_trained_now`: the latest
@@ -16,7 +16,7 @@ milestone cards are pulled back over 0.7–1.3× the US lag (`_pc_report_lag_day
 a China release at t races the US as of t less China's lag (`us_path_cn`); the bar, the
 milestone table and the time to surpass are trained against trained on every clock, while
 on *Model release* each side's dates add its own lag (the race's too, by site country), so
-China's sit 9 days nearer the US's (the lag difference) (`test_pause_dates_follow_timing_in_lockstep`,
+China's sit 49 days nearer the US's (the lag difference) (`test_pause_dates_follow_timing_in_lockstep`,
 `test_a_longer_us_release_lag_raises_the_trained_bar`). The Data Centers tab's *Model
 release* does the same per site (`_dc_release_lag`: China's lag for mainland and Johor sites
 and China's country lines), shows the settings only on that clock, and its hovers' *Model

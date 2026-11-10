@@ -17231,7 +17231,7 @@ _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
 # ran restricted first); Chinese labs, mostly open-weight, ship soon after
 # the run ends. App-wide sidebar settings, drawn on Takeoff and Pacing
 # (`_ship_lag_inputs`); every date there is on trained models.
-_SHIP_LAG_DEFAULTS = {"us_ship_lag": 30, "cn_ship_lag": 21}
+_SHIP_LAG_DEFAULTS = {"us_ship_lag": 70, "cn_ship_lag": 21}
 _SHIP_LAG_MAX = 365
 
 
@@ -17247,10 +17247,11 @@ def _ship_lag_inputs(parent, china=True):
             ("us_ship_lag", "US trained-to-release lag (days)",
              "How long the US's best trained model leads its best released "
              "one. Dates on Takeoff and Pacing are for trained models, so "
-             "release-dated evidence is pulled back by this. Default 30: "
-             "Anthropic's releases shipped 14-39 days (median 21) after their "
-             "estimated training finish in METR's assessment; models held back "
-             "longer are tracked directly as internal models."),
+             "release-dated evidence is pulled back by this. Default 70: the "
+             "median days from each Anthropic internal model's training finish "
+             "to the first US release at its ECI (69; Claude's own, 88), and "
+             "Fable 5.2 shipped 75 days after it finished as Model 3 Early. "
+             "Evidence: the *Release Lag* tab."),
             ("cn_ship_lag", "Chinese models' internal lead before release (days)",
              "How long a Chinese lab has a model internally before it ships: "
              "China's trained-to-release lag. Labs mostly ship open weights soon "
@@ -26247,6 +26248,10 @@ def _render_takeoff(loading):
 # internal models: the evidence behind `us_ship_lag` and ECI's *Date at
 # training finish*.
 
+# Anthropic's top tier, by Epoch's name (Mythos 5.x is the same model as Fable 5.x).
+_RL_TOP_TIER = ("Claude Fable",)
+
+
 def _rl_lead_rows(today=None):
     """Each internal model against the first later release at or above its
     ECI, Anthropic's and any US lab's: days from its estimated training
@@ -26345,6 +26350,20 @@ def render_release_lag():
                "First Claude release at that ECI": _cell(r['Anthropic']),
                "First US release at that ECI": _cell(r['US best'])}
               for r in leads])
+
+    st.subheader("Fable-tier releases")
+    fable = [r for r in sorted(snaps, key=lambda r: r['produced'])
+             if r['epoch_model'].startswith(_RL_TOP_TIER)]
+    _fn_caption("Training done to release for Anthropic's top-tier line, with the "
+                "internal name where one is published.",
+                ("internal name", "Model 3 Early is Fable 5.2 (its system card, "
+                 "2026-11-09). The other internal models have no published release."))
+    st.table([{"Release": r['epoch_model'],
+               "Internal name": r['model'] if r['internal_first'] else "—",
+               "Training finished (est.)": f"{r['produced']:%b %d, %Y}",
+               "Available to Anthropic staff": f"{r['available']:%b %d, %Y}",
+               "Released": f"{r['released']:%b %d, %Y}",
+               "Days, training to release": r['days']} for r in fable])
 
     st.subheader("Snapshot lag: each released Claude model")
     st.table([{"Model": r['epoch_model'], "Training finished (est.)": f"{r['produced']:%b %d, %Y}",

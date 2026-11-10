@@ -170,6 +170,10 @@ class TestReleaseLagTab:
         labels = [str(m.label) for m in at.metric]
         assert any("Snapshot lag" in l for l in labels)
         assert any("Frontier lead, Anthropic" in l for l in labels)
+        fable = next(t.value for t in at.table if "Internal name" in t.value.columns)
+        row = fable[fable["Release"] == "Claude Fable 5.2"].iloc[0]
+        assert row["Internal name"] == "Model 3 Early"
+        assert int(row["Days, training to release"]) == 75
         assert _qp(at, "tab") == ["releaselag"]
 
 
@@ -2991,7 +2995,7 @@ class TestPacingTab:
         assert abs(s_rel - s_con) <= 1
         clock = next(m.help for m in at.metric if "paused US frontier" in str(m.label))
         assert "Dates are model releases" in clock
-        assert "China's dates sit 9 days nearer" in clock
+        assert "China's dates sit 49 days nearer" in clock
 
     def test_a_longer_us_release_lag_raises_the_trained_bar(self):
         """The bar is the best model the US has trained by the pause: the
