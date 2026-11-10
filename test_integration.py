@@ -258,6 +258,28 @@ class TestTabTopOrder:
                if e.type == "expander" and e.label == "How to read this"]
         assert all(i > chart for i in how)
 
+    # A caveat or legend each tab must show without a click: (tab, phrase).
+    _VISIBLE = [("Revenue", "lines go up indefinitely"),
+                ("Employment", "incomplete, not final"),
+                ("Frontier Thresholds", "not equivalent risk levels"),
+                ("Data Centers", "Scope: AI labs")]
+
+    @pytest.mark.parametrize("tab,phrase", _VISIBLE)
+    def test_warnings_and_legends_stay_out_of_the_expander(self, tab, phrase):
+        """*How to read this* is collapsed, so it holds method notes only."""
+        at = _fresh_app()
+        at.query_params["tab"] = _SLUG_FOR_TAB[tab]
+        at.run()
+        _assert_no_error(at, tab)
+        texts = lambda block: [str(e.value) for e in
+                               list(block.warning) + list(block.caption)
+                               + list(block.markdown)]
+        assert any(phrase in t for t in texts(at.main))
+        for ex in at.main.expander:
+            assert not list(ex.warning), ex.label
+            if ex.label == "How to read this":
+                assert not any(phrase in t for t in texts(ex))
+
     @pytest.mark.parametrize("tab", list(_SLUG_FOR_TAB))
     def test_data_through_sits_under_the_title(self, tab):
         """Every tab's title carries a *Data through* line computed from its

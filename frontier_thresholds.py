@@ -198,8 +198,7 @@ def render(st):
                 st.write(detail['details'])
             else:
                 st.caption('The supplied chronology contains no milestone selected for this category and lab.')
-    with st.expander('How to read this'):
-        st.caption('Public assessments only. Each lab uses its own definitions; these are not equivalent risk levels.')
+    st.caption('Public assessments only. Each lab uses its own definitions; these are not equivalent risk levels.')
     with st.expander('Explore the full chronology · 55 events'):
         st.caption('Includes earlier Medium ratings, framework revisions, unchanged releases, and operational updates.')
         domains = sorted({d for e in events for d in e['domains']})

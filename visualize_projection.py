@@ -10564,9 +10564,8 @@ def render_revenue():
         fig.update_yaxes(range=[0, y_max])
 
     st.plotly_chart(_tf(fig), width="stretch")
-    with st.expander("How to read this"):
-        st.warning("Warning: projections assume lines go up indefinitely, which is "
-                   "obviously not realistic.")
+    st.warning("Warning: projections assume lines go up indefinitely, which is "
+               "obviously not realistic.")
 
     # --- Backtest summary ---
     if _rev_backtesting:
@@ -11567,8 +11566,7 @@ def render_employment():
     )
 
     st.plotly_chart(fig, width="stretch")
-    with st.expander("How to read this"):
-        st.warning("Warning: incomplete, not final.")
+    st.warning("Warning: incomplete, not final.")
 
     # ── Projections row ──────────────────────────────────────────────────
     eoy_targets = [
@@ -13452,7 +13450,7 @@ def render_data_centers():
     _shown_unattr = [c for c in _shown_hosts if c in unattributed]
 
     def _how_to_read():
-        """The method and scope notes, drawn under the first chart."""
+        """The method note, in the expander under the first chart."""
         if key in ('train_flop', 'train_flop_6mo'):
             run_days = cfg.get("run_days", _DAYS_2MO)
             st.caption(
@@ -13466,6 +13464,10 @@ def render_data_centers():
                 f"Methodology: time to train one {target} ({scale}) model = {target} "
                 f"÷ (peak 8-bit OP/s × {_DC_UTILIZATION:.0%} utilization). Shorter = "
                 "bigger site.")
+
+    def _scope_note():
+        """Which hosts the chart includes and its † legend: visible, not in
+        the expander, since it qualifies the lines drawn."""
         if not _shown_hosts:
             return
         _fn_caption(
@@ -13586,7 +13588,8 @@ def render_data_centers():
         y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale),
         kind=kind))
     st.plotly_chart(fig1, width="stretch")
-    if _shown_hosts or key in ('train_flop', 'train_flop_6mo', 'gpt5s', 'mythos'):
+    _scope_note()
+    if key in ('train_flop', 'train_flop_6mo', 'gpt5s', 'mythos'):
         with st.expander("How to read this"):
             _how_to_read()
 

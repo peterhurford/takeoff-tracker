@@ -123,7 +123,9 @@ page.
 Each tab opens with `_tab_intro(title, lead)`: the title equal to its `_TAB_LABEL`
 and a one- or two-sentence bolded question plus answer. Then come the headline
 cards, the main chart, and a collapsed *How to read this* expander holding the
-method notes. Cards computed from the chart's trajectories go in an
+method notes only: a warning, a scope line or a legend qualifies what is drawn
+and stays visible under the chart
+(`test_warnings_and_legends_stay_out_of_the_expander`). Cards computed from the chart's trajectories go in an
 `st.container()` placed before the chart and filled after it. Frontier Thresholds
 (`frontier_thresholds.py`) follows the same order with `st.header` + `st.markdown`.
 Takeoff and Pacing keep their own deliberate orders (`docs/takeoff.md`,
