@@ -13422,7 +13422,8 @@ def render_data_centers():
     snap = []
     for co in comp:
         s = _step_at_today(comp[co])
-        if s is not None:
+        # A company with nothing online today has no bar to draw.
+        if s is not None and s[1] > 0:
             snap.append((co, s[1], s[2]))
     snap.sort(key=lambda t: t[1], reverse=True)
     fig_snap = go.Figure()

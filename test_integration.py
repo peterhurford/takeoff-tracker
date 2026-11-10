@@ -982,6 +982,18 @@ class TestDataCenters:
         assert "Current largest single data center by company" in text
         assert "Largest single data center by company over time" in text
 
+    @pytest.mark.parametrize("party", ["Tenant (who trains there)",
+                                       "Operator (who owns the building)"])
+    def test_snapshot_draws_only_companies_with_capacity_today(self, party):
+        """A company with nothing online today gets no (invisible) bar."""
+        at = self._dc_app()
+        at.radio(key="dc_party").set_value(party).run()
+        _assert_no_error(at, f"Data Centers / {party}")
+        snap = next(json.loads(c.proto.spec) for c in at.get("plotly_chart")
+                    if json.loads(c.proto.spec)["data"][0].get("type") == "bar"
+                    and json.loads(c.proto.spec)["data"][0].get("orientation") == "h")
+        assert snap["data"][0]["x"] and min(snap["data"][0]["x"]) > 0
+
     def test_every_networking_option_renders(self):
         """Each pooling level draws, and the caption follows the selection —
         it describes the curated groups only where the level uses them."""
