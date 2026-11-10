@@ -2203,6 +2203,23 @@ class TestUkCyberTab:
         getattr(at, kind)(key=key).set_value(value).run()
         _assert_no_error(at, f"UK Cyber / {key}={value}")
 
+    def test_three_segments_adds_a_second_breakpoint(self):
+        """Segments 3 shows a second breakpoint, which starts the extrapolated
+        segment later and so re-derives the slope CI."""
+        at = self._ukc_app()
+        at.radio(key="ukc_proj_basis").set_value("Piecewise linear (logit)").run()
+        assert "3" in at.radio(key="ukc_piecewise_n_seg").options
+        two = at.number_input(key="ukc_custom_dt_lo").value
+        at.radio(key="ukc_piecewise_n_seg").set_value(3).run()
+        _assert_no_error(at, "UK Cyber / 3 segments")
+        bp2 = at.selectbox(key="ukc_bp2_select")
+        assert at.selectbox(key="ukc_bp1_select").value not in bp2.options
+        vals = {two}
+        for opt in bp2.options:
+            at.selectbox(key="ukc_bp2_select").set_value(opt).run()
+            vals.add(at.number_input(key="ukc_custom_dt_lo").value)
+        assert len(vals) > 1
+
     def test_target_eta_is_shown(self):
         """The headline output is when open-weight models reach the target."""
         at = self._ukc_app()

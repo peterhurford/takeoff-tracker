@@ -8885,7 +8885,7 @@ def _render_rsi_tasteval(end_year):
 _UKC_RESET_KEYS = [
     "ukc_proj_basis", "ukc_custom_dt_lo", "ukc_custom_dt_hi",
     "ukc_custom_pos_lo", "ukc_custom_pos_hi", "ukc_custom_dt_dist",
-    "ukc_piecewise_n_seg", "ukc_bp1_select",
+    "ukc_piecewise_n_seg", "ukc_bp1_select", "ukc_bp2_select",
     "ukc_superexp_halflife", "ukc_superexp_dt_floor",
     "ukc_superexp_dt_ci_lo", "ukc_superexp_dt_ci_hi",
     "ukc_labels", "ukc_show_open", "ukc_show_lag",
@@ -8968,6 +8968,13 @@ def render_ukcyber():
                     _bp1 = st.selectbox("Breakpoint", _bp_choices,
                                         index=len(_bp_choices) // 2, key="ukc_bp1_select")
                     ukc_bps.append(_bp1)
+                    # Only the last segment is extrapolated, so a second
+                    # breakpoint moves the fit's start later.
+                    _bp2_choices = _ukc_names_used[_ukc_names_used.index(_bp1) + 1:-1]
+                    if ukc_n_segments >= 3 and _bp2_choices:
+                        ukc_bps.append(st.selectbox(
+                            "Breakpoint 2", _bp2_choices,
+                            index=len(_bp2_choices) // 2, key="ukc_bp2_select"))
             else:
                 st.session_state.pop("ukc_piecewise_n_seg", None)
 
