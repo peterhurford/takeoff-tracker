@@ -10777,6 +10777,12 @@ def _render_rev_us_china_ratio(us_series, cn_series, start, as_of):
 
 # ── Employment ────────────────────────────────────────────────────────────
 
+# The start is drawn around the fitted trend today; the two inputs set only
+# its 80% width in log-odds.
+_EMP_POS_HELP = ("Sets how uncertain today's RLI level is: the gap between low and high "
+                 "is the 80% width, in log-odds, of the starting point. The draw is "
+                 "centred on the fitted trend today, not on these two values.")
+
 _EMP_RESET_KEYS = [
     "emp_custom_dt_lo", "emp_custom_dt_hi",
     "emp_custom_pos_lo", "emp_custom_pos_hi",
@@ -10936,11 +10942,11 @@ def render_employment():
                 _emp_def_score = _emp_cur['rli_score']
                 _emp_pos_lo_col, _emp_pos_hi_col = st.columns(2)
                 emp_custom_pos_lo = _ss_number_input(_emp_pos_lo_col,
-                    "Pos CI low (%)", "emp_custom_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, step=0.1)
+                    "Start spread low (%)", "emp_custom_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
                 emp_custom_pos_hi = _ss_number_input(_emp_pos_hi_col,
-                    "Pos CI high (%)", "emp_custom_pos_hi", round(_emp_def_score + 1.0, 2),
-                    step=0.1)
+                    "Start spread high (%)", "emp_custom_pos_hi", round(_emp_def_score + 1.0, 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
 
                 emp_custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -10993,11 +10999,11 @@ def render_employment():
                 _emp_def_score = _emp_cur['rli_score']
                 _emp_se_pos1, _emp_se_pos2 = st.columns(2)
                 emp_superexp_pos_lo = _ss_number_input(_emp_se_pos1,
-                    "Pos CI low (%)", "emp_superexp_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
-                    min_value=0.01, step=0.1)
+                    "Start spread low (%)", "emp_superexp_pos_lo", round(max(_emp_def_score - 1.0, 0.1), 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
                 emp_superexp_pos_hi = _ss_number_input(_emp_se_pos2,
-                    "Pos CI high (%)", "emp_superexp_pos_hi", round(_emp_def_score + 1.0, 2),
-                    step=0.1)
+                    "Start spread high (%)", "emp_superexp_pos_hi", round(_emp_def_score + 1.0, 2),
+                    min_value=0.01, max_value=99.9, step=0.1, help=_EMP_POS_HELP)
 
         # --- Economic model parameters ---
         st.markdown("---")

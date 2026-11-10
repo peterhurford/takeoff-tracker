@@ -844,6 +844,20 @@ class TestEmploymentDefaults:
         assert 3.0 <= dt_hi / dt_lo <= 5.0, \
             f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
 
+    @pytest.mark.parametrize("basis,pre", [("Linear (logit)", "custom"),
+                                           ("Superexponential (logit)", "superexp")])
+    def test_start_inputs_say_they_set_only_the_width(self, basis, pre):
+        """The start is drawn around the fitted trend, so its inputs are
+        labelled a spread whose help says so, and stay below 100% (logit)."""
+        at = _emp_app()
+        at.radio(key="emp_proj_basis").set_value(basis).run()
+        _assert_no_error(at, f"Employment / {basis}")
+        for side in ("lo", "hi"):
+            ni = at.number_input(key=f"emp_{pre}_pos_{side}")
+            assert ni.label.startswith("Start spread")
+            assert "centred on the fitted trend" in ni.help
+            assert ni.max == 99.9
+
     def test_cards_are_dated_after_today(self):
         """Projection cards come from today: no past June card repeating
         today's value, and the year-end cards are named by their year."""
