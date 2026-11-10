@@ -455,6 +455,10 @@ class TestDefaultValues:
         assert at.radio(key="eci_proj_basis").value == "Piecewise linear"
         assert at.radio(key="eci_piecewise_n_seg").value == 2
         assert at.selectbox(key="eci_bp1_select").value == "Mythos Preview (internal)"
+        # Internal models off: the next named release.
+        at.toggle(key="eci_internal").set_value(False).run()
+        assert at.selectbox(key="eci_bp1_select").value == "Claude Fable 5"
+        at.toggle(key="eci_internal").set_value(True).run()
         # A single lab takes its own best split, not the US-wide name.
         at.selectbox(key="eci_entity_a").set_value("Anthropic").run()
         assert at.selectbox(key="eci_bp1_select").value == "Claude Sonnet 4.5"

@@ -4437,26 +4437,26 @@ def _eci_yearly_gain_range(frontier):
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
 
 
-# Where the ECI piecewise fit breaks by default, per entity: Mythos Preview
-# (internal) starts the 2026 speed-up on the whole-US frontiers; GLM-5.1 on
-# China's. Other entities, or a frontier without the named model, take their
-# own best fit.
-_ECI_DEFAULT_BREAK = "Mythos Preview (internal)"
+# Where the ECI piecewise fit breaks by default, per entity, the first named
+# model present: Mythos Preview (internal) starts the 2026 speed-up on the
+# whole-US frontiers, Claude Fable 5 with internal models off; GLM-5.1 on
+# China's. Other entities, or a frontier with none of them, take their own best fit.
+_ECI_DEFAULT_BREAK = ("Mythos Preview (internal)", "Claude Fable 5")
 _ECI_DEFAULT_BREAKS = {"US best": _ECI_DEFAULT_BREAK,
                        "Frontier (any lab)": _ECI_DEFAULT_BREAK,
                        "China best": "GLM-5.1"}
 
 
 def _eci_default_break_idx(frontier, named=_ECI_DEFAULT_BREAK, min_side=3):
-    """Index of the default breakpoint in `frontier`: the model named `named`
-    when it leaves `min_side` models on each side; else the split with the
-    least two-segment squared error, else the middle model."""
+    """Index of the default breakpoint in `frontier`: the first model in
+    `named` (a name or a tuple of them) present that leaves `min_side` models on
+    each side; else the split with the least two-segment squared error, else
+    the middle model."""
     names = [m['display_name'] for m in frontier]
     n = len(names)
-    if named and named in names:
-        i = names.index(named)
-        if min_side - 1 <= i <= n - min_side:
-            return i
+    for name in ((named,) if isinstance(named, str) else named or ()):
+        if name in names and min_side - 1 <= names.index(name) <= n - min_side:
+            return names.index(name)
     if n < 2 * min_side - 1:
         return n // 2
     base = frontier[0]['date']

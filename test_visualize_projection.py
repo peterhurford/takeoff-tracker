@@ -1087,10 +1087,14 @@ class TestEciGap:
                "display_name": f"M{m}"}
               for m, s in zip(range(1, 10), [100, 101, 102, 103, 104, 110, 116, 122, 128])]
         assert vp._eci_default_break_idx(fr) == 4          # the kink
-        fr[6]["display_name"] = vp._ECI_DEFAULT_BREAK
-        assert vp._eci_default_break_idx(fr) == 6          # named wins
+        first, fallback = vp._ECI_DEFAULT_BREAK
+        fr[5]["display_name"] = fallback
+        assert vp._eci_default_break_idx(fr) == 5          # the fallback, absent the first
+        fr[6]["display_name"] = first
+        assert vp._eci_default_break_idx(fr) == 6          # the first named wins
         assert vp._eci_default_break_idx(fr, named=False) == 4
-        fr[6]["display_name"], fr[7]["display_name"] = "M7", vp._ECI_DEFAULT_BREAK
+        fr[5]["display_name"] = "M6"
+        fr[6]["display_name"], fr[7]["display_name"] = "M7", first
         assert vp._eci_default_break_idx(fr) == 4          # <3 after it: best fit
         cn = vp._eci_entity_data("China best")[1]
         i = vp._eci_default_break_idx(cn, vp._ECI_DEFAULT_BREAKS["China best"])
