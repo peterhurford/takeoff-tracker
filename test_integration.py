@@ -1196,6 +1196,22 @@ class TestComputeVsCapabilities:
         _switch_tab(at, "China")
         return at
 
+    def test_us_capacity_end_is_dated_by_its_own_point(self):
+        """The capacity hover's "~X by YYYY" names the last catalogued
+        buildout point's year, so a later horizon with no new point prints
+        the same value and the same year."""
+        at = self._cc_app()
+        seen = {}
+        for yr in (2029, 2031):
+            at.radio(key="cc_end_year").set_value(yr).run()
+            _assert_no_error(at, f"China / through {yr}")
+            text = " ".join(str(c.value) for c in at.caption)
+            val, by = re.search(r"megaclusters \(Stargate, Hyperion…\) to "
+                                r"~([\d.]+) by (\d{4})", text).groups()
+            assert int(by) <= yr
+            seen.setdefault(val, set()).add(by)
+        assert all(len(years) == 1 for years in seen.values())
+
     def test_renders_every_section(self):
         """US vs. China with the four-row distillation table and the
         three-channel decomposition with its consistency check render."""

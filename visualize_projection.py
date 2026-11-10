@@ -14735,7 +14735,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
     # line rides the real announced buildout to ~2029, not a flat extrapolation.
     us_cap_hist = [(d, np.log10(v), n, sd) for d, v, n, sd in dc_fr if d <= horizon]
     us_cap_lf = next(lf for d, lf, n, sd in reversed(us_cap_hist) if d <= today)
-    us_cap_end_lf = us_cap_hist[-1][1]
+    us_cap_end_d, us_cap_end_lf = us_cap_hist[-1][0], us_cap_hist[-1][1]
     # China capacity = its largest *demonstrated* run + modest single-cluster
     # headroom, anchored at the last run so the fan connects to the data.
     # run_extra scales the band by the run-window ratio so both countries'
@@ -14887,7 +14887,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         (f"~{_logop_lbl(us_run_lf)} (US)",
          f"Capacity ~{_logop_lbl(us_cap_lf)} today, riding announced "
          f"megaclusters (Stargate, Hyperion\u2026) to "
-         f"~{_logop_num(us_cap_end_lf)} by {horizon.year}. Recent US frontier "
+         f"~{_logop_num(us_cap_end_lf)} by {us_cap_end_d.year}. Recent US frontier "
          "models use less than the record run (GPT-5 ~25.8) \u2014 efficiency, "
          "not bigger runs."),
         (f"~{_logop_num(cn_run_lf)} (China)",
