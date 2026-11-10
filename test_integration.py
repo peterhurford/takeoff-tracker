@@ -735,6 +735,37 @@ class TestRliMilestones:
                 assert arrive.iloc[i]["Median"] == record['date'].strftime('%b %Y')
 
 
+class TestMeasuredCard:
+    @pytest.mark.parametrize("tab", ["metr", "eci", "rli"])
+    def test_measured_card_shows_no_ci(self, tab):
+        """The first card is the newest record, so it carries no trend CI."""
+        at = _fresh_app()
+        at.query_params["tab"] = tab
+        at.run()
+        _assert_no_error(at, tab)
+        caps = [c.value for c in at.caption]
+        first_ci = next(i for i, c in enumerate(caps) if c.startswith("80% CI"))
+        assert caps[first_ci - 1] == "measured"
+
+    def test_eci_measured_milestone_reads_as_reached(self):
+        """A milestone at or below the record reads 100% at every date and
+        arrives at the record's date (RLI: `TestRliMilestones`)."""
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.run()
+        record = float(at.metric[0].value)
+        tables = [t.value for t in at.table]
+        probs = next(t for t in tables if "Milestone" in t.columns and "Median" not in t.columns)
+        arrive = next(t for t in tables if "Median" in t.columns)
+        passed = 0
+        for i, row in probs.iterrows():
+            if float(row["Milestone"].split()[-1]) <= record:
+                passed += 1
+                assert all(v == "100%" for v in list(row)[1:]), row
+                assert arrive.iloc[i]["80% CI"].split(" – ")[0] == arrive.iloc[i]["Median"]
+        assert passed
+
+
 class TestEmploymentDefaults:
     """Employment default values are reasonable and data-driven."""
 

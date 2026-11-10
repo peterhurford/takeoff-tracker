@@ -4363,7 +4363,9 @@ def render_metr():
                 doublings = (hl / (dt_arr * np.log(2))) * (2**(elapsed_days / hl) - 1)
         else:
             doublings = elapsed_days / dt_arr
-        return start_hrs * (2 ** doublings)
+        # The frontier is a running max: no reading falls below the measured
+        # record, though the trend anchor may draw below it.
+        return np.maximum(start_hrs * (2 ** doublings), current_hrs)
 
     # All columns use the projection model for coherent "all things considered" forecasts
     all_targets = [
@@ -4378,7 +4380,8 @@ def render_metr():
         display_h = current_hrs if elapsed == 0 else p50_h
         with col:
             st.metric(label=label, value=fmt_hrs(display_h, hours_only=hours_only))
-            st.caption(f"80% CI: {fmt_hrs(p10_h, hours_only=hours_only)} \u2013 {fmt_hrs(p90_h, hours_only=hours_only)}")
+            st.caption("measured" if elapsed == 0 else
+                       f"80% CI: {fmt_hrs(p10_h, hours_only=hours_only)} \u2013 {fmt_hrs(p90_h, hours_only=hours_only)}")
 
     # Milestone tables in expander
     milestone_thresholds = [
@@ -4423,6 +4426,9 @@ def render_metr():
                     days_to = np.where(doublings_needed <= d_at_cap, days_se_only, days_with_floor)
                 else:
                     days_to = doublings_needed * proj_dt
+                days_to = np.maximum(days_to, 0)
+                if hrs_threshold <= current_hrs:
+                    days_to = np.zeros_like(days_to)   # already measured
                 p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
                 med_date = current['date'] + timedelta(days=p50_d)
                 early_date = current['date'] + timedelta(days=p10_d)
@@ -5349,7 +5355,9 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 pts = (hl / (dpp_arr * np.log(2))) * (2**(elapsed_days / hl) - 1)
         else:
             pts = elapsed_days / dpp_arr
-        return start_scores + pts
+        # The frontier is a running max: no reading falls below the measured
+        # record, though the trend anchor may draw below it.
+        return np.maximum(start_scores + pts, eci_current_score)
 
     # All columns use the projection model for coherent forecasts
     all_targets = [
@@ -5384,10 +5392,12 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 g_lo = _gap_trend(p90_s, target_date)
                 g_hi = _gap_trend(p10_s, target_date)
                 st.metric(label=label, value=f"{g50:.1f} mo")
-                st.caption(f"80% CI: {g_lo:.1f} \u2013 {g_hi:.1f} mo")
+                st.caption("measured" if elapsed == 0
+                           else f"80% CI: {g_lo:.1f} \u2013 {g_hi:.1f} mo")
             else:
                 st.metric(label=label, value=f"{display_s:.1f}")
-                st.caption(f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
+                st.caption("measured" if elapsed == 0
+                           else f"80% CI: {p10_s:.1f} \u2013 {p90_s:.1f}")
             if eci_metr_proj:
                 st.markdown(
                     f"<div style='font-size:0.72em; color:#888; margin-top:-0.4em;'>"
@@ -5443,6 +5453,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     days_to = pts_needed * eci_proj_dpp
                 # Filter out negative/zero days (already past milestone)
                 days_to = np.maximum(days_to, 0)
+                if score_threshold <= eci_current_score:
+                    days_to = np.zeros_like(days_to)   # already measured
                 p10_d, p50_d, p90_d = np.percentile(days_to, [10, 50, 90])
                 med_date = eci_current['date'] + timedelta(days=max(p50_d, 0))
                 early_date = eci_current['date'] + timedelta(days=max(p10_d, 0))
@@ -6570,7 +6582,8 @@ def render_rli():
         display_s = rli_current_score if elapsed == 0 else p50_s
         with col:
             st.metric(label=label, value=f"{display_s:.1f}%")
-            st.caption(f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
+            st.caption("measured" if elapsed == 0
+                       else f"80% CI: {p10_s:.1f}% \u2013 {p90_s:.1f}%")
 
     # Milestone tables
     rli_milestone_thresholds = [

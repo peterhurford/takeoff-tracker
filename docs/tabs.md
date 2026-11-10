@@ -32,6 +32,10 @@ On METR, ECI and RLI the CI inputs and breakpoints default off the fit at *Proje
 so `_reset_on_as_of_change()` pops them when that changes, and switching the vantage point
 gives what a session opened there gives (`TestAsOfRederivesCi`).
 
+Their frontiers are running maxima, so readings floor at the newest record, a milestone it
+passed reads 100% and arrives at its date, and the record's own card says "measured" with no
+CI (`TestMeasuredCard`, `TestRliMilestones`).
+
 ## UK Cyber tab caveats
 
 Five load-bearing constraints; don't "simplify" them away:
