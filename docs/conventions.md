@@ -136,6 +136,15 @@ timeline point), footnoting each source's own date when there are several. A tab
 with no dated source prints no line. Frontier Thresholds computes its own from its
 events (`test_data_through_sits_under_the_title`).
 
+## Number formats
+
+Durations in cards, tables and captions go through `_pc_span`: months below 24, then
+years with one decimal ("15.5 mo", "2.5 yr"); `_tk_span` adds days and weeks below a
+month, and `_tk_span_bound` prints an interval bound under half a day as "<1 d", not
+"0 d". Visible multipliers use "×" ("Odds 2×", "10×"); keys and code keep `x`. Hovers
+and prose durations are not routed through it. `TestConsistentFormats` holds all three
+on every tab.
+
 ## Light theme only
 
 `.streamlit/config.toml` sets `[theme] base = "light"` and no `[theme.dark]`, which

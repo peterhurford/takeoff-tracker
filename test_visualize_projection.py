@@ -5142,10 +5142,11 @@ class TestPacing:
         end25 = vp._wc_world_h100e(datetime(2025, 12, 31))
         assert 19e6 < end25 < 23e6
 
-    def test_spans_past_a_year_read_in_years(self):
+    def test_spans_past_two_years_read_in_years(self):
         assert vp._pc_span(11.6) == "11.6 mo"
-        assert vp._pc_span(15.5) == "1.3 yr"
-        assert vp._pc_span(-18, 0, sign=True) == "-1.5 yr"
+        assert vp._pc_span(15.5) == "15.5 mo"
+        assert vp._pc_span(-18, 0, sign=True) == "-18 mo"
+        assert vp._pc_span(-30, 0, sign=True) == "-2.5 yr"
         assert vp._pc_span(5, 0, sign=True) == "+5 mo"
 
     def test_paced_clock_runs_the_us_at_its_pace_from_the_start(self):
@@ -6731,7 +6732,8 @@ def test_takeoff_durations_read_in_the_coarsest_fitting_unit():
     assert span(3 / 365.25) == "3 d"
     assert span(-5 / 52) == "-5 wk"
     assert span(0.5) == "6 mo"
-    assert span(1.83) == "1.8 yr"
+    assert span(1.83) == "22 mo"
+    assert span(2.5) == "2.5 yr"
     assert span(np.inf) == "not by 2040"
 
 

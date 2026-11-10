@@ -282,6 +282,48 @@ class TestTabTopOrder:
             assert all(f"{n}, " in line.value for n in ("OpenAI", "Anthropic", "Chinese labs"))
 
 
+class TestConsistentFormats:
+    """Cards, tables and captions share one duration format (months below 24,
+    then years), print multipliers with "×", and print a zero interval bound
+    as "<1 d"."""
+
+    def test_the_formatters(self):
+        import visualize_projection as vp
+        assert vp._pc_span(15.5) == "15.5 mo"
+        assert vp._pc_span(30) == "2.5 yr"
+        assert vp._pc_span(23.96, 0) == "2.0 yr"
+        end = vp.datetime(2030, 1, 1)
+        assert vp._tk_span_bound(0.0, end) == "<1 d"
+        assert vp._tk_span_bound(0.0, end) != vp._tk_span(0.0, end)
+
+    @pytest.mark.parametrize("tab", list(_SLUG_FOR_TAB))
+    def test_no_long_months_and_no_x_multipliers(self, tab):
+        import re
+        at = _fresh_app()
+        at.query_params["tab"] = _SLUG_FOR_TAB[tab]
+        at.run()
+        _assert_no_error(at, tab)
+        texts = [str(m.label) for m in at.metric] + [str(m.value) for m in at.metric]
+        texts += [c.value for c in at.caption]
+        for t in at.table:
+            df = t.value
+            texts += [str(c) for c in df.columns]
+            texts += [str(v) for v in df.to_numpy().ravel()]
+        for s in texts:
+            for n in re.findall(r"(\d+(?:\.\d+)?) mo\b", s):
+                assert float(n) < 24, f"{tab}: {s!r} should read in years"
+            assert not re.search(r"\b\d+(?:\.\d+)?x\b", s), f"{tab}: {s!r} wants ×"
+            assert not re.search(r"[(–-] ?0 d\b", s), f"{tab}: {s!r} wants <1 d"
+
+    def test_revenue_chart_has_no_blank_top_margin(self):
+        at = _fresh_app()
+        at.query_params["tab"] = "revenue"
+        at.run()
+        _assert_no_error(at, "Revenue")
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+        assert spec["layout"]["margin"]["t"] <= 50
+
+
 class TestReleaseLagTab:
     def test_it_shows_snapshot_lag_and_frontier_lead(self):
         at = _fresh_app()
@@ -826,7 +868,7 @@ class TestRliExplains:
         at.number_input(key="rli_custom_dt_lo").set_value(1000.0)
         at.number_input(key="rli_custom_dt_hi").set_value(100.0)
         at.run()
-        assert [e.value for e in at.error] == ["Odds 2x time CI low must be ≤ CI high."]
+        assert [e.value for e in at.error] == ["Odds 2× time CI low must be ≤ CI high."]
 
 
 class TestNormalTrendLegend:
@@ -1051,7 +1093,7 @@ class TestEmploymentDefaults:
         assert at.slider(key="emp_rli_coverage").proto.help.startswith("Percent")
         at.number_input(key="emp_custom_dt_lo").set_value(1500.0)
         at.number_input(key="emp_custom_dt_hi").set_value(100.0).run()
-        assert any("Odds 2x time CI low" in str(e.value) for e in at.error)
+        assert any("Odds 2× time CI low" in str(e.value) for e in at.error)
 
 
 class TestEmploymentSliderChanges:
@@ -1664,7 +1706,7 @@ class TestRsiTab:
         import json
         at = self._rsi_app()
         assert "Experiment velocity at OpenAI" in [str(h.value) for h in at.subheader]
-        label = "OpenAI experiment velocity reaches 10x"
+        label = "OpenAI experiment velocity reaches 10×"
         assert label in [str(m.label) for m in at.metric]
         table = next(x.value for x in at.table if "Milestone" in x.value.columns)
         row = table[table["Milestone"] == label]
@@ -2645,7 +2687,7 @@ class TestUkCyberTab:
         assert "Measured open-weight lag" in labels
         # A bracket, lower edge first (the values move with the digitization).
         lag = next(m.value for m in at.metric if m.label == "Measured open-weight lag")
-        lo, hi = re.fullmatch(r"([\d.]+)–([\d.]+) mo", lag).groups()
+        lo, hi = re.fullmatch(r"([\d.]+)–([\d.]+) (?:mo|yr)", lag).groups()
         assert float(lo) < float(hi)
 
     def test_confound_caveat_is_surfaced(self):

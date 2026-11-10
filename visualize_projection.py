@@ -1353,10 +1353,10 @@ _RSI_SURVEY = [
     {"name": "Opus 4", "date": "2025-05-22", "uplift": 1.3, "metr": True,
      "note": "targeted survey, hours saved (METR's chart)"},
     {"name": "Opus 4.5", "date": "2025-11-24", "uplift": 2.0,
-     "note": "n=18, top ~30 staff by internal Claude Code use · median (mean 3.2x)"
+     "note": "n=18, top ~30 staff by internal Claude Code use · median (mean 3.2×)"
              "<br>0 of 18 thought it crossed AI R&D-4"},
     {"name": "Opus 4.6", "date": "2026-02-05", "uplift": 2.0, "lo": 1.3, "hi": 8.0,
-     "note": "n=16, broadened past superusers · median (mean 2.5x), range 1.3\u20138x"
+     "note": "n=16, broadened past superusers · median (mean 2.5\u00d7), range 1.3\u20138\u00d7"
              "<br>2 of 16 said a drop-in L4 was already possible; both revised on "
              "follow-up"},
     {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0,
@@ -1652,7 +1652,7 @@ def _rsi_code_hover(r):
         tail = "<br>pre-2025 baseline — charted, not fitted"
     else:
         tail = ""
-    return f"{r['q'][:4]} {r['q'][4:]}<br>{r['mult']:g}x pre-2025 average" + tail
+    return f"{r['q'][:4]} {r['q'][4:]}<br>{r['mult']:g}× pre-2025 average" + tail
 
 
 @st.cache_data
@@ -5485,9 +5485,9 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 g50 = _gap_trend(display_s, target_date)
                 g_lo = _gap_trend(p90_s, target_date)
                 g_hi = _gap_trend(p10_s, target_date)
-                st.metric(label=label, value=f"{g50:.1f} mo")
+                st.metric(label=label, value=_pc_span(g50))
                 st.caption("measured" if elapsed == 0
-                           else f"80% CI: {g_lo:.1f} \u2013 {g_hi:.1f} mo")
+                           else f"80% CI: {_pc_span(g_lo)} \u2013 {_pc_span(g_hi)}")
             else:
                 st.metric(label=label, value=f"{display_s:.1f}")
                 st.caption("measured" if elapsed == 0
@@ -6134,15 +6134,15 @@ def render_rli():
                 # Doubling time CI (days for odds to double)
                 _rli_dt_lo_col, _rli_dt_hi_col = st.columns(2)
                 rli_custom_dt_lo = _ss_number_input(_rli_dt_lo_col,
-                    "Odds 2x time CI low (days)", "rli_custom_dt_lo", _rli_default_dt_lo,
+                    "Odds 2× time CI low (days)", "rli_custom_dt_lo", _rli_default_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0,
                     help="Fast scenario: days for odds p/(1-p) to double.")
                 rli_custom_dt_hi = _ss_number_input(_rli_dt_hi_col,
-                    "Odds 2x time CI high (days)", "rli_custom_dt_hi", _rli_default_dt_hi,
+                    "Odds 2× time CI high (days)", "rli_custom_dt_hi", _rli_default_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0,
                     help="Slow scenario: days for odds to double.")
                 if rli_custom_dt_lo > rli_custom_dt_hi:
-                    st.error("Odds 2x time CI low must be ≤ CI high.")
+                    st.error("Odds 2× time CI low must be ≤ CI high.")
                     st.stop()
 
                 # Position CI in percentage points: an 80% interval for where
@@ -6198,19 +6198,19 @@ def render_rli():
                     min_value=30, max_value=5000, step=30,
                     help="How quickly rate grows. Lower = faster.")
                 rli_superexp_dt_floor_input = _ss_number_input(st,
-                    "Min odds 2x time (days)", "rli_superexp_dt_floor", 15.0,
+                    "Min odds 2× time (days)", "rli_superexp_dt_floor", 15.0,
                     min_value=1.0, max_value=500.0, step=1.0,
                     help="Rate can't exceed this. Prevents runaway projections.")
                 rli_superexp_dt_floor = rli_superexp_dt_floor_input
                 _rli_se_ci1, _rli_se_ci2 = st.columns(2)
                 rli_superexp_dt_ci_lo = _ss_number_input(_rli_se_ci1,
-                    "Odds 2x CI low (days)", "rli_superexp_dt_ci_lo", _rli_default_se_dt_lo,
+                    "Odds 2× CI low (days)", "rli_superexp_dt_ci_lo", _rli_default_se_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0)
                 rli_superexp_dt_ci_hi = _ss_number_input(_rli_se_ci2,
-                    "Odds 2x CI high (days)", "rli_superexp_dt_ci_hi", _rli_default_se_dt_hi,
+                    "Odds 2× CI high (days)", "rli_superexp_dt_ci_hi", _rli_default_se_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if rli_superexp_dt_ci_lo > rli_superexp_dt_ci_hi:
-                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.error("Odds 2× CI low must be ≤ CI high.")
                     st.stop()
                 _rli_cur = rli_frontier_all[rli_proj_as_of_idx]
                 _rli_def_score = _rli_cur['rli_score']
@@ -6404,7 +6404,7 @@ def render_rli():
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_trend.tolist(),
                         mode='lines', line=dict(color='#2c3e50', width=2.5),
-                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        name=f'Segment {si+1} (2× odds:{seg_dt:.0f}d)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
                     # Projected portion: the fan's median, from its blended start
@@ -6415,7 +6415,7 @@ def render_rli():
                     fig.add_trace(go.Scatter(
                         x=dates_proj, y=y_proj.tolist(),
                         mode='lines', line=dict(color='#2980b9', width=2.5),
-                        name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
+                        name=f'Projection (2× odds:{_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
                         hovertext=hover_proj, hoverinfo='text',
                     ))
                 else:
@@ -6429,7 +6429,7 @@ def render_rli():
                     fig.add_trace(go.Scatter(
                         x=dates_seg, y=y_trend.tolist(),
                         mode='lines', line=dict(color=_seg_colors[si % len(_seg_colors)], width=2, dash='dash'),
-                        name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
+                        name=f'Segment {si+1} (2× odds:{seg_dt:.0f}d)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
         else:
@@ -6446,7 +6446,7 @@ def render_rli():
             fig.add_trace(go.Scatter(
                 x=dates_seg, y=y_trend.tolist(),
                 mode='lines', line=dict(color='#2c3e50', width=2.5),
-                name=f'OLS trend (2x odds: {rli_ols_dt:.0f}d)',
+                name=f'OLS trend (2× odds:{rli_ols_dt:.0f}d)',
                 hovertext=hover_seg, hoverinfo='text',
             ))
             # Projected portion: the fan's median, from its blended start
@@ -6457,7 +6457,7 @@ def render_rli():
             fig.add_trace(go.Scatter(
                 x=dates_proj, y=y_proj.tolist(),
                 mode='lines', line=dict(color='#2980b9', width=2.5),
-                name=f'Projection (2x odds: {_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
+                name=f'Projection (2× odds:{_user_dt_center:.0f}d, CI {rli_custom_dt_lo}\u2013{rli_custom_dt_hi}d)',
                 hovertext=hover_proj, hoverinfo='text',
             ))
     elif rli_proj_basis == "Superexponential (logit)":
@@ -6472,7 +6472,7 @@ def render_rli():
         fig.add_trace(go.Scatter(
             x=dates_hist, y=y_hist.tolist(),
             mode='lines', line=dict(color='#2c3e50', width=2.5),
-            name=f'Superexp fit (2x odds: {rli_superexp_dt_fitted:.0f}d, HL={rli_superexp_halflife}d)',
+            name=f'Superexp fit (2× odds:{rli_superexp_dt_fitted:.0f}d, HL={rli_superexp_halflife}d)',
             hovertext=hover_hist, hoverinfo='text',
         ))
         # Projected portion: the fan's median
@@ -6483,7 +6483,7 @@ def render_rli():
         fig.add_trace(go.Scatter(
             x=dates_proj, y=y_proj.tolist(),
             mode='lines', line=dict(color='#2980b9', width=2.5),
-            name=f'Projection (2x odds: {_rli_user_dt:.0f}d, CI {rli_superexp_dt_ci_lo}\u2013{rli_superexp_dt_ci_hi}d)',
+            name=f'Projection (2× odds:{_rli_user_dt:.0f}d, CI {rli_superexp_dt_ci_lo}\u2013{rli_superexp_dt_ci_hi}d)',
             hovertext=hover_proj, hoverinfo='text',
         ))
 
@@ -7104,11 +7104,11 @@ def render_rsi(end_year):
             _default_dt_lo, _default_dt_hi = _rsi_dt_ci(rsi_frontier_all, _fit_dt)
             _dt_lo_col, _dt_hi_col = st.columns(2)
             rsi_dt_lo = _ss_number_input(
-                _dt_lo_col, "Odds 2x time CI low (days)", "rsi_custom_dt_lo",
+                _dt_lo_col, "Odds 2× time CI low (days)", "rsi_custom_dt_lo",
                 _default_dt_lo, min_value=5.0, max_value=2000.0,
                 step=5.0, help="Fast scenario: days for the odds p/(1-p) to double.")
             rsi_dt_hi = _ss_number_input(
-                _dt_hi_col, "Odds 2x time CI high (days)", "rsi_custom_dt_hi",
+                _dt_hi_col, "Odds 2× time CI high (days)", "rsi_custom_dt_hi",
                 _default_dt_hi, min_value=5.0, max_value=5000.0, step=5.0,
                 help="Slow scenario. The default 80% CI is the fitted rate halved "
                      "and doubled, widened to span the consecutive-segment rates.")
@@ -7180,7 +7180,7 @@ def render_rsi(end_year):
         fig.add_trace(go.Scatter(
             x=_hist_dates, y=_hist_y.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2x odds: {_fit_dt:.0f}d)",
+            name=f"Fitted trend (2× odds:{_fit_dt:.0f}d)",
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
                        for d, y in zip(_hist_dates, _hist_y)],
             hoverinfo='text'))
@@ -7343,7 +7343,7 @@ def _render_rsi_automation(end_year):
             spread = _rsi_auto_lag_spread(rows, lo, hi)
             with col:
                 st.metric(f"{lo.upper()}+ → {hi.upper()}+",
-                          f"{days / 30.44:.1f} mo",
+                          _pc_span(days / 30.44),
                           help="Measured: how far the upper rung's fitted "
                                "curve trails the lower one at "
                                f"{_RSI_AUTO_LADDER_REF:.0f}%. The rungs are "
@@ -7356,7 +7356,7 @@ def _render_rsi_automation(end_year):
                                f"{spread[1] / 30.44:.1f} months.")
         with cols[-3]:
             st.metric("AL4+ → AL5 (assumed)",
-                      f"{lag['ladder'] / 30.44:.1f} mo",
+                      _pc_span(lag['ladder'] / 30.44),
                       help="Not measured. The measured steps continue by "
                            f"about {(steps[-1][2] - steps[-2][2]) / 30.44:+.1f} "
                            "months each, and this extends that increment one "
@@ -7454,7 +7454,7 @@ def _render_rsi_automation(end_year):
         fig.add_trace(go.Scatter(
             x=hdates, y=hy.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"AL4+ fitted trend (2x odds: {dt:.0f}d)",
+            name=f"AL4+ fitted trend (2× odds:{dt:.0f}d)",
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
                        for d, y in zip(hdates, hy)],
             hoverinfo='text'))
@@ -7659,15 +7659,15 @@ def _render_rsi_survey(end_year):
         fig.add_trace(go.Scatter(
             x=hdates, y=np.exp(intercept + slope * hdays).tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2x: {dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}x"
+            name=f"Fitted trend (2×:{dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}×"
                        for d, y in zip(hdates, np.exp(intercept + slope * hdays))],
             hoverinfo='text'))
         fig.add_trace(go.Scatter(
             x=pdates, y=pct[50].tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5, dash='dash'),
             name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}x"
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}×"
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
         x_end = pdates[-1]
@@ -7698,7 +7698,7 @@ def _render_rsi_survey(end_year):
                 'middle right' if _metr else 'top center'),
             textfont=dict(size=10, color='#999999' if _est else '#1a1a2e'),
             hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
-                      f"~{r['uplift']:g}x output vs no AI<br>{r['note']}",
+                      f"~{r['uplift']:g}× output vs no AI<br>{r['note']}",
             hoverinfo='text', showlegend=False))
 
     fig.add_hline(y=_PC_RSI_SURVEY_TARGET_X,
@@ -7708,7 +7708,7 @@ def _render_rsi_survey(end_year):
     fig.add_annotation(
         xref='x domain', x=0.01, y=np.log10(_PC_RSI_SURVEY_TARGET_X),
         yanchor='bottom', xanchor='left', showarrow=False,
-        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}x — the milestone bar, " + (
+        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}× — the milestone bar, " + (
             f"passed by {cur['name']}" if cur['uplift'] >= _PC_RSI_SURVEY_TARGET_X
             else f"{np.log2(_PC_RSI_SURVEY_TARGET_X / cur['uplift']):.1f} "
                  "doublings past the last round"),
@@ -7740,7 +7740,7 @@ def _render_rsi_survey(end_year):
         "Anthropic surveys its own technical staff on productivity uplift per "
         f"frontier model: {_TK_NUMBER_WORDS[_n_rounds] if _n_rounds < 10 else _n_rounds} "
         f"rounds since {rows[0]['date']:%b %Y}, the latest {cur['name']} at "
-        f"~{cur['uplift']:g}x. The rounds differ in sample and statistic, and the "
+        f"~{cur['uplift']:g}×. The rounds differ in sample and statistic, and the "
         "trend is fitted on the log of the multiple. Source: "
         f"[Redacted Risk Report, August 2026, \u00a73.4.2]({_RSI_SOURCE_URL}), "
         f"the corresponding Claude system cards and [METR's chart]({_METR_ACCEL_SOURCE_URL}).",
@@ -7806,15 +7806,15 @@ def _render_rsi_code(end_year):
         fig.add_trace(go.Scatter(
             x=hdates, y=hy.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2x: {dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}x"
+            name=f"Fitted trend (2×:{dt:.0f}d)",
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}×"
                        for d, y in zip(hdates, hy)],
             hoverinfo='text'))
         fig.add_trace(go.Scatter(
             x=pdates, y=pct[50].tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5, dash='dash'),
             name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}x"
+            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}×"
                        for d, y in zip(pdates, pct[50])],
             hoverinfo='text'))
         x_end = pdates[-1]
@@ -7864,7 +7864,7 @@ def _render_rsi_code(end_year):
     fig.add_annotation(
         xref='x domain', x=0.01, y=np.log10(_RSI_CODE_TARGET),
         yanchor='bottom', xanchor='left', showarrow=False,
-        text=f"{_RSI_CODE_TARGET:.0f}x — one engineer merging what "
+        text=f"{_RSI_CODE_TARGET:.0f}× — one engineer merging what "
              f"{_RSI_CODE_TARGET:.0f} did before 2025",
         font=dict(size=11, color='#e74c3c'))
     _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×", label="trend", log=True)
@@ -7962,7 +7962,7 @@ def _pc_rsi_experiment_eta(rows, target_x=_RSI_EXPERIMENT_TARGET,
 def _render_rsi_experiments(end_year):
     _fn_line(
         "Experiments per active experimenter, relative to 2025. "
-        "Four-week trailing average; threshold: 10x.",
+        "Four-week trailing average; threshold: 10×.",
         ("Experiments per active experimenter",
          "Neptune experiment counts exclude evaluations and automated runs. "
          "Each owner namespace contributes at most 100 experiments per day. "
@@ -7988,12 +7988,12 @@ def _render_rsi_experiments(end_year):
         fig.add_trace(go.Scatter(
             x=dates, y=pct[50], mode='lines', name='Median projection',
             line=dict(color='#2c3e50', dash='dash'),
-            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}x<extra></extra>'))
+            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}×<extra></extra>'))
         fit_dates = [r['date'] for r in rows]
         fig.add_trace(go.Scatter(
             x=fit_dates,
             y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])),
-            mode='lines', name=f'Fitted trend (2x: {np.log(2) / slope:.0f}d)',
+            mode='lines', name=f'Fitted trend (2×:{np.log(2) / slope:.0f}d)',
             line=dict(color='#2c3e50'), hoverinfo='skip'))
         y_top = max(y_top, float(pct[95][-1]))
     fig.add_trace(go.Scatter(
@@ -8001,11 +8001,11 @@ def _render_rsi_experiments(end_year):
         mode='lines+markers', name='OpenAI observations',
         line=dict(color='#4F8DFD'),
         hovertemplate='Week: %{x|%b %d, %Y}<br>Experiments / active experimenter: '
-                      '%{y:.2f}x (2025 = 1x)<extra></extra>'))
+                      '%{y:.2f}× (2025 = 1×)<extra></extra>'))
     fig.add_hline(y=_RSI_EXPERIMENT_TARGET,
                   line=dict(color='#e74c3c', dash='dash'))
     fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
-                       text='10x the 2025 baseline', showarrow=False,
+                       text='10× the 2025 baseline', showarrow=False,
                        xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
     # Where the trend stands today, not Takeoff's pace (that is METR's, set apart).
     _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
@@ -8687,7 +8687,7 @@ def _render_rsi_direction(end_year):
         fig.add_trace(go.Scatter(
             x=hdates, y=hy.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2x odds: {fit_dt:.0f}d)",
+            name=f"Fitted trend (2× odds:{fit_dt:.0f}d)",
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
                        for d, y in zip(hdates, hy)],
             hoverinfo='text'))
@@ -8792,7 +8792,7 @@ def _render_rsi_tasteval(end_year):
             x=dates, y=ys.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
             name=f"{'Before' if d0 < brk else 'From'} GPT-5.2: "
-                 f"2x every {12 / slope:.1f} mo",
+                 f"2× every {12 / slope:.1f} mo",
             hoverinfo='skip'))
     for fitted, name in ((True, "Frontier models (fitted)"),
                          (False, "Not fitted")):
@@ -9098,31 +9098,31 @@ def render_ukcyber():
                 ukc_halflife = _ss_number_input(_c1, "Rate half-life (days)",
                     "ukc_superexp_halflife", 365, min_value=30, max_value=5000, step=30,
                     help="How quickly the rate accelerates. Lower = faster.")
-                ukc_dt_floor = _ss_number_input(_c2, "Min odds 2x time (days)",
+                ukc_dt_floor = _ss_number_input(_c2, "Min odds 2× time (days)",
                     "ukc_superexp_dt_floor", 15.0, min_value=1.0, max_value=500.0, step=1.0,
                     help="Rate can't exceed this. Prevents runaway projections.")
                 _s1, _s2 = st.columns(2)
-                ukc_se_dt_lo = _ss_number_input(_s1, "Odds 2x CI low (days)",
+                ukc_se_dt_lo = _ss_number_input(_s1, "Odds 2× CI low (days)",
                     "ukc_superexp_dt_ci_lo", float(round(max(5.0, _seg_dt / 2))),
                     min_value=5.0, max_value=2000.0, step=5.0)
-                ukc_se_dt_hi = _ss_number_input(_s2, "Odds 2x CI high (days)",
+                ukc_se_dt_hi = _ss_number_input(_s2, "Odds 2× CI high (days)",
                     "ukc_superexp_dt_ci_hi", float(round(_seg_dt * 2)),
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if ukc_se_dt_lo > ukc_se_dt_hi:
-                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.error("Odds 2× CI low must be ≤ CI high.")
                     st.stop()
             else:
                 _d1, _d2 = st.columns(2)
-                ukc_dt_lo = _ss_number_input(_d1, "Odds 2x time CI low (days)",
+                ukc_dt_lo = _ss_number_input(_d1, "Odds 2× time CI low (days)",
                     "ukc_custom_dt_lo", float(round(max(5.0, _seg_dt / 2))),
                     min_value=5.0, max_value=2000.0, step=5.0,
                     help="Fast scenario: days for the odds p/(1-p) to double.")
-                ukc_dt_hi = _ss_number_input(_d2, "Odds 2x time CI high (days)",
+                ukc_dt_hi = _ss_number_input(_d2, "Odds 2× time CI high (days)",
                     "ukc_custom_dt_hi", float(round(_seg_dt * 2)),
                     min_value=5.0, max_value=5000.0, step=5.0,
                     help="Slow scenario: days for the odds to double.")
                 if ukc_dt_lo > ukc_dt_hi:
-                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.error("Odds 2× CI low must be ≤ CI high.")
                     st.stop()
                 ukc_dt_dist = st.radio("Trend distribution",
                     ["Normal", "Lognormal", "Log-log"], horizontal=True,
@@ -9237,8 +9237,11 @@ def render_ukcyber():
             _btw = [n for n in eta['frontier_between'] if n]
             st.caption(" → ".join(_btw) if len(_btw) > 1 else (_btw[0] if _btw else ""))
         with _c2:
-            st.metric("Measured open-weight lag",
-                      f"{eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} mo")
+            # One unit after the bracket when both ends share it ("15–17 mo").
+            _a, _b = _pc_span(eta['lag_lo']), _pc_span(eta['lag_hi'])
+            if _a.split()[1] == _b.split()[1]:
+                _a = _a.split()[0]
+            st.metric("Measured open-weight lag", f"{_a}–{_b}")
             st.caption("From the two open-weight models observed")
         with _c3:
             _lo, _hi = eta['date_lo'], eta['date_hi']
@@ -9260,7 +9263,7 @@ def render_ukcyber():
                     if _open_hit else
                     f"no open-weight model measured at {_UKC_TARGET:.0f}% yet"))
             else:
-                st.caption(f"{_m_lo:.1f}–{_m_hi:.1f} months from today")
+                st.caption(f"{_pc_span(_m_lo)}–{_pc_span(_m_hi)} from today")
 
         _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
         _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "
@@ -9305,9 +9308,9 @@ def render_ukcyber():
         fig.add_trace(go.Scatter(
             x=_hdates, y=_hy.tolist(),
             mode='lines', line=dict(color='#2c3e50', width=2.5),
-            name=f'Fitted trend (2x odds: {_seg_dt_disp:.0f}d)',
+            name=f'Fitted trend (2× odds:{_seg_dt_disp:.0f}d)',
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Fitted trend: {y:.1f}%"
-                       f"<br>Odds 2x: {_seg_dt_disp:.0f}d"
+                       f"<br>Odds 2×: {_seg_dt_disp:.0f}d"
                        for d, y in zip(_hdates, _hy)],
             hoverinfo='text',
         ))
@@ -9496,8 +9499,8 @@ def _render_ukcyber_newest_open(narrow_lag_rows, tlo_all, tlo_lag_rows):
         return
 
     _color = _UKC_OPEN_COLORS.get(r['country'], '#8e44ad')
-    _lag = (f"{r['lag_lo']:.1f}–{r['lag_hi']:.1f} mo" if r['lag_hi'] is not None
-            else f"≥ {r['lag_lo']:.1f} mo")
+    _lag = (f"{_pc_span(r['lag_lo'])}–{_pc_span(r['lag_hi'])}" if r['lag_hi'] is not None
+            else f"≥ {_pc_span(r['lag_lo'])}")
     _fr = [m for m in tlo_all if m['is_frontier']]
     _best = max(_fr, key=lambda m: m['cyber_score']) if _fr else None
 
@@ -9620,9 +9623,9 @@ def _render_ukcyber_tlo(narrow_lag_rows):
             'Model': r['name'],
             'Released': r['date'].strftime('%b %d, %Y'),
             'Steps': f"{r['cyber_score']:.1f} / {_UKC_TLO_STEPS}",
-            'Lag — cyber range': (f"≥ {r['lag_lo']:.1f} mo" if r['lag_hi'] is None
-                                  else f"{r['lag_lo']:.1f} mo"),
-            'Lag — narrow tasks': (f"{_n['lag_lo']:.1f} mo"
+            'Lag — cyber range': (f"≥ {_pc_span(r['lag_lo'])}" if r['lag_hi'] is None
+                                  else _pc_span(r['lag_lo'])),
+            'Lag — narrow tasks': (_pc_span(_n['lag_lo'])
                                    if _n and _n['lag_lo'] is not None else "not tested"),
         })
     st.table(rows)
@@ -10542,6 +10545,8 @@ def render_revenue():
         xaxis_title="",
         xaxis_range=[x_start, proj_end + timedelta(days=30)],
         height=600,
+        # No title, so Plotly's default 100px top margin would sit blank.
+        margin=dict(l=50, r=30, t=30, b=40),
         template="plotly_white",
         legend=dict(x=0.02, y=0.98, bgcolor='rgba(255,255,255,0.8)'),
         hovermode='x unified',
@@ -10838,7 +10843,7 @@ def _render_rev_us_china(us_series):
               delta_color="off",
               help="Each lab held flat since its last report. The chart below "
                    "also projects every lab to today, and matches lab counts.")
-    c4.metric("China's lag", f"{lag_mo:.0f} months",
+    c4.metric("China's lag", _pc_span(lag_mo, 0),
               help=f"The US labs' total first stood at "
                    f"{_fmt_revenue(cmp['cn_now'])} around "
                    f"{cmp['us_reached']:%b %Y}. A lag in revenue, not in "
@@ -11084,13 +11089,13 @@ def render_employment():
 
                 _emp_dt_lo_col, _emp_dt_hi_col = st.columns(2)
                 emp_custom_dt_lo = _ss_number_input(_emp_dt_lo_col,
-                    "Odds 2x time CI low (days)", "emp_custom_dt_lo", _emp_default_dt_lo,
+                    "Odds 2× time CI low (days)", "emp_custom_dt_lo", _emp_default_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0)
                 emp_custom_dt_hi = _ss_number_input(_emp_dt_hi_col,
-                    "Odds 2x time CI high (days)", "emp_custom_dt_hi", _emp_default_dt_hi,
+                    "Odds 2× time CI high (days)", "emp_custom_dt_hi", _emp_default_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if emp_custom_dt_lo > emp_custom_dt_hi:
-                    st.error("Odds 2x time CI low must be ≤ CI high.")
+                    st.error("Odds 2× time CI low must be ≤ CI high.")
                     st.stop()
 
                 _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
@@ -11138,17 +11143,17 @@ def render_employment():
                     "Rate half-life (days)", "emp_superexp_halflife", 365,
                     min_value=30, max_value=5000, step=30)
                 emp_superexp_dt_floor = _ss_number_input(st,
-                    "Min odds 2x time (days)", "emp_superexp_dt_floor", 15.0,
+                    "Min odds 2× time (days)", "emp_superexp_dt_floor", 15.0,
                     min_value=1.0, max_value=500.0, step=1.0)
                 _emp_se_ci1, _emp_se_ci2 = st.columns(2)
                 emp_superexp_dt_ci_lo = _ss_number_input(_emp_se_ci1,
-                    "Odds 2x CI low (days)", "emp_superexp_dt_ci_lo", _emp_default_se_dt_lo,
+                    "Odds 2× CI low (days)", "emp_superexp_dt_ci_lo", _emp_default_se_dt_lo,
                     min_value=5.0, max_value=2000.0, step=5.0)
                 emp_superexp_dt_ci_hi = _ss_number_input(_emp_se_ci2,
-                    "Odds 2x CI high (days)", "emp_superexp_dt_ci_hi", _emp_default_se_dt_hi,
+                    "Odds 2× CI high (days)", "emp_superexp_dt_ci_hi", _emp_default_se_dt_hi,
                     min_value=5.0, max_value=5000.0, step=5.0)
                 if emp_superexp_dt_ci_lo > emp_superexp_dt_ci_hi:
-                    st.error("Odds 2x CI low must be ≤ CI high.")
+                    st.error("Odds 2× CI low must be ≤ CI high.")
                     st.stop()
                 _emp_cur = rli_frontier_all[emp_proj_as_of_idx]
                 _emp_def_score = _emp_cur['rli_score']
@@ -11904,7 +11909,7 @@ def _eci_country_code(label):
 
 
 def _fmt_gap_mo(months):
-    return "<1mo" if months < 0.5 else f"{months:.0f}mo"
+    return "<1 mo" if months < 0.5 else _pc_span(months, 0)
 
 
 def _eci_rate_phrase(ref, since):
@@ -11941,7 +11946,7 @@ def _render_eci_leaderboard(entity_a, entity_b):
         level = _eci_level_word(entity_a, org)
         cells = [
             f"{_ECG_FLAG.get(_ECG_COUNTRY.get(org, ''), '')} {org}", now['name'],
-            f"{now['score']:.1f}", f"{now['date']:%b %Y}", f"{now['age']:.1f}mo",
+            f"{now['score']:.1f}", f"{now['date']:%b %Y}", _pc_span(now['age']),
             level if at_release['gap_months'] < 0.1 else _fmt_gap_mo(at_release['gap_months']),
             level if now['level'] else f"{_fmt_gap_mo(now['gap_now'])} ({now['eci_gap']:.1f} ECI)",
         ]
@@ -15012,11 +15017,11 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                    "instead (the largest run each side's clusters could "
                    "train, sites abroad included), a much smaller gap.")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
-              f"~{mo_now:.0f} mo behind", delta_color="off", help=_mo_help)
+              f"~{_pc_span(mo_now, 0)} behind", delta_color="off", help=_mo_help)
     _rng = _cc_gap_end_range(us_fr, cn_fr, horizon)
     c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
               f"~{gap_end:.0f} pts",
-              f"~{mo_end:.0f} mo behind", delta_color="off",
+              f"~{_pc_span(mo_end, 0)} behind", delta_color="off",
               help=_mo_help + " " + (f"Each country's rate fits its frontier since "
                     f"{_CC_CALIB_SINCE.year}. Starting the fit at any half-year "
                     f"from 2024 to mid-2025 instead gives {_rng[0][0]:.0f}"
@@ -15403,7 +15408,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
             "|---|---|---|---|---|",
             f"| **US-measured algo rate** (mid-compute, itself teacher-fed) | "
             f"{us_algo - cn_algo:+.1f} pts/yr | "
-            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{mo_us:.0f} mo |"]
+            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{_pc_span(mo_us, 0)} |"]
         if cn_traj_inno is not None:
             cn_end_inno = float(cn_traj_inno[-1])
             mo_inno = ((us_end - cn_end_inno) / us_eci_smid * 12
@@ -15412,7 +15417,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 f"| **No external distillation** (diffusion intact — model "
                 f"access cut, papers still flowing) | {-dist_sc:+.1f} pts/yr | "
                 f"{slope_inno:.1f} pts/yr | ~{cn_end_inno:.0f} "
-                f"| ~{mo_inno:.0f} mo |")
+                f"| ~{_pc_span(mo_inno, 0)} |")
         if cn_traj_pure is not None:
             cn_end_pure = float(cn_traj_pure[-1])
             mo_pure = ((us_end - cn_end_pure) / us_eci_smid * 12
@@ -15421,7 +15426,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                 f"| **Indigenous only** (no distillation, no diffusion) | "
                 f"{-(dist_sc + diff_sc):+.1f} pts/yr | "
                 f"{slope_pure:.1f} pts/yr | ~{cn_end_pure:.0f} "
-                f"| ~{mo_pure:.0f} mo |")
+                f"| ~{_pc_span(mo_pure, 0)} |")
         st.markdown("\n".join(rows_md))
 
         # Chart: China's trend with and without distillation against the US
@@ -17062,8 +17067,8 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
            "|---|---|---|"]
     for f in (2, 5, 10):
         tm = eff['times'][f]
-        tmd.append(f"| **{f}× less** | ~{tm['central']:.0f} months | "
-                   f"{tm['lo']:.0f}–{tm['hi']:.0f} mo |")
+        tmd.append(f"| **{f}× less** | ~{_pc_span(tm['central'], 0)} | "
+                   f"{_pc_span(tm['lo'], 0)}–{_pc_span(tm['hi'], 0)} |")
     st.markdown("\n".join(tmd))
     _fn_caption(
         f"Inverse regression gives \u2212\u03b2\u209c = {eff['g_inv']:.2f} "
@@ -18508,33 +18513,33 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  "section's assumption made datable, not as a forecast the "
                  "data supports." + _tk_staff_al5_note()))
     _cap.append((f"staff_{_PC_RSI_SURVEY_TARGET_X:.0f}x",
-                 f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}x",
+                 f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}\u00d7",
                  _pc_rsi_survey_eta(load_rsi_survey(), n=n, samples=True), False,
                  "The staff-survey fan above, at its defaults: OLS on "
                  "log(multiple) over every round fitted, the carried-over "
                  "estimated point included. The rounds do not report the "
                  f"same statistic on the same sample. "
-                 f"{_PC_RSI_SURVEY_TARGET_X:.0f}x is each person getting ten "
+                 f"{_PC_RSI_SURVEY_TARGET_X:.0f}× is each person getting ten "
                  "people's pre-AI output, by their own report."))
     _cap.append((f"code_{_RSI_CODE_TARGET:.0f}x",
-                 f"Code per person reaches {_RSI_CODE_TARGET:.0f}x",
+                 f"Code per person reaches {_RSI_CODE_TARGET:.0f}×",
                  _pc_rsi_code_eta(load_rsi_code(), n=n, samples=True), False,
                  "The merged-code fan above, at its defaults: OLS on "
                  "log(multiple) over the quarters from 2025 on, doubling "
                  "time over that fit's t-widened rate CI, position on the "
                  "fit, its band reaching the latest quarter. "
-                 f"{_RSI_CODE_TARGET:.0f}x is one contributor merging what "
+                 f"{_RSI_CODE_TARGET:.0f}× is one contributor merging what "
                  f"{_RSI_CODE_TARGET:.0f} did before 2025 \u2014 lines "
                  "merged, which a coding "
                  "model inflates directly, so it is output volume rather "
                  "than research progress."))
     _cap.append((f"experiments_{_RSI_EXPERIMENT_TARGET:.0f}x",
-                 f"OpenAI experiment velocity reaches {_RSI_EXPERIMENT_TARGET:.0f}x",
+                 f"OpenAI experiment velocity reaches {_RSI_EXPERIMENT_TARGET:.0f}×",
                  _pc_rsi_experiment_eta(load_rsi_experiments(), n=n, samples=True), False,
                  "The experiment-velocity fan above, at its defaults: OLS on "
                  "log(multiple) over all 32 displayed weeks; doubling time "
                  "over [DT/2, DT*2], position divided/multiplied by 1.3. "
-                 "10x means experiments per active experimenter relative to 2025. "
+                 "10× means experiments per active experimenter relative to 2025. "
                  "Four-week trailing averages overlap; the bands are illustrative. "
                  "Compute growth and changes in the active population are not controlled for."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
@@ -19621,9 +19626,9 @@ def _pc_tk_interp(tk, draw, u):
 
 
 def _pc_span(months, prec=1, sign=False):
-    """A span on the Pacing tab: months up to a year, years past it
-    ("15.5 mo" reads "1.3 yr")."""
-    v, unit, prec = ((months / 12, "yr", 1) if abs(months) > 12
+    """The app's one duration format for cards and tables: months below 24,
+    years with one decimal from there ("15.5 mo", "2.5 yr")."""
+    v, unit, prec = ((months / 12, "yr", 1) if abs(round(months, prec)) >= 24
                      else (months, "mo", prec))
     return f"{v:{'+' if sign else ''}.{prec}f} {unit}"
 
@@ -20564,8 +20569,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 disabled=not theft_soft,
                 help="With the US's methods in hand China needs fewer of its "
                      "own experiments, so it trains on more of its compute, "
-                     "on the stolen share. 2.5x moves all of Takeoff's "
-                     "experiment and agent compute into training; 10x "
+                     "on the stolen share. 2.5× moves all of Takeoff's "
+                     "experiment and agent compute into training; 10×"
                      "assumes training is a tenth of R&D compute today.")
             wt_when = st.select_slider(
                 "Weight theft", options=_opts,
@@ -22005,7 +22010,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             + ("today" if d_theft <= today else f"{d_theft:%b %Y}")
             + f": it closes that share of the gap compute does not explain "
             f"(today's runs differ ~{theft_gap_oom:.1f} OOM), trains on "
-            f"{theft_realloc:g}x the compute, and copies that share of US "
+            f"{theft_realloc:g}× the compute, and copies that share of US "
             "software progress"
             + (", the share shrinking as defenses tighten"
                if sec_leak else "")
@@ -24868,7 +24873,7 @@ def _tk_gap(earlier, later, horizon):
 
 def _tk_span(years, end_date):
     """A duration in the coarsest unit that still reads: days under two weeks,
-    weeks under three months, months under a year, else years."""
+    weeks under three months, then `_pc_span`'s months and years."""
     if not np.isfinite(years):
         return f"not by {end_date:%Y}"
     days = years * 365.25
@@ -24876,7 +24881,14 @@ def _tk_span(years, end_date):
         return f"{days:.0f} d"
     if abs(years) < 0.25:
         return f"{days / 7:.0f} wk"
-    return f"{12 * years:.0f} mo" if abs(years) < 1 else f"{years:.1f} yr"
+    return _pc_span(12 * years, 0)
+
+
+def _tk_span_bound(years, end_date):
+    """`_tk_span` for an interval bound: under half a day reads "<1 d", not "0 d"."""
+    if np.isfinite(years) and abs(years * 365.25) < 0.5:
+        return "<1 d"
+    return _tk_span(years, end_date)
 
 
 def _tk_ci(col, level, label):
@@ -25884,8 +25896,8 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
         if reached.any():
             g = gap[reached]
             col.caption(f"Behind the US: {_tk_span(takeoff.quantile(g, 0.5), end_date)} "
-                        f"(80%: {_tk_span(takeoff.quantile(g, 0.1), end_date)} – "
-                        f"{_tk_span(takeoff.quantile(g, 0.9), end_date)})")
+                        f"(80%: {_tk_span_bound(takeoff.quantile(g, 0.1), end_date)} – "
+                        f"{_tk_span_bound(takeoff.quantile(g, 0.9), end_date)})")
     st.plotly_chart(_tf(_cn_tk_fig(cn, today, view_end, run["eci"]["ultra_level"],
                                    run["eci"])),
                     width="stretch")
@@ -26117,11 +26129,10 @@ def _render_takeoff(loading):
                    "and small updates; the rest wait for a successor's training run and "
                    "validation. The same gain never counts in both, and these also skip "
                    "the wait for scale. With \u03c1 above, this decides most of the gap "
-                   "to Forethought, whose model has no wait: 100 here on a one-week fast "
-                   "cycle gives 56% of scenarios 3 years of progress in RSI's first year "
-                   "and 24% 10 years, about Forethought's 57% and 18%; adding \u03c1 at 0.5 "
-                   "with no spread gives 94% and 63%. The *Progress in RSI's first "
-                   "year* card's help gives the shares at the current settings.")
+                   "to Forethought, whose model has no wait and gives 57% of scenarios "
+                   "3 years of progress in RSI's first year and 18% 10 years. The "
+                   "*Progress in RSI's first year* card's help gives this model's shares "
+                   "at the current settings.")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
                    "Multiplies each scenario's log compute growth after its own RSI "
@@ -26454,8 +26465,8 @@ def _render_takeoff(loading):
                        "reaching the second first counts as 0.")
             for level, lo, hi in ((80, 0.1, 0.9), (90, 0.05, 0.95)):
                 _tk_ci(col, level, label).caption(
-                    f"{level}% CI: {_tk_span(takeoff.quantile(g, lo), end_date)}"
-                            f" \u2013 {_tk_span(takeoff.quantile(g, hi), end_date)}")
+                    f"{level}% CI: {_tk_span_bound(takeoff.quantile(g, lo), end_date)}"
+                            f" \u2013 {_tk_span_bound(takeoff.quantile(g, hi), end_date)}")
 
         a, b, c = st.columns(3)
         _card(a, "Full coding automation", result["coding_at"],
