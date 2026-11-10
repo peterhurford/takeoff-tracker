@@ -384,7 +384,10 @@ not a reading of the CSVs. Six things are load-bearing:
    `_wc_central_shares()` grows each region at its `_WC_GROWTH` central rate
    and normalizes — so it sums to 100 with no rescaling and is literally the
    line the caption describes. `_wc_share_paths()` samples the rates for the
-   hover's 80% CI only. Medians were tried and don't sum to 100 (needing a
+   hover's 80% CI only. The *Today* bars and headline read the same central
+   split at year 0, with the sampled levels only as whiskers, so the headline
+   matches the chart's Today edge
+   (`test_the_headline_is_the_split_the_chart_prints_today`). Medians were tried and don't sum to 100 (needing a
    rescale that then disagrees with the hover); means sum correctly but a
    lognormal rate's tail doubles the UAE. Growth rates are cross-checked
    against the catalogue in the comment: the US aggregates to ~1.9×/yr and

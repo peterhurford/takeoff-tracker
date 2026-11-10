@@ -2427,6 +2427,24 @@ class TestDataCentersRegionShare:
         us_guess, cn_guess, us_tracked, cn_tracked = pct
         assert us_tracked > us_guess and cn_guess > cn_tracked
 
+    def test_the_headline_is_the_split_the_chart_prints_today(self):
+        """Headline, bars and the projection's Today edge read one central
+        split; the sampled draws give only the ranges."""
+        import visualize_projection as vp
+        at = self._app()
+        [line] = [str(m.value) for m in at.markdown
+                  if "of the world's AI compute is in the US" in str(m.value)]
+        us_guess, cn_guess = (int(x) for x in re.findall(r"(\d+)%", line)[:2])
+        cen = vp._wc_central_shares([0.0])
+        assert us_guess == round(float(cen[vp._WC_LABELS[0]][0]))
+        assert cn_guess == round(float(cen[vp._WC_LABELS[1]][0]))
+        spec = json.loads(next(c for c in at.get("plotly_chart")
+                               if "Share of world compute" in c.proto.spec
+                               and "stackgroup" in c.proto.spec).proto.spec)
+        edge = {a["text"] for a in spec["layout"]["annotations"]
+                if a.get("xanchor") == "left"}
+        assert f"{us_guess}%" in edge and f"{cn_guess}%" in edge
+
     def test_not_on_the_china_tab(self):
         at = _fresh_app()
         at.run()

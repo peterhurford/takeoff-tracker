@@ -16285,7 +16285,9 @@ def _render_world_shares(today, horizon):
 
     shares = _wc_sample_shares(N_SAMPLES)
     catalogued = _wc_catalogued_shares(dc_all, today)
-    med = {lab: float(np.percentile(a, 50)) for lab, a in shares.items()}
+    # The bars and headline read the central split, the same numbers the
+    # projection's "Today" edge prints; the samples supply only the whiskers.
+    med = {lab: float(v[0]) for lab, v in _wc_central_shares([0.0]).items()}
     us, cn = _WC_LABELS[0], _WC_LABELS[1]
 
     _fn_line(
