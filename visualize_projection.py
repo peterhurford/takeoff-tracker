@@ -25060,6 +25060,52 @@ def _cn_tk_source_rows(cn, today, horizon_year):
     return rows
 
 
+def _rl_leads_claude():
+    """Days each matched internal model led the first Claude release at its ECI."""
+    return [r['Anthropic'][2] for r in _rl_lead_rows() if r['Anthropic'][0]]
+
+
+def _cn_tk_pace_dates(today):
+    """Each half-year end from Dec 2024 to before `today`, then `today`."""
+    out, y = [], 2024
+    while True:
+        for m, d in ((6, 30), (12, 31)):
+            t = datetime(y, m, d)
+            if t >= datetime(2024, 12, 31) and t < today:
+                out.append(t)
+            if t >= today:
+                return out + [today]
+        y += 1
+
+
+def _cn_tk_pace_rows(today):
+    """ECI each frontier gained in the year to each `_cn_tk_pace_dates` date:
+    US releases, the US trained frontier (internal models, training-finish
+    dates) and China's releases, read off the step frontiers."""
+    full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
+    us = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'United States of America')]
+    cn = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'China')]
+    tr = [(m['date'], m['eci_score']) for m in _eci_entity_models(
+        "US best", full_window=True, internal=True, trained=True) if m['is_frontier']]
+
+    def gain(fr, t):
+        def lvl(at):
+            return max((sc for d, sc in fr if d <= at), default=None)
+        a, b = lvl(t - timedelta(days=365)), lvl(t)
+        return None if a is None or b is None else b - a
+    fmt = lambda v: "—" if v is None else f"{v:.1f}"
+    rows = []
+    for t in _cn_tk_pace_dates(today):
+        u, k, c = gain(us, t), gain(tr, t), gain(cn, t)
+        rows.append({"Year to": "today" if t == today else f"{t:%b %Y}",
+                     "US releases": fmt(u),
+                     "US trained (internal models included)": fmt(k),
+                     "China releases": fmt(c),
+                     "US − China (releases)": "—" if u is None or c is None
+                     else f"{u - c:+.1f}"})
+    return rows
+
+
 def _cn_tk_start_rows(cn, eci, today):
     """The *Where each side starts* table: per side, its best released model,
     the trained level the takeoff model starts from today, how one becomes
@@ -25075,7 +25121,8 @@ def _cn_tk_start_rows(cn, eci, today):
         load_eci_frontier(mtime=_eci_mtime()), 'United States of America'))
     release_how = (f"the release frontier's anchor ({us_anchor[1]:.1f} ± {us_anchor[2]:.1f}, "
                    f"led by {us_anchor[3]}) plus {_ship_lag('us'):.0f} days of climb, the "
-                   "US's trained-to-release lag")
+                   "US's trained-to-release lag (the Release Lag tab's measured frontier "
+                   "lead)")
     us_how = (f"Per scenario, the higher of Anthropic's internal {last_tr['name']} "
               f"({last_tr['date']:%b %d}), projected onto Epoch's scale from METR's AECI "
               f"({last_tr['eci_score']:.1f}), carried to today at the pace, and "
@@ -25124,8 +25171,10 @@ def _cn_tk_start_rows(cn, eci, today):
         {"": "Gap",
          "Best released": f"{us_rel['eci_score'] - cal['cn_fr'][-1][1]:.1f} points",
          "Where the model starts (trained, today)": f"{eci['now'] - lvl[1]:.1f} points",
-         "How": "The trained gap is wider: the US's internal models run months ahead of "
-                "its releases, China's labs ship within weeks",
+         "How": (f"The trained gap is wider: Anthropic's best trained model leads its "
+                 f"releases by a median {_rl_median(_rl_leads_claude()):.0f} days (Fable "
+                 "5.2 shipped 75 days after it finished as Model 3 Early), while China's "
+                 f"labs ship within {_ship_lag('cn'):.0f} days"),
          "Pace (ECI/yr)": f"Releases, like for like: {cal['us_obs'] - cal['ch']['obs']:+.1f} "
                           "for the US since the window opened"
                           + (f", {us_now_rel - cn_now_rel:+.1f} now" if us_now_rel is not None
@@ -25219,6 +25268,15 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
                                "lags by years: set both to 0 below."))
     st.markdown("**Where each side starts today**")
     st.table(_cn_tk_start_rows(cn, run["eci"], today))
+    st.markdown("**Pace over time**")
+    _fn_caption("ECI each frontier gained in the year to each date (ECI/yr).",
+                ("ECI/yr", "The frontier's level at the date less its level a year "
+                 "before, read off the step frontier of best-so-far models, so a quiet "
+                 "stretch between releases reads slow. The trained US frontier dates "
+                 "models at training finish with Anthropic's internal models in, as the "
+                 "ECI tab does by default; China's trained frontier is its releases less "
+                 "a fixed lag, so its pace is its releases'."))
+    st.table(_cn_tk_pace_rows(today))
     _fn_caption(
         "Every date on this tab compares trained models, not releases.",
         ("trained models",

@@ -1826,6 +1826,19 @@ class TestTakeoffTab:
                  for d in json.loads(el.proto.spec)["data"]]
         assert "US trained (internal models projected)" in names
         assert "China today (trained, the model's start)" in names
+        assert "Model 3 Early" in t["How"].iloc[2]
+
+    def test_pace_over_time_reads_each_frontiers_trailing_year(self):
+        """One row a half-year from Dec 2024 to today; the trained US frontier
+        runs at or above the US releases once internal models lead them."""
+        import visualize_projection as vp
+        at = self._app()
+        t = next(x.value for x in at.table if "China releases" in x.value.columns)
+        assert t["Year to"].iloc[0] == "Dec 2024" and t["Year to"].iloc[-1] == "today"
+        assert vp._cn_tk_pace_dates(datetime(2025, 8, 1)) == [
+            datetime(2024, 12, 31), datetime(2025, 6, 30), datetime(2025, 8, 1)]
+        jun26 = t[t["Year to"] == "Jun 2026"].iloc[0]
+        assert float(jun26["US trained (internal models included)"]) > float(jun26["US releases"])
 
     def test_chinas_internal_lead_is_one_setting_on_both_tabs(self):
         """Takeoff's China settings carry the internal lead Pacing uses (the
