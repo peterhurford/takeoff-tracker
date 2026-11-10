@@ -4071,8 +4071,8 @@ def render_metr():
                         name=f'Segment {si+1} ({seg_dt:.0f}d doubling)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
-                    # Projected portion: user DT slope from last data point
-                    _user_dt_center = np.sqrt(custom_dt_lo * custom_dt_hi)
+                    # Projected portion: the sampled doubling times' median, from the last point
+                    _user_dt_center = float(np.median(proj_dt))
                     _user_slope = 1.0 / _user_dt_center
                     _ols_val_at_last = seg_params[0] + seg_params[1] * d_last
                     _proj_intercept = _ols_val_at_last - _user_slope * d_last
@@ -4109,8 +4109,8 @@ def render_metr():
                 name=f'OLS trend ({custom_ols_dt:.0f}d doubling)',
                 hovertext=hover_seg, hoverinfo='text',
             ))
-            # Projected portion: user DT slope from last data point
-            _user_dt_center = np.sqrt(custom_dt_lo * custom_dt_hi)
+            # Projected portion: the sampled doubling times' median, from the last point
+            _user_dt_center = float(np.median(proj_dt))
             _user_slope = 1.0 / _user_dt_center
             _ols_val_at_last = custom_params[0] + custom_params[1] * d_last
             _proj_intercept = _ols_val_at_last - _user_slope * d_last
@@ -4140,7 +4140,7 @@ def render_metr():
             hovertext=hover_hist, hoverinfo='text',
         ))
         # Projected portion: use same formula as trajectories with center DT
-        _se_user_dt = np.sqrt(superexp_dt_ci_lo * superexp_dt_ci_hi)
+        _se_user_dt = float(np.median(proj_dt))
         d_end = (proj_end_date - base_date).days
         days_proj = np.arange(0, d_end - d_last + 1, 1)
         y_proj_growth = superexp_trajectory(days_proj, _se_user_dt, superexp_halflife, superexp_dt_floor)
@@ -6290,7 +6290,7 @@ def render_rli():
                         hovertext=hover_seg, hoverinfo='text',
                     ))
                     # Projected portion: the fan's median, from its blended start
-                    _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
+                    _user_dt_center = float(np.median(rli_proj_dt))
                     y_proj = rli_median_traj
                     dates_proj = proj_dates
                     hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
@@ -6332,7 +6332,7 @@ def render_rli():
                 hovertext=hover_seg, hoverinfo='text',
             ))
             # Projected portion: the fan's median, from its blended start
-            _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
+            _user_dt_center = float(np.median(rli_proj_dt))
             y_proj = rli_median_traj
             dates_proj = proj_dates
             hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
@@ -6358,7 +6358,7 @@ def render_rli():
             hovertext=hover_hist, hoverinfo='text',
         ))
         # Projected portion: the fan's median
-        _rli_user_dt = np.sqrt(rli_superexp_dt_ci_lo * rli_superexp_dt_ci_hi)
+        _rli_user_dt = float(np.median(rli_proj_dt))
         y_proj = rli_median_traj
         dates_proj = proj_dates
         hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]

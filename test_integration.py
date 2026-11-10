@@ -735,6 +735,25 @@ class TestRliMilestones:
                 assert arrive.iloc[i]["Median"] == record['date'].strftime('%b %Y')
 
 
+class TestNormalTrendLegend:
+    @pytest.mark.parametrize("tab,p", [("metr", ""), ("rli", "rli_")])
+    def test_legend_reads_the_sampled_median(self, tab, p):
+        """A Normal doubling time over 50-400d has median ~225d, not the
+        geometric centre 141d."""
+        at = _fresh_app()
+        at.query_params["tab"] = tab
+        at.run()
+        at.radio(key=f"{p}custom_dt_dist").set_value("Normal")
+        at.number_input(key=f"{p}custom_dt_lo").set_value(50.0)
+        at.number_input(key=f"{p}custom_dt_hi").set_value(400.0)
+        at.run()
+        _assert_no_error(at, tab)
+        traces = json.loads(at.get("plotly_chart")[0].proto.spec)["data"]
+        name = next(t["name"] for t in traces if t.get("name", "").startswith("Projection"))
+        dt = float(re.search(r"(\d+)d", name).group(1))
+        assert 200 <= dt <= 250, name
+
+
 class TestRliProjectionLine:
     @pytest.mark.parametrize("basis", [None, "Superexponential (logit)"])
     def test_line_runs_inside_the_fan(self, basis):
