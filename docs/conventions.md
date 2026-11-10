@@ -129,6 +129,13 @@ method notes. Cards computed from the chart's trajectories go in an
 Takeoff and Pacing keep their own deliberate orders (`docs/takeoff.md`,
 `docs/china-pacing.md`). `TestTabTopOrder` holds the order on every other tab.
 
+Under every title, `_data_through` (via `_tab_intro(..., through=)`) prints *Data
+through* the oldest of each source's newest entry on or before today (`_newest`;
+hand-entered tables count by their newest dated row, Data Centers by its newest
+timeline point), footnoting each source's own date when there are several. A tab
+with no dated source prints no line. Frontier Thresholds computes its own from its
+events (`test_data_through_sits_under_the_title`).
+
 ## Light theme only
 
 `.streamlit/config.toml` sets `[theme] base = "light"` and no `[theme.dark]`, which

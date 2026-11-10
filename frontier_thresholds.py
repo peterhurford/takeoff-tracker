@@ -3,6 +3,7 @@
 These are reported assessments, not independent capability measurements. The
 framework labels are intentionally never converted to a common numeric scale.
 """
+from datetime import datetime
 from pathlib import Path
 import csv
 import html
@@ -168,6 +169,8 @@ def _event_detail(st, event):
 def render(st):
     events = load_events()
     st.header('Frontier Thresholds')
+    newest = max(datetime.strptime(e['date'], '%Y-%m-%d') for e in events)
+    st.caption(f"Data through {newest:%b} {newest.day}, {newest.year}")
     st.markdown("**Which dangerous-capability thresholds do the frontier labs say their "
                 "models have reached?** One timeline per lab of its public assessments in "
                 "the chosen risk category.")
@@ -196,7 +199,7 @@ def render(st):
             else:
                 st.caption('The supplied chronology contains no milestone selected for this category and lab.')
     with st.expander('How to read this'):
-        st.caption('Public assessments through September 6, 2026. Each lab uses its own definitions; these are not equivalent risk levels.')
+        st.caption('Public assessments only. Each lab uses its own definitions; these are not equivalent risk levels.')
     with st.expander('Explore the full chronology · 55 events'):
         st.caption('Includes earlier Medium ratings, framework revisions, unchanged releases, and operational updates.')
         domains = sorted({d for e in events for d in e['domains']})

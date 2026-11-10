@@ -282,10 +282,47 @@ def _frac_words(x):
     return min(_FRAC_WORDS, key=lambda fw: abs(fw[0] - x))[1]
 
 
-def _tab_intro(title, lead):
-    """A tab's title and its one- or two-sentence lead, above the first chart."""
+def _tab_intro(title, lead, through=()):
+    """A tab's title, its *Data through* line (`through` is `_data_through`'s
+    sources) and its one- or two-sentence lead, above the first chart."""
     st.header(title)
+    _data_through(*through)
     st.markdown(lead)
+
+
+def _newest(dates):
+    """The newest of `dates` on or before today, or None; a planned or
+    projected entry dated later does not count as data."""
+    today = _today()
+    past = [d for d in dates if d is not None and d <= today]
+    return max(past) if past else None
+
+
+def _dc_through():
+    """Epoch's data-center timelines as a `_data_through` source: the newest
+    dated capacity point on or before today, across every site."""
+    return ("Epoch data centers", _newest(p['date'] for dc in dc_all for p in dc['points']))
+
+
+def _fmt_day(d):
+    return f"{d:%b} {d.day}, {d.year}"
+
+
+def _data_through(*sources):
+    """The *Data through* caption under a tab title, from `(name, newest date)`
+    pairs: the oldest of the newest dates, so every source is current to it,
+    with each source's own date footnoted when there are several. Undated
+    sources are skipped; none at all prints nothing."""
+    srcs = [(n, d) for n, d in sources if d is not None]
+    if not srcs:
+        return
+    day = _fmt_day(min(d for _, d in srcs))
+    if len(srcs) == 1:
+        st.caption(f"Data through {day}")
+    else:
+        _fn_caption(f"Data through {day}",
+                    (day, "Newest entry per source: "
+                          + "; ".join(f"{n}, {_fmt_day(d)}" for n, d in srcs) + "."))
 
 
 def log2min_to_label(val, hours_only=False):
@@ -4386,7 +4423,8 @@ def render_metr():
                "**How long a task can AI finish on its own?** METR's time horizon is the "
                "length of task, in human working time, that a model completes half the "
                "time. Each point is the best model at its release; the fan shows where the "
-               "horizon goes if the fitted trend continues.")
+               "horizon goes if the fitted trend continues.",
+               through=[("METR", _newest(m['date'] for m in metr_all))])
     cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
     if is_backtesting and backtest_results:
@@ -5862,7 +5900,8 @@ def _render_eci_views(entity_a, entity_b):
         "**How capable is the best AI model, on one scale?** Epoch's Capabilities "
         "Index (ECI) combines many benchmarks into a single score, so models tested "
         "on different benchmarks can be compared. Each point is a new best score; "
-        "the fan shows where the frontier goes if the fitted trend continues.")
+        "the fan shows where the frontier goes if the fitted trend continues.",
+        through=[("Epoch ECI", _newest(m['date'] for m in eci_all))])
     if entity_b not in (_ECI_NONE_LABEL, entity_a) and _eci_same_frontier(entity_a, entity_b):
         st.info(f"{entity_a} and {entity_b} have the same frontier: every model that "
                 f"set one set the other, so there is no gap to chart. Showing "
@@ -6601,7 +6640,8 @@ def render_rli():
         "**How much paid remote work can AI already do?** The Remote Labor Index "
         "scores the share of real freelance projects an AI completes to a standard "
         "a client would accept. Scores are fitted in log-odds, so the trend slows "
-        "as it nears 100%.")
+        "as it nears 100%.",
+        through=[("Remote Labor Index", _newest(m['date'] for m in rli_all))])
     cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
     if rli_is_backtesting and rli_backtest_results:
@@ -9171,7 +9211,10 @@ def render_ukcyber():
                "**How far do open-weight models trail the closed frontier on AISI's "
                "narrow cyber tasks?** Each point is a model's average success rate; the "
                "fan projects the closed frontier, and the open-weight lag dates when "
-               "China reaches the target.")
+               "China reaches the target.",
+               through=[("AISI narrow tasks", _newest(m['date'] for m in ukc_all)),
+                        ("AISI/CAISI cyber range", _newest(
+                            m['date'] for m in load_ukcyber_tlo(_ukc_tlo_mtime())))])
 
     # Computed before the chart because the callout below reports on it too.
     lag_rows = ukc_lag_rows(ukc_all, ukc_frontier_all)
@@ -10105,7 +10148,12 @@ def render_revenue():
     _tab_intro("Revenue",
                "**How fast is the leading AI labs' revenue growing?** Annualized "
                "revenue run-rate (ARR) for OpenAI and Anthropic; the fans extend each "
-               "lab's fitted growth.")
+               "lab's fitted growth.",
+               through=[("OpenAI", _newest(_parse_revenue(_OPENAI_REVENUE)[0])),
+                        ("Anthropic", _newest(_parse_revenue(_ANTHROPIC_REVENUE)[0])),
+                        ("Chinese labs", _newest(
+                            datetime.strptime(p[0], "%Y-%m-%d")
+                            for lab in _CN_REVENUE.values() for p in lab['points']))])
 
     openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
     anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
@@ -11384,7 +11432,8 @@ def render_employment():
     _tab_intro("Employment",
                "**How much unemployment could AI's remote-work gains cause?** A simple "
                "displacement model driven by the Remote Labor Index projection and the "
-               "sidebar's assumptions.")
+               "sidebar's assumptions.",
+               through=[("Remote Labor Index", _newest(m['date'] for m in rli_all))])
     cards = st.container()   # the cards are computed after the chart, shown above it
 
     # ── Fan chart ──────────────────────────────────────────────────────────
@@ -13397,7 +13446,7 @@ def render_data_centers():
         cap_date = cap_date + timedelta(days=shift_days)
 
     # ── Header ──
-    _tab_intro("Data Centers", _DC_LEAD)
+    _tab_intro("Data Centers", _DC_LEAD, through=[_dc_through()])
 
     if not series:
         st.warning("No data available for this metric.")
@@ -17331,7 +17380,8 @@ def render_compute_capabilities():
             st.session_state.update(_CC_DEFAULTS)
             st.rerun()
 
-    _tab_intro("China", _CC_LEAD)
+    _tab_intro("China", _CC_LEAD, through=[
+        _dc_through(), ("Epoch ECI", _newest(m['date'] for m in eci_all))])
 
     def _units():
         _fn_caption(
@@ -22136,7 +22186,8 @@ def render_pacing():
     party = _PC_PARTY_OPTIONS[party_label]
     pc_horizon = datetime(pc_end_year, 12, 1)
 
-    _tab_intro("Pacing", _PC_LEAD)
+    _tab_intro("Pacing", _PC_LEAD, through=[
+        _dc_through(), ("Epoch ECI", _newest(m['date'] for m in eci_all))])
     st.badge("Under construction, not final", icon=":material/construction:",
              color="orange")
 
@@ -25928,6 +25979,8 @@ def _render_takeoff(loading):
                f"come from scenarios simulated through {_TK_SIM_END_YEAR}, whatever "
                f"this says; the evidence charts stop by {_RSI_MAX_END_YEAR}.")
     st.header("Takeoff")
+    _data_through(("Epoch ECI", _newest(m['date'] for m in eci_all)),
+                  ("METR AECI", _newest(r['date'] for r in load_metr_aeci())))
     st.markdown(
         "**\"Runaway recursive self-improvement (RSI)\"** is the idea that, at some "
         "point, an AI system can be as good as or better than top human experts at "
@@ -26916,7 +26969,9 @@ def render_release_lag():
                f"A released Claude model ships a median **{_rl_median(pub):.0f} days** "
                f"after its training finishes, but Anthropic's best trained model leads its "
                f"best release by a median **{_rl_median(lead_a):.0f} days**: the frontier "
-               "is held back, not the snapshots.")
+               "is held back, not the snapshots.",
+               through=[("Anthropic's model dates", _newest(
+                   [r['released'] for r in snaps] + [r['available'] for r in leads]))])
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Snapshot lag (median)", f"{_rl_median(pub):.0f} days",
               help=f"Training finish to release for the {len(pub)} public Claude "

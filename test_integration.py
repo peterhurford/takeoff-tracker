@@ -248,7 +248,7 @@ class TestTabTopOrder:
         types = [e.type for e in els]
         h = types.index("header")
         assert els[h].value == vp._TAB_LABEL.get(tab, tab)
-        lead = els[h + 1]
+        lead = els[h + 2]
         assert lead.type == "markdown" and lead.value.startswith("**")
         assert "?" in lead.value.split("**")[1]
         chart = types.index("plotly_chart")
@@ -257,6 +257,29 @@ class TestTabTopOrder:
         how = [i for i, e in enumerate(els)
                if e.type == "expander" and e.label == "How to read this"]
         assert all(i > chart for i in how)
+
+    @pytest.mark.parametrize("tab", list(_SLUG_FOR_TAB))
+    def test_data_through_sits_under_the_title(self, tab):
+        """Every tab's title carries a *Data through* line computed from its
+        loaded data; with several sources it is the oldest of their newest
+        dates, each source's own date in its footnote."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = _SLUG_FOR_TAB[tab]
+        at.run()
+        _assert_no_error(at, tab)
+        els = list(_in_order(at.main))
+        h = [e.type for e in els].index("header")
+        line = els[h + 1]
+        assert line.type == "caption" and line.value.startswith("Data through ")
+        if tab == "ECI":
+            assert line.value == "Data through " + vp._fmt_day(
+                vp._newest(m["date"] for m in vp.eci_all))
+        if tab == "Revenue":
+            newest = [vp._newest(vp._parse_revenue(t)[0])
+                      for t in (vp._OPENAI_REVENUE, vp._ANTHROPIC_REVENUE)]
+            assert vp._fmt_day(min(newest)) in line.value
+            assert all(f"{n}, " in line.value for n in ("OpenAI", "Anthropic", "Chinese labs"))
 
 
 class TestReleaseLagTab:
