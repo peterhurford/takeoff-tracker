@@ -1092,6 +1092,9 @@ class TestEciGap:
         assert vp._eci_default_break_idx(fr, named=False) == 4
         fr[6]["display_name"], fr[7]["display_name"] = "M7", "Claude Fable 5"
         assert vp._eci_default_break_idx(fr) == 4          # <3 after it: best fit
+        cn = vp._eci_entity_data("China best")[1]
+        i = vp._eci_default_break_idx(cn, vp._ECI_DEFAULT_BREAKS["China best"])
+        assert cn[i]["display_name"] == "GLM-5.1"
 
     def test_rate_ci_defaults_to_the_slowest_and_fastest_year_on_record(self, monkeypatch):
         d = lambda y, m: datetime(y, m, 1)

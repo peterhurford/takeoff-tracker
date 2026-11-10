@@ -4437,21 +4437,24 @@ def _eci_yearly_gain_range(frontier):
     return max(0.5, round(min(gains), 1)), round(max(gains), 1)
 
 
-# Where the ECI piecewise fit breaks by default on the whole-US frontiers:
-# Claude Fable 5 starts the 2026 speed-up (their best two-segment fit with
-# Anthropic's internal models). Other entities take their own best fit.
+# Where the ECI piecewise fit breaks by default, per entity: Claude Fable 5
+# starts the 2026 speed-up on the whole-US frontiers (their best two-segment fit
+# with Anthropic's internal models); GLM-5.1 on China's. Other entities take
+# their own best fit.
 _ECI_DEFAULT_BREAK = "Claude Fable 5"
-_ECI_NAMED_BREAK_ENTITIES = ("US best", "Frontier (any lab)")
+_ECI_DEFAULT_BREAKS = {"US best": _ECI_DEFAULT_BREAK,
+                       "Frontier (any lab)": _ECI_DEFAULT_BREAK,
+                       "China best": "GLM-5.1"}
 
 
-def _eci_default_break_idx(frontier, named=True, min_side=3):
-    """Index of the default breakpoint in `frontier`: with `named`,
-    `_ECI_DEFAULT_BREAK` when it leaves `min_side` models on each side; else the
-    split with the least two-segment squared error, else the middle model."""
+def _eci_default_break_idx(frontier, named=_ECI_DEFAULT_BREAK, min_side=3):
+    """Index of the default breakpoint in `frontier`: the model named `named`
+    when it leaves `min_side` models on each side; else the split with the
+    least two-segment squared error, else the middle model."""
     names = [m['display_name'] for m in frontier]
     n = len(names)
-    if named and _ECI_DEFAULT_BREAK in names:
-        i = names.index(_ECI_DEFAULT_BREAK)
+    if named and named in names:
+        i = names.index(named)
         if min_side - 1 <= i <= n - min_side:
             return i
     if n < 2 * min_side - 1:
@@ -4499,7 +4502,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
                     us_match_marker=None, us_match_label=None,
-                    overlay_name="US", subject_name=None, named_break=False):
+                    overlay_name="US", subject_name=None, named_break=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -5705,7 +5708,7 @@ def _render_eci_projection(entity_a, entity_b):
             s_all, s_fr, s_names, "eci",
             f"{_a_name} ECI Projection", [],
             extra_table_milestones=milestones,
-            named_break=entity_a in _ECI_NAMED_BREAK_ENTITIES)
+            named_break=_ECI_DEFAULT_BREAKS.get(entity_a))
 
     # Comparison view: project the subject (B), overlay the benchmark (A) trend.
     bench_all, bench_fr, bench_names = _eci_entity_data(entity_a)
@@ -5750,7 +5753,7 @@ def _render_eci_projection(entity_a, entity_b):
         us_match_label=(None if bench_match is None
                         else f"{_b_name} best {subj_current['eci_score']:.1f}"),
         subject_name=_b_name,
-        named_break=entity_b in _ECI_NAMED_BREAK_ENTITIES,
+        named_break=_ECI_DEFAULT_BREAKS.get(entity_b),
     )
 
 
