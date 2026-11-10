@@ -6938,3 +6938,13 @@ class TestChinaTakeoff:
         cfg = vp._cn_tk_settings()
         assert cfg["compute"] in vp._CN_TK_COMPUTE_OPTIONS
         assert cfg["distill"] == cfg["leak"] == 1.0 and cfg["theft"] == 0.0
+
+
+class TestFracWords:
+    """Shares said in words are the nearest everyday fraction, not typed text."""
+
+    def test_nearest_fraction(self):
+        assert vp._frac_words(0.34) == "a third"
+        assert vp._frac_words(0.38) == "two-fifths"
+        assert vp._frac_words(0.52) == "a half"
+        assert vp._frac_words(0.66) == "two-thirds"

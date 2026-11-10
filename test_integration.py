@@ -1283,7 +1283,7 @@ class TestDataCentersComputeEci:
             assert s in text, s
         labels = " ".join(str(m.label) for m in at.metric)
         for s in ("End 2029", "Physical compute", "Algorithmic efficiency",
-                  "Share of growth of compute"):
+                  "Compute's share of ECI growth"):
             assert s in labels, s
         md = " ".join(str(m.value) for m in at.markdown)
         assert "2mo-capacity" in md
@@ -2465,7 +2465,7 @@ class TestDataCentersByCountry:
 
     def _headline(self, at):
         return [str(m.value) for m in at.markdown
-                if "training run by end-" in str(m.value)]
+                if "capacity at end-" in str(m.value)]
 
     def test_renders_with_headline_and_table(self):
         at = self._dc_app()
@@ -2485,6 +2485,37 @@ class TestDataCentersByCountry:
         # The mainland-only figure is a hover anchored on that phrase now.
         assert "Mainland China alone" in head[0]
         assert at.radio(key="dc_cty_since").value == 2024
+
+    def test_headline_names_both_sides_and_the_lag(self):
+        """The headline gives China's and the US's values, the ratio and the
+        lag, each read from the table it summarizes."""
+        at = self._dc_app()
+        head = self._headline(at)[0]
+        table = at.table[-1].value
+        last = table.iloc[-1]
+        assert last["US"].split(" (")[0] in head
+        assert last["China-accessible"].split(" (")[0] in head
+        assert "for the US" in head and "larger)" in head
+        assert re.search(r"China is (about \d+ months (behind|ahead of) the US|ahead)", head)
+        assert head.endswith(f": {last['China (domestic only)'].split(' (')[0]}.")
+
+    def test_lead_and_glossary(self):
+        """The tab opens with its question, and the metric and networking
+        selectors define their terms."""
+        import visualize_projection as vp
+        at = self._dc_app()
+        assert "Frontier Data Centers Over Time" in [h.value for h in at.header]
+        assert vp._DC_LEAD in [m.value for m in at.markdown]
+        assert "H100-equivalents" in at.selectbox(key="dc_metric").proto.help
+        assert "train one model together" in at.selectbox(key="dc_pool_n").proto.help
+
+    def test_fallback_matches_are_called_hollow(self):
+        """No dagger is drawn on the release-timing chart, so no caption
+        mentions one."""
+        at = self._dc_app()
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert "hollow circles are" in caps
+        assert "\u2020 marks a fallback" not in caps and "\u2020 not an ECI" not in caps
 
     def test_buildout_headline_counts_the_green_connectors(self):
         """The release-timing headline's "within N days" and the green
@@ -2528,7 +2559,7 @@ class TestDataCentersByCountry:
         at.radio(key="dc_end_year").set_value(2030).run()
         _assert_no_error(at, "by country / through 2030")
         head = self._headline(at)
-        assert "training run by end-2030" in head[0]
+        assert "capacity at end-2030" in head[0]
         assert list(at.table[-1].value["Year end"]) == \
             [str(y) for y in range(datetime.now().year, 2031)]
         at.radio(key="dc_start_year").set_value(2023).run()

@@ -146,7 +146,12 @@ purpose-built fabric is the criterion for the levels that claim a link exists.
 
 `_dc_render_country_panel()` is the US-vs-China view: each country's largest training
 run over time, extrapolated past the end of its recorded data under a 50%/80% cone, plus a
-year-end table of US, China, their ratio and China's lag in months. Load-bearing:
+year-end table of US, China, their ratio and China's lag in months. The headline above the
+table reads its last row: China's value, the US's, the ratio and the lag, then mainland China
+alone (`test_headline_names_both_sides_and_the_lag`). The tab's lead (`_DC_LEAD`) and the
+metric and networking selectors' `help=` (`_DC_METRIC_HELP`, `_DC_POOL_HELP`) carry the
+glossary: H100e, log OP, time to GPT-5, networked. Compute's share of ECI growth is said in
+words by `_frac_words`, the nearest everyday fraction. Load-bearing:
 
 1. **Country is a property of the building.** `load_data_centers()` carries Epoch's
    `Country`; `_dc_site_country()` adds `_DC_COUNTRY_FALLBACK` for any timeline-only
@@ -256,7 +261,8 @@ connectors and the headline median) — so they must not contradict each other:
   floor admits a release up to 30d early while the forward grace is 7d, so without this tier
   a step whose model shipped a few weeks early falls to tier 3 and cites a lesser model. (3) Else
   the lab's next release of any kind from `_cc_company_all_releases()`, flagged `fallback`
-  and marked † wherever it renders.
+  and drawn as a hollow circle, which the captions name
+  (`test_fallback_matches_are_called_hollow`).
 
 Load-bearing:
 
@@ -267,7 +273,7 @@ Load-bearing:
    live.** A real flagship can be rescored under its own predecessor and vanish from the
    series without its release date changing, leaving a cluster matching
    nothing. That's a fact about rescoring, not about when the lab shipped, and this panel
-   compares dates only. Tier-3 matches draw hollow, are marked †, and are **excluded from
+   compares dates only. Tier-3 matches draw hollow and are **excluded from
    the headline median**, which is a claim about record-setting releases.
 3. **`_CC_TRAINED_ON` pins a release to its site.** The backward rule reads the
    lab's *largest* record step, so a model trained on a smaller site lands on

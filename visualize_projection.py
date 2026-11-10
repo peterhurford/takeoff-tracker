@@ -271,6 +271,17 @@ def pretty(name):
     return _NAMES.get(name, name)
 
 
+_FRAC_WORDS = ((0.1, "a tenth"), (0.2, "a fifth"), (0.25, "a quarter"),
+               (1 / 3, "a third"), (0.4, "two-fifths"), (0.5, "a half"),
+               (0.6, "three-fifths"), (2 / 3, "two-thirds"), (0.75, "three-quarters"),
+               (0.9, "nine-tenths"))
+
+
+def _frac_words(x):
+    """The nearest everyday fraction to share `x`, in words ("a third")."""
+    return min(_FRAC_WORDS, key=lambda fw: abs(fw[0] - x))[1]
+
+
 def _tab_intro(title, lead):
     """A tab's title and its one- or two-sentence lead, above the first chart."""
     st.header(title)
@@ -13109,8 +13120,12 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         _fn_caption(
             "; ".join(_pace_text(c) for c in cone_for)
             + ". Chinese fits rest on a handful of sites.",
-            ("OOM/yr", "The \u00b1 is 1\u03c3 on the pace = max(fit s.e., spread "
-                       f"across windows, {_DC_CTY_SIGMA_G_FLOOR:.2f}). Timing "
+            ("OOM/yr", "OOM is an order of magnitude, a factor of 10. The \u00b1 "
+                       "is 1\u03c3 on the pace: for an own fit, max(fit s.e., "
+                       "spread across windows / 2.56, "
+                       f"{_DC_CTY_SIGMA_G_FLOOR:.2f}); for an evidence band, "
+                       "(high \u2212 low) / 2.56 of its 80% interval, widened to "
+                       "keep the country's own fit inside the cone. Timing "
                        "\u03c3 is a fraction of lead time, interpolated by the "
                        "share of future rows whose status cites a document."),
             ("Chinese fits rest on a handful of sites", "And the cones follow "
@@ -13160,17 +13175,20 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
             lag_med = float(np.nanmedian(lag[:, j]))
             ahead = float(unresolved[:, j].mean())
             lag_phrase = (
-                f"ahead of the US in {ahead:.0%} of samples" if ahead > 0.5 else
-                f"about {lag_med:.0f} months behind where the US first stood "
-                "at that level" if lag_med >= 0 else
-                f"about {-lag_med:.0f} months ahead of the US")
+                f"China is ahead of the US in {ahead:.0%} of samples" if ahead > 0.5
+                else f"China is about {lag_med:.0f} months behind the US"
+                if lag_med >= 0 else
+                f"China is about {-lag_med:.0f} months ahead of the US")
+            _has_dom = dom is not None and not np.isnan(dom[:, j]).all()
             _fn_line(
-                f"**Largest {cn_key} training run by end-{horizon}: "
-                f"{_dc_fmt_value(np.nanmedian(cn[:, j]), kind)}** against a US "
-                f"{last['US'].split(' (')[0]} — the US at "
-                f"{last['US ÷ China'].split(' (')[0]} China's size, {lag_phrase}."
-                + (" Mainland China alone is smaller again."
-                   if dom is not None and not np.isnan(dom[:, j]).all() else ""),
+                f"**Largest {cn_key} capacity at end-{horizon}: "
+                f"{_dc_fmt_value(np.nanmedian(cn[:, j]), kind)}**, against "
+                f"{_dc_fmt_value(np.nanmedian(us[:, j]), kind)} for the US "
+                f"({np.nanmedian(us[:, j] / cn[:, j]):.1f}\u00d7 larger). "
+                f"{lag_phrase}."
+                + (f" Mainland China alone: "
+                   f"{_dc_fmt_value(np.nanmedian(dom[:, j]), kind)}."
+                   if _has_dom else ""),
                 (f"{_dc_fmt_value(np.nanmedian(cn[:, j]), kind)}",
                  "80% range: "
                  f"{_dc_fmt_value(np.nanpercentile(cn[:, j], 10), kind)}\u2013"
@@ -13179,11 +13197,31 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
                     f"{_dc_fmt_value(np.nanmedian(dom[:, j]), kind)} (80%: "
                     f"{_dc_fmt_value(np.nanpercentile(dom[:, j], 10), kind)}\u2013"
                     f"{_dc_fmt_value(np.nanpercentile(dom[:, j], 90), kind)}).")]
-                  if dom is not None and not np.isnan(dom[:, j]).all() else []))
+                  if _has_dom else []),
+                (f"{lag_phrase}", "Months since the US first stood at China's "
+                                  "level, the table's *China lag*."))
         st.table(rows)
         st.caption(
             "Median (10th–90th pct). *Lag* = months since the US first reached "
             "China's value; negative = China ahead.")
+
+
+_DC_LEAD = ("**Who has the compute to train the next frontier model, and when?** "
+            "Each line is the largest AI data center a company can train on; the "
+            "networked chart further down joins sites that can train one model "
+            "together.")
+_DC_METRIC_HELP = (
+    "Compute is in H100e, H100-equivalents: chips converted to the number of "
+    "Nvidia H100s with the same compute. *log OP* is log10 of the operations "
+    "one training run delivers; +1 is ten times more compute. *Time to GPT-5* "
+    "(or Mythos) is how long the site takes to redo that model's training "
+    "compute. Power, IT power and capital cost are as Epoch reports them.")
+_DC_POOL_HELP = (
+    "Networked sites are close enough, or linked by a dedicated fabric, to train "
+    "one model together. *Nearby* pools sites on one campus or in one metro; "
+    "*announced fabric* adds sites joined by a training network a company has "
+    "announced; *plausible fabric* adds regions with no link announced; "
+    "*every site* sums a company's whole fleet, an upper bound no one trains on.")
 
 
 def render_data_centers():
@@ -13193,7 +13231,7 @@ def render_data_centers():
     with st.sidebar:
         st.header("Data Centers")
         metric_label = st.selectbox("Capacity metric", list(_DC_METRICS),
-                                    key="dc_metric")
+                                    key="dc_metric", help=_DC_METRIC_HELP)
         cfg = _DC_METRICS[metric_label]
         log_scale = st.checkbox("Log scale", value=cfg["log"], key="dc_log")
         include_future = st.checkbox("Include planned future buildout",
@@ -13215,7 +13253,8 @@ def render_data_centers():
         if st.session_state.get("dc_pool_n") not in _DC_NETWORK_OPTIONS:
             st.session_state.pop("dc_pool_n", None)
         net_label = st.selectbox("Data centers networked together",
-                                 list(_DC_NETWORK_OPTIONS), key="dc_pool_n")
+                                 list(_DC_NETWORK_OPTIONS), key="dc_pool_n",
+                                 help=_DC_POOL_HELP)
         if st.session_state.get("dc_party") not in _DC_PARTY_OPTIONS:
             st.session_state.pop("dc_party", None)
         party_label = st.radio(
@@ -13301,7 +13340,7 @@ def render_data_centers():
         cap_date = cap_date + timedelta(days=shift_days)
 
     # ── Header ──
-    st.header("Frontier Data Centers Over Time")
+    _tab_intro("Frontier Data Centers Over Time", _DC_LEAD)
 
     if key in ('train_flop', 'train_flop_6mo'):
         run_days = cfg.get("run_days", _DAYS_2MO)
@@ -13330,7 +13369,7 @@ def render_data_centers():
     _shown_unattr = [c for c in _shown_hosts if c in unattributed]
     if _shown_hosts:
         _fn_caption(
-            "Scope: AI labs, plus colocation hosts with a "
+            "Scope: AI labs, plus cloud and colocation hosts with a "
             f"{_dc_fmt_value(_DC_EXCLUDE_MIN_H100, 'h100')}-H100e site within "
             "a year "
             f"({_and_list([_dc_co_label(c, unattributed) for c in _shown_hosts])})"
@@ -16112,13 +16151,13 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
         "A pure timing test: each capacity step of a lab's single largest data "
         f"center, shifted forward {_CC_RELEASE_LAG_DAYS} days to the release "
         "date it implies, against when that lab's models actually shipped. "
-        "Capability is ignored. 2024 onward; \u2020 marks a fallback match.",
+        "Capability is ignored. 2024 onward; hollow circles are fallback matches.",
         (f"{_CC_RELEASE_LAG_DAYS} days", f"{_DAYS_2MO}d training + "
                                          f"{_CC_RUN_COMPLETION_LAG.days}d "
                                          "release lag."),
         ("Capability is ignored", "The only thing compared is *when*, never how "
                                   "good the model is."),
-        ("a fallback match", "A cluster whose window holds no record-setting "
+        ("fallback matches", "A cluster whose window holds no record-setting "
                              "release falls back to the lab's next release of "
                              "any kind, rather than showing nothing."))
 
@@ -16310,12 +16349,12 @@ def _cc_company_buildout(today, metric_key='perf', kind='sci'):
             *([("Some clusters match nothing", (orphan_note + fb_note).strip())]
               if (orphan_note + fb_note).strip() else []))
 
-    # The fallback releases are drawn hollow and marked † on the chart; say
-    # once why a real flagship can turn up as a non-record.
+    # The fallback releases are drawn hollow; say once why a real flagship can
+    # turn up as a non-record.
     if any(e['fallback'] for e in expected):
         st.caption(
-            "† not an ECI record for this lab (Epoch rescoring can drop a real "
-            "flagship off the running max); shown hollow, excluded from the "
+            "Hollow circles are not ECI records for this lab (Epoch rescoring can "
+            "drop a real flagship off the running max) and are excluded from the "
             "median.")
 
     _fn_caption(
@@ -16878,8 +16917,8 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
 
     # Time-to-cheaper table.
     st.markdown("**Time to reach the same ECI at less compute** "
-                f"(central ≈{eff['g_central']:.1f} OOM/yr; range "
-                f"{eff['g_lo']:.1f}–{eff['g_hi']:.1f} from the band vs all-data fits):")
+                f"(central ≈{eff['g_central']:.2f} OOM/yr; range "
+                f"{eff['g_lo']:.2f}–{eff['g_hi']:.2f} from the band vs all-data fits):")
     tmd = ["| Compute reduction | Time to match capability | Range |",
            "|---|---|---|"]
     for f in (2, 5, 10):
@@ -17027,8 +17066,9 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
               f"×{10**g_recent:.1f}/yr capacity")
     e2.metric("Algorithmic efficiency", f"~{algo_lo:.0f}–{algo_hi:.0f} ECI/yr",
               "iso-ECI ↔ iso-compute")
-    e3.metric("Share of growth of compute", f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
-              "≈ ⅓ to ½")
+    e3.metric("Compute's share of ECI growth",
+              f"{share_lo*100:.0f}–{share_hi*100:.0f}%",
+              f"≈ {_frac_words(share_lo)} to {_frac_words(share_hi)}")
     _fn_caption(
         f"The \u00d7{10**g_recent:.1f}/yr capacity pace comes from the "
         "catalogue above, on lab-attributable sites only.",
@@ -17038,7 +17078,8 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
          "attributable to a model-shipping lab \u2014 neutral hosts excluded, "
          "deliberately stricter than that tab's own record line."))
     st.markdown(
-        f"So **physical compute drives roughly a third to a half** of the "
+        f"So **physical compute drives roughly {_frac_words(share_lo)} to "
+        f"{_frac_words(share_hi)}** of the "
         f"~{obs_slope:.0f} ECI-points/yr.")
 
     # Distillation control: the same regression on frontier-grade models only —
