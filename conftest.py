@@ -1,11 +1,11 @@
 """Pytest configuration — all of it is about test *speed*.
 
-The suite used to take ~3m20s, essentially all of it in test_integration.py's
-75 AppTest cases. Three things were paying for that:
+Almost all of the suite's time is in test_integration.py's AppTest cases.
+Three things keep it down:
 
 1. Streamlit rebuilds a ``ScriptCache`` on every ``AppTest.run()`` — once in
    ``AppTest._run()`` and again in ``LocalScriptRunner.__init__`` — so the
-   9k-line app was re-read, AST-rewritten by ``magic.add_magic`` and recompiled
+   app was re-read, AST-rewritten by ``magic.add_magic`` and recompiled
    for each of the ~300 runs the suite does. That was ~0.5s of the ~0.7s a run
    cost. One process-wide cache fixes it; the bytecode is still exec'd into a
    fresh module every run, so per-run isolation is unchanged.

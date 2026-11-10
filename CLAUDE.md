@@ -27,7 +27,7 @@ _VP_SAMPLES=5000 pytest -v                   # production sample count (see belo
 ```
 
 Run only the tests that cover what you changed (`-k` on the tab's test class or the test
-named in its `docs/` record); the full suite takes ~4 minutes locally, so run it only when a
+named in its `docs/` record); the full suite takes ~4 minutes on 6 workers, so run it only when a
 change touches shared code (helpers, loaders, dispatch, session state) or Peter asks.
 
 Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tests use a fake Streamlit module (`_FakeStreamlit` / `_Noop`) so the app imports without a server; `_VP_TESTING=1` skips rendering at module level. Integration tests use Streamlit's `AppTest` headless runtime (60s timeout, a hang guard).
@@ -151,8 +151,8 @@ Widget defaults live in per-tab `_<TAB>_DEFAULTS` (e.g. `_METR_DEFAULTS`); each 
 
 ## Why the test suite is fast (and how to not un-fast it)
 
-~8s, down from more than three minutes that was essentially all in the `AppTest` cases. Three things buy
-that back; the first two live in `conftest.py`.
+Nearly all the suite's time is in the `AppTest` cases. Three things keep it down; the first
+two live in `conftest.py`.
 
 1. **One shared bytecode cache.** Streamlit builds a fresh `ScriptCache` on every
    `AppTest.run()` — once in `AppTest._run()`, again in `LocalScriptRunner.__init__` — so
@@ -167,9 +167,9 @@ that back; the first two live in `conftest.py`.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight
    multiple. It costs the unit-test-only run a little worker startup, hence `-n0`.
 
-China's takeoff (a second simulation behind every Takeoff and Pacing rerun) roughly doubled the
-suite, to ~8 minutes on a cloud container; `_CN_TK_DRAWS` and Pacing's horizon-cut runs are
-what keep it there (`docs/takeoff.md`, section 5).
+China's takeoff (a second simulation behind every Takeoff and Pacing rerun) roughly doubles
+each of those reruns; `_CN_TK_DRAWS` and Pacing's horizon-cut runs hold that cost down
+(`docs/takeoff.md`, section 5).
 
 Adding an `AppTest` case is cheap (~0.1s per `.run()`), so prefer one to skipping coverage.
 What is *not* cheap is defeating the shared cache — a test that mutates
