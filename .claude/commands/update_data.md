@@ -11,7 +11,7 @@ Today's date is authoritative for judging staleness — check the current date, 
 
 ## The sources
 
-Four downloadable feeds, three hardcoded tables, and hand-read or digitized figures (RSI, UK Cyber). For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
+Four downloadable feeds, three hardcoded tables, and hand-read, transcribed or digitized figures (RSI, UK Cyber, China's compute). For downloadable feeds, prefer fetching the canonical file directly over hand-transcribing.
 
 | Source | Type | Canonical location |
 |---|---|---|
@@ -22,12 +22,13 @@ Four downloadable feeds, three hardcoded tables, and hand-read or digitized figu
 | `_RLI_RAW` (in `visualize_projection.py`) | hardcoded | Scale Labs RLI leaderboard `labs.scale.com/leaderboard/rli` / `remotelabor.ai` |
 | `_OPENAI_REVENUE` / `_ANTHROPIC_REVENUE` (in `visualize_projection.py`) | hardcoded | Press reports (The Information, Reuters, Bloomberg, CNBC, etc.) |
 | `_CN_REVENUE` (in `visualize_projection.py`): MiniMax, Zhipu, Alibaba, Moonshot, DeepSeek | hardcoded | Results calls and filings (HKEX for MiniMax 0100 / Zhipu 2513, Alibaba 6-K and earnings call) and press (The Information, Bloomberg, 36Kr, LatePost). See *Chinese labs* below |
-| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`) | hand-read figures | Sources in `docs/data-sources.md`. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
+| RSI tables (`_RSI_RAW`, `_RSI_SURVEY`, `_RSI_DIR_RAW`, `_RSI_CODE_RAW`, `openai_experiment_velocity.csv`, `anthropic_rd_automation.csv`, `metr_aeci.csv`) | hand-read figures | Sources in `docs/data-sources.md`. Check new Anthropic system cards for CoBench and survey rounds — but see *CoBench: check comparability first* below. A card's problem set differs from the Risk Report's, so a score goes in via a rescale, never raw |
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
-| `cts_duv_production.csv` (China tab, Pausing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
+| `china_compute_sources.csv` (China tab, Pacing, China's takeoff) | **hand-assembled** | Epoch chip owners and smuggling estimate, SemiAnalysis, IFP; recipe and derivations in `docs/data-sources.md` and the file's `#` header |
+| `cts_duv_production.csv` (China tab, Pacing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
 
-Note: Employment and ECI Company Gap have NO feed of their own, and Compute vs Capabilities has only the static CTS table above — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
+Note: Employment, the ECI tab's company gap and Pacing have NO feed of their own, and the China tab has only the CTS and China-compute tables above — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
 
 ### CoBench: check comparability before transcribing
 

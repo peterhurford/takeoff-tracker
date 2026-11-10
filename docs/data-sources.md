@@ -4,15 +4,16 @@ Every feed, where it comes from and how to refresh it. The step-by-step refresh 
 
 ## Data Sources and How to Update
 
-Six external feeds; the rest are derived. `.claude/commands/update_data.md` has the full
-recipe, including the AISI cyber data deliberately *not* ingested.
+Four downloadable files (METR, ECI, the two data-center files); every other file and table
+is hand-edited, transcribed or digitized from a figure. `.claude/commands/update_data.md` has
+the full recipe, including the AISI cyber data deliberately *not* ingested.
 
 | File / table | Source | How to refresh |
 |---|---|---|
 | `benchmark_results_1_1.yaml` | METR | Overwrite from `https://metr.org/assets/benchmark_results_1_1.yaml` |
 | `epoch_capabilities_index.csv` | Epoch AI | **Converted, not extracted**: `python3 convert_eci.py eci_scores.csv all_ai_models.csv epoch_capabilities_index.csv` from `https://epoch.ai/data/eci_scores.csv` and `https://epoch.ai/data/all_ai_models.csv`. One row per model; training compute joins by name, with `ALIASES` for renames (`test_convert_eci.py`; the script prints stale ones). Epoch recomputes scores live, so existing rows drift on each pull |
 | `data_centers.csv` | Epoch AI | Overwrite from `https://epoch.ai/data/data_centers/data_centers.csv` |
-| `data_center_timelines.csv` | Epoch AI | Same, `…/data_center_timelines.csv`. Column order varies between pulls; the loader uses `DictReader`, so that's safe. **One curated deletion — see below** |
+| `data_center_timelines.csv` | Epoch AI | Same, `…/data_center_timelines.csv`. Column order varies between pulls; the loader uses `DictReader`, so that's safe. **Check for orphan rows — see below** |
 | `_RLI_RAW` (hardcoded) | Scale Labs RLI leaderboard (`labs.scale.com/leaderboard/rli`) / `remotelabor.ai` | Hand-edit rows |
 | `_RSI_RAW` (hardcoded) | Anthropic, Redacted Risk Report (Aug 2026), §3.4.3 Fig 3.4.3.A (`_RSI_SOURCE_URL`) | **Not downloadable** — scores read off the figure, Anthropic prints no table. Hand-edit rows |
 | `_RSI_DIR_RAW` (hardcoded) | Anthropic, [*When AI builds itself*](https://www.anthropic.com/institute/recursive-self-improvement) (`_RSI_DIR_SOURCE_URL`) | **Not downloadable** — the figure prints its own bar values, so the rows are read off the labels, not pixel-digitized. Dates are the models' Epoch-catalogued release dates (`test_dates_are_the_published_release_dates`), not the figure's row order, which is not chronological. Hand-edit rows |
