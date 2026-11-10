@@ -25785,10 +25785,13 @@ def _render_takeoff(loading):
                    "chip-production loops say the direction and the lag. The frozen-AI "
                    "comparison never gets it.")
         with st.expander("What decides RSI"):
-            number("Human work at RSI (%)", "full_human", 0.0, 25.0, 1.0,
+            number("Human work at RSI (%)", "full_human", 1.0, 25.0, 1.0,
                    "RSI is when research direction (choosing what to try next) falls "
                    "to this share of its baseline human hours, after coding is "
-                   "automated.")
+                   "automated. Human hours only approach the persistent floor under "
+                   "Advanced (now "
+                   f"{float(st.session_state.get('tk_human_floor', 0.0)):g}%), so a bar "
+                   "at or below it is never reached and RSI reads *Beyond horizon*.")
             st.checkbox("Autopilot from RSI", key="tk_rsi_autopilot",
                         help="On: once research direction crosses the bar, no research "
                              "stage needs people at all; the hours left in experiment "
@@ -25961,7 +25964,11 @@ def _render_takeoff(loading):
                        "ratios matter. "
                        "Measured in months of capability progress at today's pace, so "
                        "future acceleration shortens calendar time.")
-            number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0)
+            number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0,
+                   "The share of baseline human hours each stage never drops below. "
+                   "At or above *Human work at RSI* (now "
+                   f"{float(st.session_state.get('tk_full_human', 5.0)):g}%), RSI is never "
+                   "reached.")
             st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 1.0, 60.0, 1.0,
                    "Validated algorithmic progress at the 2024–25 average pace, "

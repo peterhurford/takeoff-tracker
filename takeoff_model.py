@@ -179,23 +179,39 @@ def validate(params):
     if not 0 <= p["rsi_trend_weight"] <= 100 or not 0 <= p["rsi_useful_growth"] <= 100 \
             or p["rsi_trend_months"] <= 0:
         raise ValueError("RSI trend weights must be percentages and their half-life positive.")
-    if not -5 <= p["substitution"] <= 0.9 or p["ai_speed"] < 1 \
-            or not 0 <= p["baseline_inputs"] <= 200 or not -90 <= p["judgment_drift"] <= 300 \
-            or not 0 <= p["compute_slowdown"] <= 100 or p["compute_slow_years"] < 0 \
-            or not 0.5 <= p["rsi_compute_boost"] <= 5 \
-            or not 0 <= p["rsi_compute_delay"] <= 60 or not 0 <= p["rsi_compute_ramp"] <= 60 \
-            or not 0 <= p["ceiling_high_oom"] <= 60 \
-            or not (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]) \
-            or p["rsi_autopilot"] not in (0, 1) or not 0 <= p["ai_copies"] <= 2 \
-            or not (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1) \
-            or not 0 <= p["direction_adoption"] <= 2 or not 0.25 <= p["judgment_today"] <= 4 \
-            or p["serial_speedup"] not in (0, 1) or p["reallocate_compute"] not in (0, 1) \
-            or not 0 <= p["compute_bound_corr"] <= 1 or not 0 <= p["ceiling_returns_corr"] <= 1 \
-            or not -90 <= p["hiring_growth"] <= 200 or not -90 <= p["staff_after_rsi"] <= 200 \
-            or not 0 <= p["scale_dependent"] <= 100 or not 0 <= p["scale_dependent_spread"] <= 400 \
-            or not 0 < p["scale_lag_oom"] <= 10 or not 0 <= p["scale_lag_spread"] <= 400:
-        raise ValueError("Use substitution in [-5, 0.9], AI speed of at least 1x, and "
-                         "baseline input growth in [0, 200]%.")
+    checks = (
+        (-5 <= p["substitution"] <= 0.9, "Substitution must be between -5 and 0.9."),
+        (p["ai_speed"] >= 1, "AI speed must be at least 1x."),
+        (0 <= p["baseline_inputs"] <= 200, "Baseline input growth must be between 0 and 200%."),
+        (-90 <= p["judgment_drift"] <= 300, "Judgment drift must be between -90 and 300%."),
+        (0 <= p["compute_slowdown"] <= 100 and p["compute_slow_years"] >= 0,
+         "Compute slowdown must be between 0 and 100% over a non-negative number of years."),
+        (0.5 <= p["rsi_compute_boost"] <= 5 and 0 <= p["rsi_compute_delay"] <= 60
+         and 0 <= p["rsi_compute_ramp"] <= 60,
+         "RSI compute boost must be between 0.5x and 5x, with delay and ramp each 0 to 60 months."),
+        (0 <= p["ceiling_high_oom"] <= 60
+         and (p["ceiling_high_oom"] == 0 or 0 < p["ceiling_low_oom"] <= p["ceiling_high_oom"]),
+         "The software ceiling's low end must be positive and at most its high end (at most 60 OOM)."),
+        (p["rsi_autopilot"] in (0, 1) and 0 <= p["ai_copies"] <= 2,
+         "Autopilot must be on or off, and AI copies between 0 and 2."),
+        (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1,
+         "The judgment cap must be 0 (off) or at least 1x."),
+        (0 <= p["direction_adoption"] <= 2 and 0.25 <= p["judgment_today"] <= 4,
+         "Direction adoption must be between 0 and 2, and today's judgment between 0.25x and 4x."),
+        (p["serial_speedup"] in (0, 1) and p["reallocate_compute"] in (0, 1),
+         "Serial speedup and compute reallocation must each be on or off."),
+        (0 <= p["compute_bound_corr"] <= 1 and 0 <= p["ceiling_returns_corr"] <= 1,
+         "Correlations must be between 0 and 1."),
+        (-90 <= p["hiring_growth"] <= 200 and -90 <= p["staff_after_rsi"] <= 200,
+         "Hiring growth and staff after RSI must be between -90 and 200%."),
+        (0 <= p["scale_dependent"] <= 100 and 0 <= p["scale_dependent_spread"] <= 400
+         and 0 < p["scale_lag_oom"] <= 10 and 0 <= p["scale_lag_spread"] <= 400,
+         "Scale-dependent share must be 0 to 100%, its lag above 0 and at most 10 OOM, "
+         "and each spread 0 to 400%."),
+    )
+    for ok, message in checks:
+        if not ok:
+            raise ValueError(message)
     return p
 
 

@@ -699,6 +699,22 @@ def test_invalid_assumptions_rejected(params):
         tk.simulate(params, n=1)
 
 
+@pytest.mark.parametrize("params, names", [
+    ({"ceiling_low_oom": 30, "ceiling_high_oom": 16}, "ceiling"),
+    ({"substitution": 1.5}, "Substitution"),
+    ({"ai_speed": 0.5}, "AI speed"),
+    ({"judgment_drift": 400}, "Judgment drift"),
+    ({"compute_bound_corr": 2}, "Correlations"),
+    ({"scale_lag_oom": 0}, "Scale-dependent"),
+])
+def test_each_invalid_setting_names_itself(params, names):
+    with pytest.raises(ValueError, match=names) as exc:
+        tk.validate(params)
+    others = {"ceiling", "Substitution", "AI speed", "Judgment drift", "Correlations",
+              "Scale-dependent"} - {names}
+    assert not any(o in str(exc.value) for o in others)
+
+
 def test_pace_factors_multiply_back_to_the_pace():
     """Resources x judgment / difficulty is the recorded pace, month by month."""
     r = tk.simulate(n=200, onset_years=np.full(200, 1.0))

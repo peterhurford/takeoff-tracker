@@ -1878,6 +1878,10 @@ class TestTakeoffTab:
         assert "Beyond horizon" not in odds and "probably within" not in odds
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         assert _qp(at, "tk_human_floor") == ["6.0"]
+        # The bar's own help says why: it names the floor it now sits under, and
+        # it cannot be set to 0, which no halving ever reaches.
+        bar = at.number_input(key="tk_full_human")
+        assert "(now 6%)" in bar.help and bar.min == 1.0
         at.button(key="tk_reset").click().run()
         assert at.number_input(key="tk_human_floor").value == 0.0
 
