@@ -1828,6 +1828,15 @@ class TestTakeoffTab:
         assert "China today (trained, the model's start)" in names
         assert "Model 3 Early" in t["How"].iloc[2]
 
+    def test_no_chart_stacks_every_traces_hover_at_a_date(self):
+        """Plotly's 'x' hovermode labels every trace at the hovered date, a pile
+        where measured points meet the projection: charts with measured points
+        hover per point, projection-only ones in one unified box."""
+        at = self._app()
+        modes = [json.loads(el.proto.spec)["layout"].get("hovermode")
+                 for el in at.get("plotly_chart")]
+        assert "x" not in modes
+
     def test_pace_over_time_is_quarterly_measured_then_projected(self):
         """One point a quarter end, Q1 2024 to Q4 2030: measured through the
         last quarter end before today, projected after, joined there."""

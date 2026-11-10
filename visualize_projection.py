@@ -18685,7 +18685,7 @@ def _pc_rsi_dist_fig(days, origin, early, med, late, horizon=None,
                    ticksuffix='%', gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                    tickfont=dict(color='#1a1a2e'),
                    title_font=dict(color='#1a1a2e')),
-        hovermode='x', plot_bgcolor='white', paper_bgcolor='white')
+        hovermode='x unified', plot_bgcolor='white', paper_bgcolor='white')
     return fig
 
 
@@ -22804,7 +22804,7 @@ def _tk_pace_fig(result, today, markers=(), history=None,
                              "10×", "20×", "50×", "100×",
                              "200×", "500×", "1,000×", "10,000×", "100,000×",
                              "1,000,000×"]),
-        legend=dict(orientation="h", y=-0.12), hovermode="x")
+        legend=dict(orientation="h", y=-0.12), hovermode="closest")
     return fig
 
 
@@ -22906,7 +22906,7 @@ def _tk_factors_fig(result, today):
         xaxis=dict(range=[x[0], x[-1]]),
         yaxis=dict(type="log", title="Multiplier vs today (median)",
                    range=[-np.log10(_TK_FACTOR_VIEW), np.log10(_TK_FACTOR_VIEW)]),
-        legend=dict(orientation="h", y=-0.15), hovermode="x")
+        legend=dict(orientation="h", y=-0.15), hovermode="x unified")
     return fig
 
 
@@ -23419,7 +23419,7 @@ def _tk_compute_fig(result, today, slow_date, hist=None, markers=()):
         height=340, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[x[0], x[-1]]),
         yaxis=dict(type="log", title="Largest training run, × today"),
-        legend=dict(orientation="h", y=-0.15), hovermode="x")
+        legend=dict(orientation="h", y=-0.15), hovermode="closest")
     return fig
 
 
@@ -23456,7 +23456,7 @@ def _tk_compute_split_fig(result, today, markers=()):
     fig.update_layout(height=340, margin=dict(l=55, r=20, t=30, b=40),
                       xaxis=dict(range=[x[0], x[-1]]),
                       yaxis=dict(type="log", title="× today's total compute"),
-                      legend=dict(orientation="h", y=-0.15), hovermode="x")
+                      legend=dict(orientation="h", y=-0.15), hovermode="x unified")
     return fig
 
 
@@ -23489,7 +23489,7 @@ def _tk_split_fig(result, today, markers=()):
     fig.update_layout(height=300, margin=dict(l=55, r=20, t=20, b=40),
                       xaxis=dict(range=[x[0], x[-1]]),
                       yaxis=dict(range=[0, 100], ticksuffix="%", title="Share of compute"),
-                      legend=dict(orientation="h", y=-0.18), hovermode="x")
+                      legend=dict(orientation="h", y=-0.18), hovermode="x unified")
     return fig
 
 
@@ -23866,7 +23866,7 @@ def _tk_eci_fig(result, today, eci, markers=()):
         yaxis=dict(title="ECI (Epoch Capabilities Index)",
                    range=[min(m['eci_score'] for m in past) - 10,
                           eci["ultra_level"] + _TK_ECI_VIEW_PAST_ULTRA]),
-        legend=dict(orientation="h", y=-0.12), hovermode="x")
+        legend=dict(orientation="h", y=-0.12), hovermode="closest")
     return fig
 
 
@@ -23927,7 +23927,7 @@ def _tk_eci_rate_fig(result, today, eci, markers=()):
                    range=[np.log10(5), np.log10(_TK_ECI_RATE_VIEW)],
                    tickvals=[5, 10, 20, 50, 100, 200, 400],
                    ticktext=["5", "10", "20", "50", "100", "200", "400"]),
-        legend=dict(orientation="h", y=-0.15), hovermode="x")
+        legend=dict(orientation="h", y=-0.15), hovermode="closest")
     return fig
 
 
@@ -24174,7 +24174,7 @@ def _tk_workforce_fig(result, today, eci, markers=()):
     fig.update_yaxes(type="log", row=1, col=2, exponentformat="B")
     fig.update_xaxes(range=[x[0], x[-1]])
     fig.update_layout(height=380, margin=dict(l=55, r=20, t=40, b=40),
-                      legend=dict(orientation="h", y=-0.15), hovermode="x")
+                      legend=dict(orientation="h", y=-0.15), hovermode="x unified")
     return fig
 
 
@@ -24221,7 +24221,7 @@ def _tk_humans_fig(result, today, ladder=None, markers=()):
         height=420, margin=dict(l=55, r=20, t=30, b=40),
         yaxis=dict(range=[0, 100], ticksuffix="%",
                    title="Human hours still needed"),
-        legend=dict(orientation="h", y=-0.12), hovermode="x")
+        legend=dict(orientation="h", y=-0.12), hovermode="x unified")
     _add_today_diamond(fig, "Research direction", lambda v: f"{v:.0f}%",
                        label="research direction")
     return fig
