@@ -3681,11 +3681,9 @@ class TestDcCompanyAliases:
 class TestDcHiddenCompanies:
     """Size gates the colocation/neutral-host exclusion.
 
-    _DC_EXCLUDE_COMPANIES names companies that aren't AI labs, and they used to
-    be hidden unconditionally. That understated the tab's headline chart once
-    one of them got big: QTS Cedar Rapids is the largest single site in Epoch's
-    data, so "Largest single data center" was naming a smaller site as the
-    record holder."""
+    _DC_EXCLUDE_COMPANIES names companies that aren't AI labs. Hiding them
+    unconditionally would understate "Largest single data center" whenever one
+    of their sites is the largest."""
 
     def _peak(self, co, cap=None):
         return vp._dc_company_peak_h100(vp.dc_all, cap_date=cap).get(co, 0.0)

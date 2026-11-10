@@ -2613,10 +2613,8 @@ _DC_PALETTE = ["#888888", "#E377C2", "#8C564B", "#BCBD22", "#17BECF",
 # company — so a cluster whose sites belong to different companies, or whose
 # sites are hidden by _dc_hidden_companies(), is inert until that changes. Only
 # Cedar Rapids is inert today, and for the first reason: its two sites are a
-# Google one and a QTS one with no recorded user, so they never merge. Richmond
-# (three QTS sites) and San Antonio (two Microsoft ones) used to be inert for
-# the second reason and now pool, since those hosts cleared the size threshold
-# and are charted. A cluster stays listed either way — the geography is real
+# Google one and QTS Cedar Rapids, which Epoch attributes to Meta, so they never
+# merge. A cluster stays listed either way — the geography is real
 # even where the attribution is not.
 _DC_NETWORK_CLUSTERS = (
     ("Memphis, TN", 'proximity', ("Colossus 1", "Colossus 2")),

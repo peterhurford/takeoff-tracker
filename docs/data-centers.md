@@ -57,16 +57,15 @@ and that no label is a qualified form of another — the guard that would catch 
 `_DC_EXCLUDE_COMPANIES` lists companies that aren't AI labs — colocation and neutral-host
 operators whose recorded "company" is the landlord, not whoever trains on the hardware. `_dc_hidden_companies()` drops a listed company
 only while its largest single site stays under `_DC_EXCLUDE_MIN_H100` within
-`_DC_EXCLUDE_HORIZON_DAYS`, because one can grow into the record holder: QTS
-Cedar Rapids is the largest single site in Epoch's data, and an unconditional hide would
-have the headline chart name a smaller site as the record. The roster the rule currently produces is
+`_DC_EXCLUDE_HORIZON_DAYS`, because a listed operator's site can be large enough that an
+unconditional hide would have the headline chart name a smaller site as the record. The roster the rule currently produces is
 pinned by `test_current_roster_is_what_the_tab_says_it_is`.
 
 Four things are load-bearing:
 
 1. **The threshold reads H100-equivalents, always** — never the metric currently selected.
-   The same number in megawatts or dollars means something else, and two of the tab's
-   metrics are inverted (bigger site = smaller value), so `>=` would read backwards.
+   The same number in megawatts, dollars or training runs per window means something
+   else.
 2. **A rolling horizon, not the uncapped peak, and not `dc_end_year`.** Uncapped, every
    listed host eventually clears the bar on 2028+ buildout and the list stops meaning anything
    (`test_uncapped_peaks_would_defeat_the_exclusion`). And the roster is a property of the
@@ -111,14 +110,12 @@ own cluster and never pools. Six things are load-bearing:
    fabric, not the tenant: the Fairwater pair pools under *OpenAI*, Epoch's first-listed user
    for both sites, which is why it isn't called "Microsoft AI WAN". A cluster spanning two
    companies never merges them, and sites hidden by `_dc_hidden_companies()` take their cluster with
-   them — only Cedar Rapids is inert today, for the first reason (a Google site and an
-   unattributed QTS one). Richmond and San Antonio were inert for the second reason until
-   their hosts cleared the size gate. Kept either way: the geography is real even where
-   tenant attribution isn't. Note what this means for the `'plausible'` level: it is a
-   *fabric* assumption only. It cannot rescue Cedar Rapids, whose two sites are already
-   clustered and fail to pool because Epoch records no tenant for the QTS one. Assuming
-   tenancy is a much stronger claim than assuming a link, and is deliberately not on this
-   axis.
+   them — only Cedar Rapids is inert today, for the first reason (a Google site and QTS
+   Cedar Rapids, which Epoch attributes to Meta). Kept either way: the geography is real
+   even where tenant attribution isn't. The `'plausible'` level is a *fabric* assumption
+   only: it pools QTS Cedar Rapids with the other Meta sites in *Great Plains*, never with
+   its Google neighbour. Assuming tenancy is a much stronger claim than assuming a link, and
+   is deliberately not on this axis.
 3. **`cluster_of={}` must reproduce `_dc_company_series()` exactly** — that chart sits
    directly above, so drift reads as a bug. `cluster_of=None` pools the whole fleet and is
    offered only as an explicitly-labelled upper bound.
