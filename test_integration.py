@@ -2482,6 +2482,18 @@ class TestUkCyberTab:
         _switch_tab(at, "UK Cyber")
         return at
 
+    def test_open_window_says_when_it_opened(self):
+        """Inside the ETA window the card says when the window opened and
+        whether an open-weight model has reached the target, not a span
+        starting at zero months."""
+        import visualize_projection as vp
+        at = self._ukc_app()
+        caps = [str(c.value) for c in at.caption]
+        assert not any(c.startswith("0.0") and "months from today" in c for c in caps), caps
+        opened = [c for c in caps if c.startswith("Window opened ")]
+        if opened:
+            assert f"at {vp._UKC_TARGET:.0f}%" in opened[0]
+
     @pytest.mark.parametrize("key,kind,value", [
         ("ukc_proj_basis", "radio", "Piecewise linear (logit)"),
         ("ukc_proj_basis", "radio", "Superexponential (logit)"),

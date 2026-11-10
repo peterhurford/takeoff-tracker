@@ -9392,10 +9392,19 @@ def render_ukcyber():
             st.metric(f"China reaches {_UKC_TARGET:.0f}%", _span)
             _m_lo = (_lo - today).days / _UKC_DAYS_PER_MONTH
             _m_hi = (_hi - today).days / _UKC_DAYS_PER_MONTH
+            _open_hit = any(m['weights'] == 'open' and m['cyber_score'] >= _UKC_TARGET
+                            for m in ukc_all)
             if _m_hi < 0:
                 st.caption("Already passed")
+            elif _m_lo <= 0:
+                # Inside the window: say when it opened and whether any
+                # open-weight model has been measured at the target.
+                st.caption(f"Window opened {_lo:%b %Y}; " + (
+                    f"an open-weight model is measured at {_UKC_TARGET:.0f}%"
+                    if _open_hit else
+                    f"no open-weight model measured at {_UKC_TARGET:.0f}% yet"))
             else:
-                st.caption(f"{max(_m_lo, 0):.1f}–{max(_m_hi, 0):.1f} months from today")
+                st.caption(f"{_m_lo:.1f}–{_m_hi:.1f} months from today")
 
         _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
         _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "

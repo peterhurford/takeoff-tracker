@@ -62,6 +62,9 @@ Five load-bearing constraints; don't "simplify" them away:
 Country and openness are perfectly confounded (no US open-weight, no Chinese closed-weight models). The tab says "China" because the two Chinese models are also the only open-weight ones; `_UKC_CONFOUND_PLAIN` is folded into the fine-print caption so that's stated wherever it does. If it ever needs banner prominence again, promote that same constant rather than writing a second wording to keep in sync.
 
 `ukc_target_eta()` ("when do open-weight models reach `_UKC_TARGET`") = the frontier's interpolated crossing plus the min/max measured lag. `ukc_target_eta_direct()` fits the open-weight points themselves as a cross-check only — they sit close together in time, which makes that slope very sensitive, so it is never the headline.
+Its card counts months from today only while the window lies ahead; once it has opened the
+caption gives the opening month and whether any open-weight model is measured at the target
+(`test_open_window_says_when_it_opened`).
 
 ## ECI tab — organization matching
 
