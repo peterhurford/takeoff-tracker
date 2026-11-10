@@ -4575,6 +4575,13 @@ class TestChinaComputeSources:
                     f27["smuggled"][i] * g)
             assert f["domestic"][0] <= cap[y]
             assert f["domestic"][1] <= f["domestic"][0] <= f["domestic"][2]
+            # Low, central and high each grow from 2027's own value.
+            rates = (vp._DUV_CN_OUTPUT_GROWTH,
+                     vp._DUV_CN_OUTPUT_GROWTH / vp._DUV_CN_OUTPUT_SPREAD,
+                     vp._DUV_CN_OUTPUT_GROWTH * vp._DUV_CN_OUTPUT_SPREAD)
+            for i in range(3):
+                assert f["domestic"][i] == pytest.approx(
+                    min(f27["domestic"][i] * rates[i] ** (y - 2027), cap[y]))
             for k in f:
                 run[k] += f[k][0]
                 assert p["stock"][str(y)][k][0] == pytest.approx(run[k])

@@ -12222,7 +12222,8 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
     """Flows and stocks for `_CN_SRC_PROJ_YEARS`, in `data`'s format.
 
     From the last stored year: domestic output grows at `growth` (its range
-    at ÷/× `_DUV_CN_OUTPUT_SPREAD`), capped at the CTS lithography ceiling on
+    at ÷/× `_DUV_CN_OUTPUT_SPREAD`, each from the last stored year's own
+    central, low or high), capped at the CTS lithography ceiling on
     today's allocation; legal sales hold flat; smuggling keeps its chip
     count, so its H100e grow `_CN_SRC_SMUGGLED_CHIP_GROWTH` a year, with
     the last stored year's relative range; remote access adds
@@ -12237,7 +12238,9 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
     smug = data["flow"][str(base)]["smuggled"][:3]
     s0 = {k: v[:3] for k, v in data["stock"][str(base)].items()}
     gw = _CN_SRC_OFFSHORE_GW
-    dom = [f0["domestic"]] * 3
+    # Each of central, low and high grows from 2027's own value, so a low year
+    # never starts above the stored low.
+    dom = list(data["flow"][str(base)]["domestic"][:3])
     rates = (growth, growth / _DUV_CN_OUTPUT_SPREAD,
              growth * _DUV_CN_OUTPUT_SPREAD)
     flow, stock = {}, {}
