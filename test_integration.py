@@ -161,6 +161,18 @@ class TestDefaultTab:
         assert _qp(at, "tab") == ["eci"]
 
 
+class TestReleaseLagTab:
+    def test_it_shows_snapshot_lag_and_frontier_lead(self):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Release Lag")
+        _assert_no_error(at, "Release Lag")
+        labels = [str(m.label) for m in at.metric]
+        assert any("Snapshot lag" in l for l in labels)
+        assert any("Frontier lead, Anthropic" in l for l in labels)
+        assert _qp(at, "tab") == ["releaselag"]
+
+
 class TestEciTab:
     """The ECI tab carries the old ECI Company Gap tab: a leaderboard, the
     projection, then the subject's months behind the reference."""
@@ -442,7 +454,7 @@ class TestDefaultValues:
         # The record's slowest and fastest year, not half to twice the fit.
         import visualize_projection as vp
         assert (ppy_lo, ppy_hi) == vp._eci_yearly_gain_range(
-            [m for m in vp._eci_entity_models("US best", internal=True)
+            [m for m in vp._eci_entity_models("US best", internal=True, trained=True)
              if m['is_frontier']])
         assert at.toggle(key="eci_milestones").value is True
         assert at.toggle(key="eci_labels").value is True

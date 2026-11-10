@@ -3490,10 +3490,11 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 # The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
 # that set the same radio, whose own chips for them the style block hides.
 _TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
-                "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds"]
+                "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds",
+                "Release Lag"]
 _TAB_MAIN_N = 6
 _TAB_LABEL = {"ECI": "Epoch ECI"}
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing", "Release Lag": "releaselag"}
 # Current slugs only: an unknown ?tab= opens the default tab
 # (`test_retired_links_get_no_special_handling`).
 _TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
@@ -4402,7 +4403,7 @@ def _eci_tab_reset_keys(p):
         f"{p}_superexp_ppy_ci_hi", f"{p}_superexp_pos_lo",
         f"{p}_superexp_pos_hi",
         f"{p}_proj_basis", f"{p}_milestones", f"{p}_labels",
-        f"{p}_eci_metr_proj", f"{p}_internal",
+        f"{p}_eci_metr_proj", f"{p}_internal", f"{p}_trained",
         f"_{p}_proj_as_of", f"{p}_end_year",
         f"_{p}_seg_config",
     ]
@@ -4476,6 +4477,7 @@ def _eci_tab_defaults(p):
         f"{p}_labels": True,
         f"{p}_eci_metr_proj": False,
         f"{p}_internal": True,
+        f"{p}_trained": True,
         f"{p}_end_year": 2027,
     }
 
@@ -5509,7 +5511,7 @@ def _eci_same_frontier(a, b):
     return names(a) == names(b)
 
 
-def _eci_entity_models(label, full_window=False, internal=None):
+def _eci_entity_models(label, full_window=False, internal=None, trained=None):
     """Every model of a comparison entity, its frontier marked. With `internal`
     (default: the ECI tab's *Anthropic internal models* toggle, set only while
     that tab renders), Anthropic's internal models join any entity that has
@@ -5521,20 +5523,75 @@ def _eci_entity_models(label, full_window=False, internal=None):
         full_window=full_window)
     if internal is None:
         internal = bool(st.session_state.get(_ECI_INTERNAL_ON, False))
+    if trained is None:
+        trained = bool(st.session_state.get(_ECI_TRAINED_ON, False))
     has_anthropic = (spec.get("country") in (None, "United States of America")
                      if "orgs" not in spec else "Anthropic" in spec["orgs"])
-    if not (internal and has_anthropic):
-        return models
-    extra = [m for m in _eci_internal_models()
-             if full_window or m['date'] >= datetime(2024, 2, 29)]
-    # Copies: the loader is cached, and re-marking the frontier mutates.
-    return _mark_eci_frontier(sorted([dict(m) for m in models] + extra,
-                                     key=lambda m: m['date']), 'eci_score')
+    if internal and has_anthropic:
+        extra = [m for m in _eci_internal_models()
+                 if full_window or m['date'] >= datetime(2024, 2, 29)]
+        # Copies: the loader is cached, and re-marking the frontier mutates.
+        models = _mark_eci_frontier(sorted([dict(m) for m in models] + extra,
+                                           key=lambda m: m['date']), 'eci_score')
+    return _eci_redate_trained(models) if trained else models
+
+
+def _eci_redate_trained(models):
+    """Copies of `models` dated at estimated training finish, the release kept
+    as 'released': METR's `produced` for Anthropic's models (internal ones
+    included), else the release less the snapshot lag (`_eci_snapshot_lag_days`:
+    US) or China's lag; the frontier re-marked on the new dates."""
+    fin = _eci_training_finish()
+    lag = {'China': _ship_lag("cn")}
+    out = []
+    for m in models:
+        m = dict(m, released=m['date'])
+        key = m['display_name'] if m.get('internal') else m['version']
+        m['date'] = fin.get(key) or m['date'] - timedelta(
+            days=lag.get(m.get('country'), _eci_snapshot_lag_days()))
+        out.append(m)
+    return _mark_eci_frontier(sorted(out, key=lambda m: m['date']), 'eci_score')
+
+
+def _eci_training_finish():
+    """{Epoch version or internal display name: METR's estimated finish}."""
+    out = {}
+    for r in load_metr_aeci():
+        if r['chart'] != 'anthropic' or r['produced'] is None:
+            continue
+        if r['epoch_model']:
+            out[r['epoch_model']] = r['produced']
+        if r['kind'] == 'internal':
+            out[f"{r['model']} (internal)"] = r['produced']
+    return out
+
+
+def _rl_snapshot_rows():
+    """Anthropic's released models in METR's assessment: estimated training
+    finish (`produced`) to Epoch's release date, in days."""
+    rel = {m['version']: m['date'] for m in _eci_rows_by_version()}
+    return [{'model': r['model'], 'epoch_model': r['epoch_model'],
+             'produced': r['produced'], 'available': r['date'],
+             'released': rel[r['epoch_model']],
+             'days': (rel[r['epoch_model']] - r['produced']).days,
+             'internal_first': r['kind'] == 'internal'}
+            for r in load_metr_aeci()
+            if r['chart'] == 'anthropic' and r['produced'] is not None
+            and r['epoch_model'] in rel]
+
+
+def _eci_snapshot_lag_days():
+    """Median days from training finish to release over `_rl_snapshot_rows`'
+    public snapshots: how far a non-Anthropic US release is moved back."""
+    days = [r['days'] for r in _rl_snapshot_rows() if not r['internal_first']]
+    return float(np.median(days)) if days else 21.0
 
 
 # Session key the ECI tab sets while it renders: its internal-models toggle.
 # Other tabs never see it on, so the Takeoff tab's public frontier is unchanged.
 _ECI_INTERNAL_ON = "_eci_internal_on"
+# Likewise its *Date at training finish* toggle (`_eci_redate_trained`).
+_ECI_TRAINED_ON = "_eci_trained_on"
 
 
 def _eci_internal_models():
@@ -5585,6 +5642,16 @@ def render_eci():
                  "Chinese labs mostly ship open weights within weeks of a run "
                  "ending (the 21-day China lag), so US internal against China "
                  "released is close to like for like.")
+        st.session_state.setdefault("eci_trained", _eci_tab_defaults("eci")["eci_trained"])
+        trained = st.toggle(
+            "Date at training finish", key="eci_trained",
+            help="Dates every model when its training finished rather than at "
+                 "release, so public models line up with the internal ones: "
+                 "METR's estimated finish for Anthropic's models (Fable 5.2 is "
+                 "Model 3 Early, 75 days before release), other US releases "
+                 f"less the median Anthropic snapshot lag ({_eci_snapshot_lag_days():.0f} "
+                 "days), Chinese releases less China's lag. Evidence: the "
+                 "*Release Lag* tab.")
 
     # Keep the URL in sync (omit params at their defaults).
     if entity_a == "US best":
@@ -5597,10 +5664,12 @@ def render_eci():
         st.query_params["b"] = _ECI_ENTITY_SLUG[entity_b]
 
     st.session_state[_ECI_INTERNAL_ON] = internal
+    st.session_state[_ECI_TRAINED_ON] = trained
     try:
         _render_eci_views(entity_a, entity_b)
     finally:
         st.session_state[_ECI_INTERNAL_ON] = False
+        st.session_state[_ECI_TRAINED_ON] = False
 
 
 def _render_eci_views(entity_a, entity_b):
@@ -26173,6 +26242,118 @@ def _render_takeoff(loading):
     _tk_render_china(run, today, view_end, end_date, horizon)
 
 
+# ── Release Lag ──────────────────────────────────────────────────────────
+# How far Anthropic's trained frontier leads its released one, from METR's
+# internal models: the evidence behind `us_ship_lag` and ECI's *Date at
+# training finish*.
+
+def _rl_lead_rows(today=None):
+    """Each internal model against the first later release at or above its
+    ECI, Anthropic's and any US lab's: days from its estimated training
+    finish, or (None, days so far) while none has caught it."""
+    today = today or datetime.now()
+    fin = _eci_training_finish()
+    pools = {k: [m for m in _eci_entity_models(k, full_window=True, internal=False,
+                                               trained=False)]
+             for k in ("Anthropic", "US best")}
+    rows = []
+    for m in _eci_internal_models():
+        t = fin.get(m['display_name'], m['date'])
+        row = {'model': m['display_name'], 'eci': m['eci_score'], 'trained': t,
+               'available': m['date']}
+        for k, pool in pools.items():
+            c = [p for p in pool if p['eci_score'] >= m['eci_score'] and p['date'] >= m['date']]
+            c = min(c, key=lambda p: p['date']) if c else None
+            row[k] = (c['display_name'], c['date'], (c['date'] - t).days) if c \
+                else (None, None, (today - t).days)
+        rows.append(row)
+    return rows
+
+
+def _rl_median(days):
+    return float(np.median(days)) if days else float('nan')
+
+
+def render_release_lag():
+    today = datetime.now()
+    snaps = _rl_snapshot_rows()
+    pub = [r['days'] for r in snaps if not r['internal_first']]
+    leads = _rl_lead_rows(today)
+    lead_a = [r['Anthropic'][2] for r in leads if r['Anthropic'][0]]
+    lead_us = [r['US best'][2] for r in leads if r['US best'][0]]
+    st.header("Release Lag")
+    _fn_line(f"A released Claude model ships a median **{_rl_median(pub):.0f} days** "
+             f"after its training finishes, but Anthropic's best trained model leads its "
+             f"best release by a median **{_rl_median(lead_a):.0f} days**: the frontier "
+             "is held back, not the snapshots.")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Snapshot lag (median)", f"{_rl_median(pub):.0f} days",
+              help=f"Training finish to release for the {len(pub)} public Claude "
+                   f"models in METR's assessment (range {min(pub)}-{max(pub)} days). "
+                   "Training finish is METR's availability date less ~14 days "
+                   "(`metr_aeci.csv` header), so this is partly assumed.")
+    c2.metric("Frontier lead, Anthropic (median)", f"{_rl_median(lead_a):.0f} days",
+              help=f"Over the {len(lead_a)} internal models a Claude release has since "
+                   "matched: training finish to the first Claude release at or above "
+                   "its ECI. Models not yet matched lead by at least the days so far.")
+    c3.metric("Frontier lead, any US lab (median)", f"{_rl_median(lead_us):.0f} days",
+              help="As the Anthropic lead, but the first release from any US lab "
+                   "at or above the internal model's ECI.")
+    c4.metric("US lag setting", f"{_ship_lag('us'):.0f} days",
+              help="`US trained-to-release lag` (Takeoff and Pacing sidebars): how "
+                   "long the US's best trained model leads its best release. The "
+                   "frontier lead measures that; the snapshot lag does not.")
+
+    st.subheader("Anthropic's trained and released frontiers")
+    tr = [m for m in _eci_entity_models("Anthropic", full_window=True, internal=True,
+                                        trained=True) if m['is_frontier']]
+    rl = [m for m in _eci_entity_models("Anthropic", full_window=True, internal=False,
+                                        trained=False) if m['is_frontier']]
+    since = datetime(2025, 1, 1)
+    fig = go.Figure()
+    for ms, name, color, when in (
+            (tr, "Trained (internal models included), at training finish", '#1F77B4', "trained"),
+            (rl, "Released, at release", '#D62728', "released")):
+        ms = [m for m in ms if m['date'] >= since]
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in ms] + [today], y=[m['eci_score'] for m in ms] + [ms[-1]['eci_score']],
+            mode='lines+markers', line=dict(shape='hv', color=color, width=2),
+            marker=dict(size=[8] * len(ms) + [0], color=color,
+                        line=dict(color='white', width=2)),
+            name=name, hoverinfo='text',
+            text=[f"{m['display_name']}<br>ECI {m['eci_score']:.1f}<br>{when} {m['date']:%b %d, %Y}"
+                  + (f"<br>released {m['released']:%b %d, %Y}"
+                     if when == "trained" and not m.get('internal') else "")
+                  for m in ms] + [""]))
+    fig.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10),
+                      yaxis_title="ECI", hovermode='closest',
+                      legend=dict(orientation='h', y=1.02, yanchor='bottom', x=0))
+    _fn_caption("The horizontal gap between the lines is the frontier lead.",
+                ("frontier lead", "How long after a level was trained a Claude "
+                 "release first reached it. Internal models' ECI is projected from "
+                 "METR's AECI chart, not measured."))
+    st.plotly_chart(fig, width="stretch")
+
+    st.subheader("Frontier lead: each internal model")
+    def _cell(v):
+        name, d, days = v
+        return (f"{name} ({d:%b %d}): {days} days" if name
+                else f"not yet: at least {days} days")
+    st.table([{"Internal model": r['model'], "ECI": f"{r['eci']:.1f}",
+               "Training finished (est.)": f"{r['trained']:%b %d, %Y}",
+               "First Claude release at that ECI": _cell(r['Anthropic']),
+               "First US release at that ECI": _cell(r['US best'])}
+              for r in leads])
+
+    st.subheader("Snapshot lag: each released Claude model")
+    st.table([{"Model": r['epoch_model'], "Training finished (est.)": f"{r['produced']:%b %d, %Y}",
+               "METR availability": f"{r['available']:%b %d, %Y}",
+               "Released": f"{r['released']:%b %d, %Y}",
+               "Days": r['days'] if not r['internal_first']
+               else f"{r['days']} (first used internally as {r['model']})"}
+              for r in sorted(snaps, key=lambda r: r['produced'])])
+
+
 # ── Dispatch ─────────────────────────────────────────────────────────────
 
 # Every rerun draws its Monte Carlo from this seed, so the same settings give
@@ -26215,6 +26396,8 @@ if not os.environ.get("_VP_TESTING"):
             render_compute_capabilities()
         elif active_tab == "Pacing":
             render_pacing()
+        elif active_tab == "Release Lag":
+            render_release_lag()
 
     # Rendered after the tab's own controls, at the foot of the sidebar. The
     # charts above read the key from session state, which a click updates

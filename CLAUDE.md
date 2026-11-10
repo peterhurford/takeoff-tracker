@@ -50,7 +50,7 @@ No build system, no CI/CD, no package manager beyond requirements.txt (`streamli
 
 ## Architecture
 
-Eleven-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`, ECI first, METR Horizon under *More*; `_DEFAULT_TAB`, Takeoff, opens when the URL has no `?tab=`; tabs from `_TAB_MAIN_N` on have their chips hidden by CSS and are picked by buttons under a *More* expander that set the same radio; `_TAB_LABEL` shows ECI as *Epoch ECI*) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `rli`, `takeoff`, `thresholds`, `revenue`, `datacenters`, `china`, `pacing`, `ukcyber`, `employment`. Retired slugs and settings get no special handling: an unknown `?tab=` opens the default tab, and any URL param that is not a tracked setting or one of `_URL_DIRECT_PARAMS` is dropped on the first run.
+Twelve-tab Streamlit dashboard selected via sidebar radio (`active_tab`, `_TAB_OPTIONS`, ECI first, METR Horizon under *More*; `_DEFAULT_TAB`, Takeoff, opens when the URL has no `?tab=`; tabs from `_TAB_MAIN_N` on have their chips hidden by CSS and are picked by buttons under a *More* expander that set the same radio; `_TAB_LABEL` shows ECI as *Epoch ECI*) with URL deep-linking (`?tab=<slug>`, `?to=<section>`). Each tab has its own render function, sidebar controls, and (where applicable) projection engine. Slugs (`_SLUG_FOR_TAB`): `metr`, `eci`, `rli`, `takeoff`, `thresholds`, `revenue`, `datacenters`, `china`, `pacing`, `ukcyber`, `employment`, `releaselag`. Retired slugs and settings get no special handling: an unknown `?tab=` opens the default tab, and any URL param that is not a tracked setting or one of `_URL_DIRECT_PARAMS` is dropped on the first run.
 
 ## Design records: open the right one before editing
 
@@ -99,6 +99,7 @@ Keep this file an index: new design detail goes in the matching `docs/` file, no
 | China (`china`) | `render_compute_capabilities()` | `dc_all` + ECI, `china_compute_sources.csv`, `cts_duv_production.csv` |
 | Pacing (`pacing`) | `render_pacing()` | `dc_all`, Takeoff's `_tk_run` |
 | Frontier Thresholds (`thresholds`) | `frontier_thresholds.render(st)` | `frontier_thresholds.json` |
+| Release Lag (`releaselag`) | `render_release_lag()` | `metr_aeci.csv` + ECI |
 
 Metrics, sections and guarding tests per tab: `docs/tabs.md`.
 

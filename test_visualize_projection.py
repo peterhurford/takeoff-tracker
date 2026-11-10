@@ -1072,6 +1072,16 @@ class TestEciGap:
         x = vp._split_from_ci(20.0, 30.0, 40.0, 200_000)  # a fit outside is held inside
         assert np.median(x) == pytest.approx(30, rel=0.01)
 
+    def test_training_finish_dates_fable_5_2_as_model_3_early(self):
+        """Anthropic's models take METR's finish date, others release less a lag."""
+        ms = {m['version']: m for m in vp._eci_entity_models(
+            "US best", full_window=True, internal=False, trained=True)}
+        f52 = ms["Claude Fable 5.2"]
+        assert f52['date'] == datetime(2026, 8, 26)
+        assert f52['released'] == datetime(2026, 11, 9)
+        g = next(m for v, m in ms.items() if v.startswith("GPT-5.5"))
+        assert (g['released'] - g['date']).days == round(vp._eci_snapshot_lag_days())
+
     def test_piecewise_breaks_at_fable_5_else_at_the_best_fit(self):
         fr = [{"date": datetime(2025, m, 1), "eci_score": float(s),
                "display_name": f"M{m}"}

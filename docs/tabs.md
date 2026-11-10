@@ -17,6 +17,7 @@ The full tab table, plus the UK Cyber, ECI organization-matching and Frontier Th
 | China (slug `china`, was Compute/capabilities/diffusion) | `render_compute_capabilities()` | data centers (`dc_all`) + ECI | US vs China through the compute lens, then China's compute mix by source 2022–2030 (`_render_cc_compute_sources()`: projections faded, our own numbers hatched; `TestChinaComputeSources`), and ends with the CTS lithography ceiling (`_render_cc_duv_ceiling()`) |
 | Pacing | `render_pacing()` | data centers (`dc_all`) | China's catch-up to a US pause, then the date each entity first commands a run of the paused US scale |
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
+| Release Lag | `render_release_lag()` | `metr_aeci.csv` (`produced`) + ECI | days: the *snapshot lag* (each released Claude model, training finish to release, `_rl_snapshot_rows`) against the *frontier lead* (each internal model to the first Claude or US release at its ECI, `_rl_lead_rows`; unmatched models lead by at least the days so far). The lead is what `us_ship_lag` means; the snapshot lag is what ECI's *Date at training finish* (`eci_trained`, default on, `_eci_redate_trained`) moves non-Anthropic US releases back by, Anthropic's taking METR's own finish dates (`test_training_finish_dates_fable_5_2_as_model_3_early`, `test_it_shows_snapshot_lag_and_frontier_lead`) |
 
 ## UK Cyber tab caveats
 
