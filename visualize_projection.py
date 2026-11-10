@@ -4502,7 +4502,8 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                     overlay_frontier=None, overlay_label=None,
                     extra_table_milestones=None, us_best_marker=None,
                     us_match_marker=None, us_match_label=None,
-                    overlay_name="US", subject_name=None, named_break=None):
+                    overlay_name="US", subject_name=None, named_break=None,
+                    overlay_break=None):
     if st.session_state.pop(f"_reset_{p}", False):
         for k in _eci_tab_reset_keys(p):
             st.session_state.pop(k, None)
@@ -5081,54 +5082,39 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                             f"{subject_name or 'Subject'} proj. today {_proj_today_score:.1f}",
                             '#a569bd'))
 
-    # Piecewise: the last segment starts at the last breakpoint's date, and the
-    # overlay and the months-behind rate fit the reference from there too.
+    # Piecewise: the last segment starts at the last breakpoint's date. The
+    # overlay is split at the reference's own default break, and its last
+    # segment sets the months-behind rate (returned as `_eci_seg_start`).
     _eci_seg_start = None
-    _eci_bp_dates = []
-    if eci_proj_basis == "Piecewise linear" and eci_piecewise_n_segments >= 2:
+    _eci_piecewise = eci_proj_basis == "Piecewise linear" and eci_piecewise_n_segments >= 2
+    if _eci_piecewise and overlay_frontier is None:
         _eci_used_names = [m['display_name'] for m in eci_frontier_used]
-        _eci_bp_dates = [eci_frontier_used[_eci_used_names.index(b)]['date']
-                         for b in eci_piecewise_breakpoints if b in _eci_used_names]
-        if _eci_bp_dates:
-            _eci_seg_start = _eci_bp_dates[-1]
+        _bps = [b for b in eci_piecewise_breakpoints if b in _eci_used_names]
+        if _bps:
+            _eci_seg_start = eci_frontier_used[_eci_used_names.index(_bps[-1])]['date']
 
     # --- Overlay trendline (e.g., US trend on the China chart) ---
-    _ovl_seg = ([] if _eci_seg_start is None or overlay_frontier is None
-                else [m for m in overlay_frontier if m['date'] >= _eci_seg_start])
-    if len(_ovl_seg) >= 2:
-        # Its earlier segments too, between the same breakpoint dates, each
-        # model at a breakpoint in both pieces as on the subject's fit.
-        _ovl_edges = [overlay_frontier[0]['date']] + _eci_bp_dates
-        for _lo, _hi in zip(_ovl_edges[:-1], _ovl_edges[1:]):
-            _piece = [m for m in overlay_frontier if _lo <= m['date'] <= _hi]
-            if len(_piece) < 2:
-                continue
+    _ovl_bp = (_eci_default_break_idx(overlay_frontier, overlay_break)
+               if _eci_piecewise and overlay_frontier is not None
+               and len(overlay_frontier) >= 3 else None)
+    if _ovl_bp is not None:
+        _eci_seg_start = overlay_frontier[_ovl_bp]['date']
+        # Both pieces hold the model at the break, as on the subject's fit.
+        for _piece, _end, _word in (
+                (overlay_frontier[:_ovl_bp + 1], _eci_seg_start, "to"),
+                (overlay_frontier[_ovl_bp:], proj_end_date, "since")):
             _pb = _piece[0]['date']
             _pp = fit_line(
                 np.array([(m['date'] - _pb).days for m in _piece], dtype=float),
                 np.array([m['eci_score'] for m in _piece]))
             fig.add_trace(go.Scatter(
-                x=[_pb, _hi], y=[_pp[0], _pp[0] + _pp[1] * (_hi - _pb).days],
+                x=[_pb, _end], y=[_pp[0], _pp[0] + _pp[1] * (_end - _pb).days],
                 mode='lines',
                 line=dict(color='#1565c0', width=1.25, dash='dot'),
-                name=(f'{overlay_label or "Overlay"} to {_hi:%b %Y} '
+                name=(f'{overlay_label or "Overlay"} {_word} {_eci_seg_start:%b %Y} '
                       f'({_pp[1] * 365.25:.1f} pts/yr)'),
                 hoverinfo='skip',
             ))
-        _ovl_base = _ovl_seg[0]['date']
-        _ovl_params = fit_line(
-            np.array([(m['date'] - _ovl_base).days for m in _ovl_seg], dtype=float),
-            np.array([m['eci_score'] for m in _ovl_seg]))
-        _ovl_ppy = _ovl_params[1] * 365.25
-        _ovl_y_end = _ovl_params[0] + _ovl_params[1] * (proj_end_date - _ovl_base).days
-        fig.add_trace(go.Scatter(
-            x=[_ovl_base, proj_end_date], y=[_ovl_params[0], _ovl_y_end],
-            mode='lines',
-            line=dict(color='#1565c0', width=1.25, dash='dot'),
-            name=(f'{overlay_label or "Overlay"} since {_eci_seg_start:%b %Y} '
-                  f'({_ovl_ppy:.1f} pts/yr)'),
-            hoverinfo='skip',
-        ))
     elif overlay_frontier is not None and len(overlay_frontier) >= 2:
         _ovl_base = overlay_frontier[0]['date']
         _ovl_days = np.array([(m['date'] - _ovl_base).days for m in overlay_frontier], dtype=float)
@@ -5824,6 +5810,7 @@ def _render_eci_projection(entity_a, entity_b):
                         else f"{_b_name} best {subj_current['eci_score']:.1f}"),
         subject_name=_b_name,
         named_break=_ECI_DEFAULT_BREAKS.get(entity_b),
+        overlay_break=_ECI_DEFAULT_BREAKS.get(entity_a),
     )
 
 
