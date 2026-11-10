@@ -20452,12 +20452,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "Sets China's compute mix with or without levers, so it "
                  "sizes what the smuggling cut removes; China's experiment "
                  "compute follows it.")
+        _f = load_china_compute_sources(_cn_src_mtime())["flow"]
+        _smug_share = (sum(_f[y]["smuggled"][0] for y in ("2026", "2027"))
+                       / sum(_f[y][k][0] for y in ("2026", "2027")
+                             for k in _CN_SRC_IN_CHINA))
         cut_smuggling = st.slider(
             "Cut smuggling to China by", 0, 100,
             value=_PC_DEFAULTS["pc_cut_smuggling"], step=5, format="%d%%",
             key="pc_cut_smuggling",
             help="Due diligence and enforcement against diversion; IFP models "
-                 "its package as halving smuggling. Smuggled chips are ~20% "
+                 "its package as halving smuggling. Smuggled chips are "
+                 f"~{_smug_share:.0%} "
                  "of what China adds at home in 2026\u201327. The cut comes "
                  "off China's domestic compute growth with the other supply "
                  "levers, from today unless dated later under *Advanced*.")
