@@ -12893,7 +12893,10 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
         return
     horizon_end = datetime(horizon, 12, 31)
     x_end = max(cap_date, horizon_end) + timedelta(days=30)
-    grid = _dc_cty_month_grid(x_start, max(cap_date, horizon_end))
+    # From the first recorded step, not the chart's start, so the lag's
+    # running max sees the whole record whatever *Chart starts* shows.
+    first_step = min(x[0] for s in steps_by.values() for x in s)
+    grid = _dc_cty_month_grid(min(x_start, first_step), max(cap_date, horizon_end))
 
     plan_end = today + timedelta(days=_DC_CTY_PLAN_HORIZON_DAYS)
     fits = {c: _dc_cty_fit(s, since=since, t_end=plan_end)

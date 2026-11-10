@@ -2253,6 +2253,16 @@ class TestDataCentersByCountry:
         at.radio(key="dc_start_year").set_value(2023).run()
         _assert_no_error(at, "by country / from 2023")
 
+    def test_lag_ignores_the_chart_start(self):
+        """The lag's running max reads the whole record, so *Chart starts*
+        moves only the axis."""
+        at = self._dc_app()
+        lag = lambda: list(at.table[-1].value["China lag (months)"])
+        before = lag()
+        for yr in at.radio(key="dc_start_year").options:
+            at.radio(key="dc_start_year").set_value(yr).run()
+            assert lag() == before, yr
+
     def test_cones_toggle(self):
         """Hiding the cones drops the shaded bands and keeps the numbers."""
         def _bands(at):

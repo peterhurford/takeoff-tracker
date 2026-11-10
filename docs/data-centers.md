@@ -227,7 +227,9 @@ year-end table of US, China, their ratio and China's lag in months. Load-bearing
    unresolved sample (the US running max never reaches China's value inside the grid) at
    one month past the grid end and returns the mask; the table prints "ahead in N% of
    samples" once most are floored. Dropping them as NaN biased the median toward "behind"
-   in rows whose ratio said China was already ahead.
+   in rows whose ratio said China was already ahead. The grid starts at the first recorded
+   step, not at *Chart starts*, so the running max sees the whole record
+   (`test_lag_ignores_the_chart_start`).
 
 Past the plan horizon the cone is a trend through the site list (China's catalogue ends
 earlier than the US's), not a forecast of export-control policy.
