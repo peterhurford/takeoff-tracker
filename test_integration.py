@@ -134,6 +134,33 @@ class TestNonDefaultProjectionBases:
         _assert_no_error(at, f"{tab} / {key}={value}")
 
 
+class TestAsOfRederivesCi:
+    """The CI inputs' defaults are fitted at the *Project as of* vantage point,
+    so switching it in a session gives what a fresh session there gives."""
+
+    @pytest.mark.parametrize("tab,key", [
+        ("metr", "_proj_as_of"), ("eci", "_eci_proj_as_of"), ("rli", "_rli_proj_as_of")])
+    def test_switch_matches_fresh_session(self, tab, key):
+        def snapshot(at):
+            nums = {w.key: w.value for w in at.sidebar.get("number_input")}
+            return nums, [(m.label, m.value) for m in at.metric][:3]
+
+        at = _fresh_app()
+        at.query_params["tab"] = tab
+        at.run()
+        opts = at.selectbox(key=key).options
+        target = opts[len(opts) // 2]
+        at.selectbox(key=key).set_value(target).run()
+        _assert_no_error(at, f"{tab} / as of {target}")
+        fresh = _fresh_app()
+        fresh.query_params["tab"] = tab
+        fresh.session_state[key] = target
+        if tab == "eci":  # else ECI's first run clears the vantage point as a new entity
+            fresh.session_state["_eci_data_key"] = at.session_state["_eci_data_key"]
+        fresh.run()
+        assert snapshot(at) == snapshot(fresh)
+
+
 class TestMetrPostGpt4o:
     """*GPT-4o+ only* fits from GPT-4o, so *Project as of* offers no earlier
     model while it is on, and an earlier one already chosen falls back to the

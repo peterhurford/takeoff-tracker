@@ -453,6 +453,18 @@ def _ss_number_input(parent, label, key, default, **kwargs):
     return parent.number_input(label, key=key, **kwargs)
 
 
+def _reset_on_as_of_change(seen_key, as_of, keys):
+    """Pop `keys` (inputs whose defaults are fitted at the *Project as of*
+    vantage point) when `as_of` differs from the last run's, so they re-derive
+    there instead of keeping the full record's fit. The first run only records
+    `as_of`, keeping values hydrated from a URL."""
+    prev = st.session_state.get(seen_key)
+    st.session_state[seen_key] = as_of
+    if prev is not None and prev != as_of:
+        for k in keys:
+            st.session_state.pop(k, None)
+
+
 def superexp_trajectory(days, dt_0, halflife, dt_floor):
     """Deterministic superexponential trajectory starting at 0.
 
@@ -3655,6 +3667,11 @@ def render_metr():
             st.session_state.pop('_proj_as_of', None)
             proj_as_of_name = frontier_names[-1]
         proj_as_of_idx = frontier_names.index(proj_as_of_name)
+        _reset_on_as_of_change("_metr_as_of_seen", proj_as_of_name, [
+            "custom_dt_lo", "custom_dt_hi", "superexp_dt_ci_lo", "superexp_dt_ci_hi",
+            "bp1_select", "bp2_select",
+            *(f"{k}_{r}" for k in ("custom_pos_lo", "custom_pos_hi", "superexp_pos_lo",
+                                   "superexp_pos_hi") for r in ("p50", "p80"))])
 
         # --- Projection basis ---
         basis_options = ["Linear", "Piecewise linear", "Superexponential"]
@@ -4570,6 +4587,11 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         if eci_proj_as_of_name not in tab_frontier_names:
             eci_proj_as_of_name = tab_frontier_names[-1]
         eci_proj_as_of_idx = tab_frontier_names.index(eci_proj_as_of_name)
+        _reset_on_as_of_change(f"_{p}_as_of_seen", eci_proj_as_of_name, [
+            f"{p}_{k}" for k in ("custom_ppy_lo", "custom_ppy_hi", "custom_pos_lo",
+                                 "custom_pos_hi", "superexp_ppy_ci_lo", "superexp_ppy_ci_hi",
+                                 "superexp_pos_lo", "superexp_pos_hi", "bp1_select",
+                                 "bp2_select")])
 
         # --- Projection basis ---
         eci_basis_options = ["Linear", "Piecewise linear", "Superexponential"]
@@ -5891,6 +5913,11 @@ def render_rli():
         if rli_proj_as_of_name not in rli_frontier_names:
             rli_proj_as_of_name = rli_frontier_names[-1]
         rli_proj_as_of_idx = rli_frontier_names.index(rli_proj_as_of_name)
+        _reset_on_as_of_change("_rli_as_of_seen", rli_proj_as_of_name, [
+            f"rli_{k}" for k in ("custom_dt_lo", "custom_dt_hi", "custom_pos_lo",
+                                 "custom_pos_hi", "superexp_dt_ci_lo", "superexp_dt_ci_hi",
+                                 "superexp_pos_lo", "superexp_pos_hi", "bp1_select",
+                                 "bp2_select")])
 
         # --- Projection basis ---
         rli_basis_options = ["Linear (logit)", "Piecewise linear (logit)", "Superexponential (logit)"]

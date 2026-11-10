@@ -28,6 +28,10 @@ least two days long when the data already passes the chosen year. Projection car
 from `_card_targets()`, which drops any date not after today. `TestEndYearFromToday` and
 `test_cards_are_dated_after_today` guard these.
 
+On METR, ECI and RLI the CI inputs and breakpoints default off the fit at *Project as of*,
+so `_reset_on_as_of_change()` pops them when that changes, and switching the vantage point
+gives what a session opened there gives (`TestAsOfRederivesCi`).
+
 ## UK Cyber tab caveats
 
 Five load-bearing constraints; don't "simplify" them away:
