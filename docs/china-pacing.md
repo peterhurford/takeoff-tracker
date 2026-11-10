@@ -451,7 +451,7 @@ chart (actual points included) rides the same clock, x-axis titled by milestone.
 The three crossing cards (date, time to surpass, and the US lead in total installed compute at the crossing or the horizon's end, `_pc_compute_lead`, the ratio table's own installed reading: mainland plus the compute mix's remote stock abroad (`_pc_cn_abroad`), so only the chip and remote-access levers and the crossing date move it, `test_compute_lead_counts_china_abroad_until_remote_access_is_cut`; `test_crossing_cards_sit_above_the_milestone_table`) sit above the SL5 warning and the milestone table, the pacing settings in the first card's hover; the panel ends with `_pc_render_why()`, *Why this US-China gap?*: each source's ECI/yr at the pause,
 its average from the pause to the crossing, and at the crossing (`_pc_rate_at`), then a row
 turning each total into months to close the gap; the average's months are the actual
-catch-up (before the card's one-month release lag). Each source's average is its own median post-pause ECI over
+catch-up, net of China's release lag `cn_ship_lag` as the card nets it (`test_why_table_nets_out_the_cards_china_lag`). Each source's average is its own median post-pause ECI over
 the span; the medians fall short of the median run's gap, and an *Other* row
 (`_PC_WHY_OTHER`) carries the difference so rows add to the total. Distillation reads
 "Blocked" at the crossing when withholding or the stop lever has dried it up. The compute

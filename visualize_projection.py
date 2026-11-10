@@ -19429,7 +19429,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                    t_pause=None, pause_label=None, surpass_mo=None,
                    withhold=False, dist_stop_t=None, remote_stop_t=None,
                    comp_dead=None, pause_date=None,
-                   us_gain=None, paced=False):
+                   us_gain=None, paced=False, cn_lag_d=_SHIP_LAG_DEFAULTS["cn_ship_lag"]):
     """Bottom-of-panel breakdown: why China's catch-up takes the months it does.
 
     The table gives each source's rate at the pause, its average from the
@@ -19449,6 +19449,7 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     sample, how far a paced US climbs from the pacing date to the crossing
     (None or 0 when paused): China must close that too, so the months to
     close the gap at a rate use the rate net of the US's average climb.
+    `cn_lag_d` is China's release lag, netted out as the card nets it.
     """
     ok = np.isfinite(years)
     if ok.sum() < 100 or t_pause is None:
@@ -19587,9 +19588,9 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
     rows.append({"Source": "Total", c0: _fmt(r0), c1: _fmt(ravg),
                  c2: _fmt(r1)})
 
-    # Months net of the one-month release lag, as on the card ("Time for
-    # China to surpass"), so the table and the card quote the same crossing.
-    lag_mo = _CC_RUN_COMPLETION_LAG.days / 30.44
+    # Months net of China's release lag, as on the card ("Time for China to
+    # surpass"), so the table and the card net out the same days.
+    lag_mo = cn_lag_d / 30.44
 
     def _months(rate):
         # Net of the US's own average climb when it is paced.
@@ -19628,10 +19629,10 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
                     "Distillation fades as China nears the best model it can "
                     "learn from, which with models withheld sits below the "
                     "bar."),
-        ("actual average", "Net of the one-month lag from a model finishing "
-                           "training to its release, as on the card; the "
-                           "card is a median over paths, so the two can "
-                           "differ by a few weeks."))
+        ("actual average", f"Net of China's {cn_lag_d:.0f}-day lag from a "
+                           "model finishing training to its release, as on "
+                           "the card; the card is a median over paths, so "
+                           "the two can differ by a few weeks."))
 
     def _shade(v):
         return {"Stopped": "background-color: #F4CCCC; color: #7F1010",
@@ -21779,7 +21780,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             surpass_mo=s50, withhold=bool(withhold),
             dist_stop_t=kw.get('t_dist_stop') if dist_keep == 0 else None,
             remote_stop_t=t_cut_r if stop_remote else None,
-            comp_dead=_cd_med, pause_date=d_pause_v)
+            comp_dead=_cd_med, pause_date=d_pause_v, cn_lag_d=cn_lag_d)
     _pc_render_compute_ratios(compute_info)
     _pc_render_compute_mix(compute_info)
 

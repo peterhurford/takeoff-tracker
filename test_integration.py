@@ -3453,6 +3453,16 @@ class TestPacingTab:
             assert ends[:3] == [yr] * 3, ends
             assert ends[3] in (yr, yr + 1), ends
 
+    def test_why_table_nets_out_the_cards_china_lag(self):
+        """The Why table's months net out China's release lag from the
+        sidebar, the same days the "Time for China to surpass" card nets."""
+        at = self._app()
+        at.number_input(key="cn_ship_lag").set_value(49).run()
+        _assert_no_error(at, "Pacing / China lag 49d")
+        md = " ".join(str(m.value) for m in at.markdown
+                      if "actual average" in str(m.value))
+        assert "49-day lag" in md
+
     def test_race_table_years_stop_at_project_through(self):
         """P(EOY …) columns run from next year through Project through, at
         most three, so a short range never repeats its last year."""
