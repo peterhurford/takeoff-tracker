@@ -129,21 +129,23 @@ integrated step by step alongside the actual path (`reference_gained`), not by t
 closed-form `reference_software`, since its labor and experiments now grow differently. The
 pace chart's factors split exactly: compute with neither AI help nor extra staff, staff's
 addition at the share people still do (zero on autopilot), AI the rest.
-The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, 5,000 samples,
-the November 2026 defaults; months to ultraintelligence from Nov 2028): r (0.5/2: +4/−3),
-the judgment elasticity (half/double: +1/−2), parallelization (0.3/0.8: 0/−1), ρ (−0.5/0:
-+1/−1), `ai_copies` (0/2: +1/−1), the training-run wait `fast_share` (12.5/50%: +1/−2;
-100%: −5), `scale_dependent` (25/75%: −1/+2), `serial_speedup` and `rsi_autopilot` (off:
-+2, +1) and `rsi_compute_boost` (default 2×; under *Advanced*, the software ceiling moves
-it −1 if removed, +1 at 3–8 orders of magnitude, and data-center compute −1 off). The
-sidebar caption quotes these as fixed text, footnoted with the sweep's date. The boost multiplies each draw's log compute growth after its own
+The sidebar's first group, *Moves the dates most* (open; the groups after it start
+collapsed), holds the three controls that moved the RSI or ultraintelligence median most in
+a one-at-a-time sweep at Takeoff's seed and 5,000 samples: `ultra_eci`, `eci_today` and
+`returns` (`test_the_sweeps_top_three_lead_the_sidebar`). Each control went from its
+default to a low and a high: its documented range scaled to 80% where one exists
+(`software_months`: Epoch's 95% CI), else default ∓ 25% of the widget span, clipped; ranked
+by the larger absolute month move. `cal_capability` was left out: its large move comes only
+from the clipped low end, the widget floor of 1.01×, which the measured window it is computed
+from rules out. No sweep result is quoted in the app, since it would go stale silently.
+Rerun the sweep, and retarget the group, after a model or default change. The boost
+(`rsi_compute_boost`) multiplies each draw's log compute growth after its own
 RSI date, waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
 `test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it moves the
 ultraintelligence median not at all; switched on at once, 2× brings it 2 months
-sooner than 1× with no delay. The rest sit in one *Advanced* expander. Retarget that
-grouping, and the expander's caption, if a rerun of the sweep reorders them.
+sooner than 1× with no delay. The rest sit in one *Advanced* expander.
 AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`), at `judgment_today` (default 1)
 times people's, with quality normalized to 1 today (`quality0_log`) so the level moves only
@@ -168,8 +170,8 @@ Pacing's `_pc_cross_years` reads it; ECI at RSI and at coding is read the same w
 above today's trained frontier plus a year of `tk_eci_today`'s climb, so the threshold can
 never sit at or under a model that already exists
 (`test_ultra_minimum_sits_a_year_past_the_trained_frontier`); the input's help gives 250 in
-`_TK_ULTRA_JUMP`s past that frontier. *Today's ECI growth* and *transfer* sit beside it under
-*What decides ultraintelligence*, not under *Advanced*
+`_TK_ULTRA_JUMP`s past that frontier. *Today's ECI growth* sits beside it under *Moves the
+dates most* and *transfer* under *What decides ultraintelligence*, neither under *Advanced*
 (`test_pace_and_transfer_sit_with_the_threshold`), and the pace help quotes
 `_tk_pace_base_parts()`, the 2024–25 compute and algorithmic split at the current compute
 setting (`test_pace_help_quotes_the_live_base`); `_tk_run` passes it to `_tk_eci` as `ultra_level`, which every card,

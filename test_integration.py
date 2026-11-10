@@ -2320,17 +2320,42 @@ class TestTakeoffTab:
         assert f"{r['ppy']:.2f}" in text and f"{r['algo_ppy']:.2f}" in text
 
     def test_pace_and_transfer_sit_with_the_threshold(self):
-        """Today's ECI growth and transfer sit under *What decides
-        ultraintelligence*, not *Advanced*."""
+        """Today's ECI growth sits beside the threshold under *Moves the dates
+        most*, transfer under *What decides ultraintelligence*; neither under
+        *Advanced*."""
         at = _fresh_app()
         at.query_params["tab"] = "takeoff"
         at.run()
+        top = next(e for e in at.sidebar.expander if e.label == "Moves the dates most")
         decides = next(e for e in at.sidebar.expander
                        if e.label == "What decides ultraintelligence")
         advanced = next(e for e in at.sidebar.expander if e.label == "Advanced")
-        keys = {w.key for w in decides.number_input}
-        assert {"tk_ultra_eci", "tk_eci_today", "tk_transfer"} <= keys
+        assert {"tk_ultra_eci", "tk_eci_today"} <= {w.key for w in top.number_input}
+        assert "tk_transfer" in {w.key for w in decides.number_input}
         assert not {"tk_eci_today", "tk_transfer"} & {w.key for w in advanced.number_input}
+
+    def test_the_sweeps_top_three_lead_the_sidebar(self):
+        """*Moves the dates most* is Takeoff's first sidebar group, open, and
+        holds exactly the three sweep leaders; the groups after it start
+        collapsed, and the moved controls keep URL tracking and reset."""
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        labels = [e.label for e in at.sidebar.expander]
+        first = labels.index("Moves the dates most")
+        assert first < labels.index("What decides ultraintelligence")
+        top = at.sidebar.expander[first]
+        assert top.proto.expanded
+        assert [w.key for w in top.number_input] == [
+            "tk_ultra_eci", "tk_eci_today", "tk_returns"]
+        for label in ("What decides ultraintelligence", "What decides RSI", "Advanced"):
+            assert not next(e for e in at.sidebar.expander if e.label == label).proto.expanded
+        at.number_input(key="tk_returns").set_value(2.0).run()
+        _assert_no_error(at, "Takeoff / high returns")
+        assert _qp(at, "tk_returns") == ["2.0"]
+        at.button(key="tk_reset").click().run()
+        assert at.number_input(key="tk_returns").value == 1.0
+        assert "tk_returns" not in at.query_params
 
     def test_resets_name_what_they_reset(self):
         """Takeoff's two resets say which half of the tab they reset."""

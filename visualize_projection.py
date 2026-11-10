@@ -25926,7 +25926,9 @@ def _render_takeoff(loading):
         st.caption("Coding automation comes from the automated coder projection; "
                    "its settings are in the RSI evidence section.")
         _ship_lag_inputs(st, china=False)
-        with st.expander("What decides ultraintelligence", expanded=True):
+        # The three controls that move the RSI and ultraintelligence medians most
+        # in a one-at-a-time sweep; docs/takeoff.md gives the sweep and its rule.
+        with st.expander("Moves the dates most", expanded=True):
             _j_lo_name, _j_lo, _j_hi_name, _j_hi = _TK_ULTRA_JUMP
             _jump = _j_hi - _j_lo
             _trained = _tk_trained_now(float(st.session_state["tk_eci_today"]), _today())
@@ -25957,24 +25959,6 @@ def _render_takeoff(loading):
                    f"{_base['ppy']:.2f}, is 1×. "
                    "Changing it re-reads the evidence at that pace: the judgment and coding "
                    "elasticities and the calibration's capability growth reset.")
-            number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
-                   "Discounts coding and judgment gains beyond today. Zero removes "
-                   "AI feedback; baseline research and compute can still improve models.")
-            _fn_caption("In a one-at-a-time sweep, r from 0.5 to 2 moves the "
-                        "ultraintelligence date +4 to \u22123 months, judgment from half to "
-                        "double +1 to \u22122, parallelization from 0.3 to 0.8 0 to \u22121; "
-                        "\u03c1, more AI copies, the scale-dependent share, faster cycles and "
-                        "autopilot 1\u20132 each; the training-run wait from 12.5% to 50% +1 "
-                        "to \u22122 (5 sooner if no gain waits). Compute growth after RSI, "
-                        "delayed 18 months, does not move it; with no delay, 2\u00d7 brings it "
-                        "2 months sooner. Everything else under Advanced moves it a month at "
-                        "most.",
-                        ("one-at-a-time sweep",
-                         "Run at seed 42 on the November 2026 defaults, when the date was "
-                         "Nov 2028; it is not rerun live, so the shifts can drift as the "
-                         "data updates."))
-            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
-                   "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
                    "How many doublings of algorithmic efficiency each doubling of "
                    "cumulative research effort buys; below 1 ideas get harder faster "
@@ -25983,6 +25967,12 @@ def _render_takeoff(loading):
                    "0.5\u20132 with hardware fixed. Sets research difficulty as "
                    f"{_TK_R_REF_PARALLEL:g} / r, independent of the parallelization "
                    "setting.")
+        with st.expander("What decides ultraintelligence"):
+            number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
+                   "Discounts coding and judgment gains beyond today. Zero removes "
+                   "AI feedback; baseline research and compute can still improve models.")
+            number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
+                   "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("How fast AI research judgment improves", "taste_slope", 0.0, 2.0, 0.1,
                    "Research quality scales as capability raised to this power. The "
                    "default is the geometric mean of three readings: the next-step "
