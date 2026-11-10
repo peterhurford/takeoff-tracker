@@ -24970,68 +24970,204 @@ def _cn_tk_run(today, run=None, pacing=None):
                        "w": (w_c, w_s), "settings": cfg}}
 
 
+# Section 5's two sides: each a hue, the measured lines thin, the projection
+# bold, the release line lighter than the trained one it trails.
+_CN_TK_US = {"line": "#c0392b", "band": "rgba(192,57,43,0.12)", "light": "#e8a598"}
+_CN_TK_CN = {"line": _CN_TK_COLOR, "band": "rgba(214,137,16,0.18)", "light": "#e9b96e"}
+
+
+def _cn_tk_band(fig, x, q, side, name, rank, dash=None):
+    """A median line over its middle-80% band, legend-ranked from `rank`."""
+    fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
+                             hoverinfo="skip", showlegend=False, legendgroup=name))
+    fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0), fill="tonexty",
+                             fillcolor=side["band"], name=f"{name}: middle 80%",
+                             hoverinfo="skip", legendrank=rank + 1))
+    return go.Scatter(x=x, y=q[1], mode="lines", line=dict(color=side["line"], width=2.5,
+                                                           dash=dash),
+                      name=f"{name}: projected (median)", legendrank=rank)
+
+
 def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
-    """China's projected ECI against the US's (median, middle 80% each), with
-    each side's measured frontier since 2024 (the US's released and, from
-    `eci`, trained with Anthropic's internal models)."""
+    """China's projected ECI against the US's (median, middle 80% each, both
+    trained), with each side's measured frontier since 2024 joined to where
+    its projection starts today: the US's trained (`eci['trained']`, internal
+    models in) and released, China's released."""
     years = cn["years"]
     keep = years <= (view_end - today).days / 365.25 + 1 / 12
     x = [today + timedelta(days=float(y) * 365.25) for y in years[keep]]
+    since = datetime(2024, 1, 1)
     fig = go.Figure()
-    for name, paths, color, fill in (
-            ("US", cn["us_paths"], "#c0392b", "rgba(192,57,43,0.12)"),
-            ("China", cn["paths"], _CN_TK_COLOR, "rgba(214,137,16,0.18)")):
+    for name, paths, side, rank in (("US", cn["us_paths"], _CN_TK_US, 10),
+                                    ("China", cn["paths"], _CN_TK_CN, 20)):
         q = np.quantile(paths[:, keep], [.1, .5, .9], axis=0)
-        fig.add_trace(go.Scatter(x=x, y=q[0], mode="lines", line=dict(width=0),
-                                 hoverinfo="skip", showlegend=False))
-        fig.add_trace(go.Scatter(x=x, y=q[2], mode="lines", line=dict(width=0), fill="tonexty",
-                                 fillcolor=fill, name=f"{name}: middle 80%", hoverinfo="skip"))
-        fig.add_trace(go.Scatter(
-            x=x, y=q[1], mode="lines", name=f"{name}: projected (median, trained)",
-            line=dict(color=color, width=2.5),
-            hovertemplate="%{x|%b %Y}<br>ECI %{y:.0f}<extra>" + name + ", median</extra>"))
+        tr = _cn_tk_band(fig, x, q, side, name, rank)
+        tr.hovertemplate = "%{x|%b %Y}<br>ECI %{y:.0f}<extra>" + name + ", median</extra>"
+        fig.add_trace(tr)
     if eci is not None:
-        us_rel = [m for m in eci["frontier"] if m['date'] >= datetime(2024, 1, 1)]
-        fig.add_trace(go.Scatter(
-            x=[m['date'] for m in us_rel], y=[m['eci_score'] for m in us_rel],
-            mode="lines+markers", name="Measured: US releases",
-            line=dict(color="#333", width=1.2, shape="hv"), marker=dict(color="#333", size=5),
-            text=[m['name'] for m in us_rel],
-            hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f} (released)<extra></extra>"))
-        tr = [m for m in eci.get("trained", []) if m['date'] >= datetime(2024, 1, 1)]
+        tr = [m for m in eci.get("trained", []) if m['date'] >= since]
         if tr:
             fig.add_trace(go.Scatter(
-                x=[m['date'] for m in tr] + [today], y=[m['eci_score'] for m in tr] + [eci["now"]],
-                mode="lines", name="US trained (internal models projected)",
-                line=dict(color="#d8774f", width=1.2, shape="hv", dash="dot"),
-                text=[m['name'] for m in tr] + ["today (carried on pace)"],
-                hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra></extra>"))
-    past = [r for r in cn["cal"]["cn_fr"] if r[0] >= datetime(2024, 1, 1)]
+                x=[m['date'] for m in tr], y=[m['eci_score'] for m in tr],
+                mode="lines+markers", name="US trained (internal models in)",
+                line=dict(color=_CN_TK_US["line"], width=1.5, shape="hv"),
+                marker=dict(color=_CN_TK_US["line"], size=6, line=dict(color="white", width=1)),
+                text=[m['name'] for m in tr], legendrank=12,
+                hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US trained</extra>"))
+            # Carried on pace from the last trained model to the projection's start.
+            fig.add_trace(go.Scatter(
+                x=[tr[-1]['date'], today], y=[tr[-1]['eci_score'], eci["now"]],
+                mode="lines", line=dict(color=_CN_TK_US["line"], width=1.5, dash="dot"),
+                showlegend=False, hoverinfo="skip"))
+        rel = [m for m in eci["frontier"] if m['date'] >= since]
+        fig.add_trace(go.Scatter(
+            x=[m['date'] for m in rel], y=[m['eci_score'] for m in rel],
+            mode="lines+markers", name="US releases",
+            line=dict(color=_CN_TK_US["light"], width=1.2, shape="hv"),
+            marker=dict(color=_CN_TK_US["light"], size=5), text=[m['name'] for m in rel],
+            legendrank=13,
+            hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US release</extra>"))
+    past = [r for r in cn["cal"]["cn_fr"] if r[0] >= since]
     fig.add_trace(go.Scatter(
         x=[r[0] for r in past], y=[r[1] for r in past], mode="lines+markers",
-        name="Measured: China releases", line=dict(color="#7d5a0b", width=1.5, shape="hv"),
-        marker=dict(color="#7d5a0b", size=6), text=[r[2] for r in past],
-        hovertemplate="%{text}<br>%{x|%b %Y}: %{y:.1f}<extra></extra>"))
+        name="China releases", line=dict(color=_CN_TK_CN["line"], width=1.5, shape="hv"),
+        marker=dict(color=_CN_TK_CN["line"], size=6, line=dict(color="white", width=1)),
+        text=[r[2] for r in past], legendrank=22,
+        hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>China release</extra>"))
     lvl = np.quantile(cn["level"], [.1, .5, .9])
+    if past:
+        fig.add_trace(go.Scatter(
+            x=[past[-1][0], today], y=[past[-1][1], lvl[1]], mode="lines",
+            line=dict(color=_CN_TK_CN["line"], width=1.5, dash="dot"),
+            showlegend=False, hoverinfo="skip"))
     fig.add_trace(go.Scatter(
         x=[today], y=[lvl[1]], mode="markers",
-        name="China today (trained, the model's start)",
-        marker=dict(color=_CN_TK_COLOR, symbol="diamond", size=10),
+        name="China today (trained, the model's start)", legendrank=23,
+        marker=dict(color=_CN_TK_CN["line"], symbol="diamond", size=10,
+                    line=dict(color="white", width=1)),
         error_y=dict(type="data", symmetric=False, array=[lvl[2] - lvl[1]],
-                     arrayminus=[lvl[1] - lvl[0]], color=_CN_TK_COLOR),
+                     arrayminus=[lvl[1] - lvl[0]], color=_CN_TK_CN["line"]),
         hovertemplate=f"China's trained frontier today: {lvl[1]:.1f} "
                       f"(80% {lvl[0]:.1f}–{lvl[2]:.1f})<extra></extra>"))
-    fig.add_vline(x=today, line_color="#555", line_width=1.5)
+    fig.add_vline(x=today, line_color="#999", line_width=1)
     fig.add_hline(y=ultra, line_dash="dash", line_color="#c0392b", line_width=1,
                   annotation_text=f"Ultraintelligence: ECI {ultra:g}",
                   annotation_position="top left", annotation_font_color="#c0392b")
     fig.update_layout(
-        height=420, margin=dict(l=55, r=20, t=30, b=40),
+        height=440, margin=dict(l=55, r=20, t=30, b=40),
         xaxis=dict(range=[past[0][0] if past else x[0], x[-1]]),
         yaxis=dict(title="ECI (Epoch Capabilities Index)",
                    range=[min(r[1] for r in past) - 10 if past else 120,
                           ultra + _TK_ECI_VIEW_PAST_ULTRA]),
-        legend=dict(orientation="h", y=-0.12), hovermode="x")
+        legend=dict(orientation="h", y=-0.12, traceorder="normal"),
+        hovermode="closest")
+    return fig
+
+
+def _cn_tk_quarters(start=datetime(2024, 1, 1), end=datetime(2030, 12, 31)):
+    """Quarter ends from `start` through `end`."""
+    out, y, q = [], start.year, 0
+    while True:
+        m = 3 * (q + 1)
+        t = datetime(y, m, 31 if m in (3, 12) else 30)
+        if t > end:
+            return out
+        if t >= start:
+            out.append(t)
+        y, q = (y + 1, 0) if q == 3 else (y, q + 1)
+
+
+def _cn_tk_step_level(fr, t):
+    """A step frontier's level at `t`: its best (date, score) on or before."""
+    return max((sc for d, sc in fr if d <= t), default=np.nan)
+
+
+def _cn_tk_pace(cn, eci, today):
+    """ECI each side gained in the year to each quarter end, 2024–2030.
+    Measured to today off the step frontiers (US trained, `eci['trained']`;
+    US releases; China's releases, its trained frontier less a fixed lag).
+    Projected after, per scenario: its path less the year-earlier level, the
+    measured frontier where that falls before today. {'quarters', 'past',
+    'us_rel', 'us', 'cn' (measured, nan once projected), 'us_q', 'cn_q'
+    (10/50/90 quantiles, nan before today)}."""
+    yr = timedelta(days=365)
+    qs = _cn_tk_quarters()
+    years = cn["years"]
+    # Epoch's full history, so the first 2024 quarters have a year before them.
+    full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
+    us_rel = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'United States of America')]
+    cn_rel = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'China')]
+    us_tr = sorted(us_rel + [(m['date'], m['eci_score']) for m in eci.get("trained", [])])
+
+    def gain(fr, t):
+        return _cn_tk_step_level(fr, t) - _cn_tk_step_level(fr, t - yr)
+
+    def at(paths, t):
+        y = (t - today).days / 365.25
+        return np.array([np.interp(y, years, p) for p in paths])
+
+    def proj(paths, fr, t):
+        prior = t - yr
+        base = at(paths, prior) if prior > today else _cn_tk_step_level(fr, prior)
+        return np.quantile(at(paths, t) - base, [.1, .5, .9])
+    nan3 = np.full(3, np.nan)
+    out = {"quarters": qs, "us": [], "us_rel": [], "cn": [], "us_q": [], "cn_q": []}
+    for t in qs:
+        past = t <= today
+        out["us"].append(gain(us_tr, t) if past else np.nan)
+        out["us_rel"].append(gain(us_rel, t) if past else np.nan)
+        out["cn"].append(gain(cn_rel, t) if past else np.nan)
+        live = not past and (t - today).days / 365.25 <= years[-1]
+        out["us_q"].append(proj(cn["us_paths"], us_tr, t) if live else nan3)
+        out["cn_q"].append(proj(cn["paths"], cn_rel, t) if live else nan3)
+    for k in ("us_q", "cn_q"):
+        out[k] = np.array(out[k]).T
+    return out
+
+
+def _cn_tk_pace_fig(pace, today):
+    """The quarterly pace chart: measured lines to today, each side's
+    projected median and middle 80% after, joined at the last quarter end."""
+    qs = pace["quarters"]
+    last = max(i for i, t in enumerate(qs) if t <= today)
+    lbl = [f"Q{(t.month - 1) // 3 + 1} {t.year}" for t in qs]
+    fig = go.Figure()
+    for name, meas, q, side, rank in (("US", pace["us"], pace["us_q"], _CN_TK_US, 10),
+                                      ("China", pace["cn"], pace["cn_q"], _CN_TK_CN, 20)):
+        # The projection starts at the last measured quarter so the lines join.
+        qq = q.copy()
+        qq[:, last] = meas[last]
+        sel = [i for i in range(len(qs)) if i >= last and np.isfinite(qq[1, i])]
+        tr = _cn_tk_band(fig, [qs[i] for i in sel], qq[:, sel], side, name, rank, dash="dash")
+        tr.text = [lbl[i] for i in sel]
+        tr.hovertemplate = "%{text}: %{y:.1f} ECI/yr<extra>" + name + ", median</extra>"
+        fig.add_trace(tr)
+        m = [i for i in range(len(qs)) if np.isfinite(meas[i])]
+        fig.add_trace(go.Scatter(
+            x=[qs[i] for i in m], y=[meas[i] for i in m], mode="lines+markers",
+            name=f"{name} {'trained' if name == 'US' else 'releases'} (measured)",
+            line=dict(color=side["line"], width=1.8),
+            marker=dict(color=side["line"], size=6, line=dict(color="white", width=1)),
+            text=[lbl[i] for i in m], legendrank=rank + 2,
+            hovertemplate="%{text}: %{y:.1f} ECI/yr<extra>" + name + "</extra>"))
+        if name == "US":
+            r = [i for i in range(len(qs)) if np.isfinite(pace["us_rel"][i])]
+            fig.add_trace(go.Scatter(
+                x=[qs[i] for i in r], y=[pace["us_rel"][i] for i in r], mode="lines",
+                name="US releases (measured)", legendrank=rank + 3,
+                line=dict(color=_CN_TK_US["light"], width=1.2),
+                text=[lbl[i] for i in r],
+                hovertemplate="%{text}: %{y:.1f} ECI/yr<extra>US releases</extra>"))
+    fig.add_vline(x=today, line_color="#999", line_width=1)
+    fig.update_layout(
+        height=380, margin=dict(l=55, r=20, t=20, b=40),
+        yaxis=dict(title="ECI gained in the prior year (log scale)", type="log",
+                   tickvals=[5, 10, 20, 50, 100, 200, 500],
+                   range=[np.log10(5), np.log10(max(
+                       300, np.nanmax(np.r_[pace["us_q"][2], pace["cn_q"][2]]) * 1.1))]),
+        xaxis=dict(range=[qs[0] - timedelta(days=20), qs[-1] + timedelta(days=20)]),
+        legend=dict(orientation="h", y=-0.14, traceorder="normal"),
+        hovermode="closest")
     return fig
 
 
@@ -25063,47 +25199,6 @@ def _cn_tk_source_rows(cn, today, horizon_year):
 def _rl_leads_claude():
     """Days each matched internal model led the first Claude release at its ECI."""
     return [r['Anthropic'][2] for r in _rl_lead_rows() if r['Anthropic'][0]]
-
-
-def _cn_tk_pace_dates(today):
-    """Each half-year end from Dec 2024 to before `today`, then `today`."""
-    out, y = [], 2024
-    while True:
-        for m, d in ((6, 30), (12, 31)):
-            t = datetime(y, m, d)
-            if t >= datetime(2024, 12, 31) and t < today:
-                out.append(t)
-            if t >= today:
-                return out + [today]
-        y += 1
-
-
-def _cn_tk_pace_rows(today):
-    """ECI each frontier gained in the year to each `_cn_tk_pace_dates` date:
-    US releases, the US trained frontier (internal models, training-finish
-    dates) and China's releases, read off the step frontiers."""
-    full = load_eci_frontier(mtime=_eci_mtime(), full_window=True)
-    us = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'United States of America')]
-    cn = [(d, sc) for d, sc, _n in _cc_country_frontier(full, 'China')]
-    tr = [(m['date'], m['eci_score']) for m in _eci_entity_models(
-        "US best", full_window=True, internal=True, trained=True) if m['is_frontier']]
-
-    def gain(fr, t):
-        def lvl(at):
-            return max((sc for d, sc in fr if d <= at), default=None)
-        a, b = lvl(t - timedelta(days=365)), lvl(t)
-        return None if a is None or b is None else b - a
-    fmt = lambda v: "—" if v is None else f"{v:.1f}"
-    rows = []
-    for t in _cn_tk_pace_dates(today):
-        u, k, c = gain(us, t), gain(tr, t), gain(cn, t)
-        rows.append({"Year to": "today" if t == today else f"{t:%b %Y}",
-                     "US releases": fmt(u),
-                     "US trained (internal models included)": fmt(k),
-                     "China releases": fmt(c),
-                     "US − China (releases)": "—" if u is None or c is None
-                     else f"{u - c:+.1f}"})
-    return rows
 
 
 def _cn_tk_start_rows(cn, eci, today):
@@ -25268,15 +25363,7 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
                                "lags by years: set both to 0 below."))
     st.markdown("**Where each side starts today**")
     st.table(_cn_tk_start_rows(cn, run["eci"], today))
-    st.markdown("**Pace over time**")
-    _fn_caption("ECI each frontier gained in the year to each date (ECI/yr).",
-                ("ECI/yr", "The frontier's level at the date less its level a year "
-                 "before, read off the step frontier of best-so-far models, so a quiet "
-                 "stretch between releases reads slow. The trained US frontier dates "
-                 "models at training finish with Anthropic's internal models in, as the "
-                 "ECI tab does by default; China's trained frontier is its releases less "
-                 "a fixed lag, so its pace is its releases'."))
-    st.table(_cn_tk_pace_rows(today))
+
     _fn_caption(
         "Every date on this tab compares trained models, not releases.",
         ("trained models",
@@ -25306,6 +25393,20 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
                         f"{_tk_span(takeoff.quantile(g, 0.9), end_date)})")
     st.plotly_chart(_tf(_cn_tk_fig(cn, today, view_end, run["eci"]["ultra_level"],
                                    run["eci"])),
+                    width="stretch")
+    st.markdown("**Pace over time**")
+    _fn_caption("ECI each side gained in the year to each quarter end: measured to "
+                "today, then projected.",
+                ("ECI each side gained", "The frontier's level at the quarter end less "
+                 "its level a year before, so a quiet stretch between releases reads "
+                 "slow. The US's measured line is its trained frontier (Anthropic's "
+                 "internal models in), the one the projection starts from; its releases "
+                 "are the lighter line. China's trained frontier is its releases less a "
+                 "fixed lag, so they share a line."),
+                ("projected", "Each scenario's projected level less its level a year "
+                              "earlier (the measured frontier, before today): median "
+                              "and middle 80%."))
+    st.plotly_chart(_cn_tk_pace_fig(_cn_tk_pace(cn, run["eci"], today), today),
                     width="stretch")
     _fn_caption(
         "Where China's ECI gains come from, in the median scenario.",

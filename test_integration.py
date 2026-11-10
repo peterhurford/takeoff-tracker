@@ -1363,8 +1363,8 @@ class TestTakeoffTab:
         assert at.session_state["_active_tab"] == "Takeoff"
         assert any(h.value == "Takeoff" for h in at.header)
         # RSI evidence, capability pace, net pace, pace factors, their multiplication,
-        # compute, people, ECI, yearly progress, the distributions and China's takeoff.
-        assert len(_tk_charts(at)) == 16
+        # compute, people, ECI, yearly progress, the distributions, China's takeoff and its pace.
+        assert len(_tk_charts(at)) == 17
         # The evidence first, then the takeoff model.
         # The takeoff model's loop and cards lead, then the evidence, then the
         # model's charts.
@@ -1551,7 +1551,7 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", old_simulator)
         at = self._app()
         assert tk.simulate is not old_simulator
-        assert len(_tk_charts(at)) == 16
+        assert len(_tk_charts(at)) == 17
 
     def test_present_day_feedback_and_evidence_calibration(self, monkeypatch):
         import takeoff_model as tk
@@ -1824,21 +1824,28 @@ class TestTakeoffTab:
         assert "like for like" in t["Pace (ECI/yr)"].iloc[2]
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
-        assert "US trained (internal models projected)" in names
+        assert "US trained (internal models in)" in names
         assert "China today (trained, the model's start)" in names
         assert "Model 3 Early" in t["How"].iloc[2]
 
-    def test_pace_over_time_reads_each_frontiers_trailing_year(self):
-        """One row a half-year from Dec 2024 to today; the trained US frontier
-        runs at or above the US releases once internal models lead them."""
+    def test_pace_over_time_is_quarterly_measured_then_projected(self):
+        """One point a quarter end, Q1 2024 to Q4 2030: measured through the
+        last quarter end before today, projected after, joined there."""
         import visualize_projection as vp
+        qs = vp._cn_tk_quarters()
+        assert (qs[0], qs[-1], len(qs)) == (datetime(2024, 3, 31), datetime(2030, 12, 31), 28)
         at = self._app()
-        t = next(x.value for x in at.table if "China releases" in x.value.columns)
-        assert t["Year to"].iloc[0] == "Dec 2024" and t["Year to"].iloc[-1] == "today"
-        assert vp._cn_tk_pace_dates(datetime(2025, 8, 1)) == [
-            datetime(2024, 12, 31), datetime(2025, 6, 30), datetime(2025, 8, 1)]
-        jun26 = t[t["Year to"] == "Jun 2026"].iloc[0]
-        assert float(jun26["US trained (internal models included)"]) > float(jun26["US releases"])
+        import base64
+        spec = next(json.loads(el.proto.spec) for el in at.get("plotly_chart")
+                    if "US releases (measured)" in el.proto.spec)
+        tr = {t["name"]: t for t in spec["data"] if t.get("name")}
+        ys = lambda y: (np.frombuffer(base64.b64decode(y["bdata"]), dtype=y["dtype"])
+                        if isinstance(y, dict) else np.asarray(y, dtype=float))
+        meas, proj = tr["US trained (measured)"], tr["US: projected (median)"]
+        assert meas["x"][-1] == proj["x"][0]
+        assert ys(meas["y"])[-1] == pytest.approx(ys(proj["y"])[0])
+        assert proj["x"][-1].startswith("2030-12-31")
+        assert tr["China releases (measured)"]["x"][-1] == meas["x"][-1]
 
     def test_chinas_internal_lead_is_one_setting_on_both_tabs(self):
         """Takeoff's China settings carry the internal lead Pacing uses (the
