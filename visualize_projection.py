@@ -281,9 +281,11 @@ def log2min_to_label(val, hours_only=False):
 
 
 def fmt_hrs(h, hours_only=False):
-    """Format hours for display using work-time units (8h/d, 40h/w, 176h/mo, 2000h/y).
-    Shows sub-unit remainder (e.g., 1h20m, 2d3h). No decimals.
-    When hours_only=True, output is always in hours (or minutes for h<1)."""
+    """Format hours for display: hours and minutes below 100h (e.g. 99h, 13h20m),
+    then work-time units (40h/w, 176h/mo, 2000h/y) with one sub-unit remainder
+    (e.g. 2w2d, 1y1mo, where 1d = 8h). No decimals. Days never lead: 100h is
+    already 2w2d. When hours_only=True, output is always in hours (or minutes
+    for h<1)."""
     minutes = h * 60
     # Branch on the rounded minutes, so 59.9m reads "1h", not "60m".
     if hours_only:
@@ -301,16 +303,6 @@ def fmt_hrs(h, hours_only=False):
         if mins == 0:
             return f"{hrs}h"
         return f"{hrs}h{mins}m"
-    days_ = h / 8
-    if days_ < 5:
-        d = int(days_)
-        rem_h = int(round(h - d * 8))
-        if rem_h == 8:
-            d += 1
-            rem_h = 0
-        if rem_h == 0:
-            return f"{d}d"
-        return f"{d}d{rem_h}h"
     weeks = h / 40
     if weeks < 4.4:
         w = int(weeks)
