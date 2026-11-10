@@ -3885,7 +3885,8 @@ class TestPacingTab:
     def test_run_length_moves_the_compute_not_the_pause_date(self):
         """Run length is no longer what dates the pause — the slider is —
         but it still sets the window the capacity is quoted in: a 6-month
-        run is ~3x the ops of a 2-month one."""
+        run is up to 3x the ops of a 2-month one, less the growth in the
+        four months earlier it had to start to finish by the pause."""
         at = self._app()
 
         def _pause_month(at):
@@ -3901,7 +3902,7 @@ class TestPacingTab:
         at.radio(key="pc_run").set_value("6-month run").run()
         _assert_no_error(at, "Pacing / pause with 6-month run")
         assert _pause_month(at) == month
-        assert _us_ops(at) - ops_2mo == pytest.approx(np.log10(3), abs=0.1)
+        assert 0 < _us_ops(at) - ops_2mo <= np.log10(3) + 0.05
 
     def test_both_charts_end_at_the_projection_range(self):
         """Timeline and pause charts both run to *Project through*, like
@@ -4285,6 +4286,23 @@ class TestPacingTab:
         assert "China-accessible" in ents
         assert "China (domestic only)" in ents
         assert "Anthropic" not in ents
+
+    def test_paused_us_does_not_cross_its_own_bar_after_the_pause(self):
+        """The race's bar and its rows are both on the run-finished clock, so
+        a US paused on that clock reaches its own pause-date level by the
+        pause month, not a run length later."""
+        from datetime import datetime as _dt
+
+        at = self._app()
+        at.radio(key="pc_party").set_value("Country").run()
+        _assert_no_error(at, "Pacing / country, paused")
+        assert at.selectbox(key="pc_timing").value == "Training run finished"
+        now = _dt.now()
+        m = now.month - 1 + int(at.select_slider(key="pc_pause_mo").value)
+        pause = _dt(now.year + m // 12, m % 12 + 1, 1)
+        table = self._entities(at)
+        us = table[table["Entity"] == "United States"].iloc[0]
+        assert _dt.strptime(str(us["Projected (median)"]), "%b %Y") <= pause
 
     def test_race_bar_is_the_us_run_at_the_pause(self):
         """No threshold control: the race runs to the *Largest training

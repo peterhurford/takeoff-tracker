@@ -361,7 +361,10 @@ and ignored; `pc_pause_mo` stays in state for when pacing returns
 `_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
 than a hardcoded month count, so the reset restores a *date*. The pause is on the
 **run-finished** clock; the displayed date carries `timing_label`'s
-offset (each side's own release lag on *Model release*). The US climb pace
+offset (each side's own release lag on *Model release*). `_pc_capacity_at()` reads
+it off the series shifted by one run, the clock the race's rows use by default, so
+a paused US reaches its own bar by the pause month
+(`test_paused_us_does_not_cross_its_own_bar_after_the_pause`). The US climb pace
 still comes from the **sidebar-pooled US series**, so the networking selector moves
 the bar, scaled by the China tab's US calibration (`_cc_rate_calibration`). Just above *Compute Thresholds* sits the *state of play* table (the panel hands its rows back through `state_out`), off
 that same `_pc_capacity_at()` reading (the race's own `_pc_projection` at the pause

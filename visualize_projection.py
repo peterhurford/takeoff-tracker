@@ -22212,10 +22212,6 @@ def render_pacing():
                   if country_of.get(n) == _DC_CTY_CN]
     _us_steps_raw = _dc_country_steps(series_unshifted, _us_names, _mode,
                                       cluster_of)
-    _cn_steps_raw = _dc_country_steps(series_unshifted, _cn_names, _mode,
-                                      cluster_of)
-    _dom_steps_raw = _dc_country_steps(series_unshifted, _dom_names, _mode,
-                                       cluster_of)
 
     # ── The pause date drives the whole tab, so it is drawn here rather
     # than inside the panel: the capacity the US has reached by then is
@@ -22264,10 +22260,20 @@ def render_pacing():
                 format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
                 help=_help)
     pause_d = _pc_add_months(_today, pause_mo)
+    # `pause_d` is on the run-finished clock, so the capacity read at it (the
+    # race's bar) comes off the series shifted by one run, as the race's rows
+    # are under that *Date points at* (`test_paused_us_does_not_cross_its_own_bar_after_the_pause`).
+    series_run = {n: {**v, 'pts': [(d + timedelta(days=run_days), val)
+                                   for d, val in v['pts']]}
+                  for n, v in series_unshifted.items()}
+
+    def _run_steps(names):
+        return _dc_country_steps(series_run, names, _mode, cluster_of)
     caps = _pc_capacity_at(
-        [(_DC_CTY_US, 'country', _us_steps_raw, tuple(_us_names)),
-         (_DC_CTY_CN_ACCESS, 'country', _cn_steps_raw, tuple(_cn_names)),
-         (_DC_CTY_CN_DOMESTIC, 'country', _dom_steps_raw,
+        [(_DC_CTY_US, 'country', _run_steps(_us_names), tuple(_us_names)),
+         (_DC_CTY_CN_ACCESS, 'country', _run_steps(_cn_names),
+          tuple(_cn_names)),
+         (_DC_CTY_CN_DOMESTIC, 'country', _run_steps(_dom_names),
           tuple(_dom_names))],
         dc_view, _today, pause_d, since=_DC_DEFAULTS["dc_cty_since"],
         also=_today)
