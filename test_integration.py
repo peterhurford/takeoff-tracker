@@ -3680,6 +3680,25 @@ class TestPacingTab:
         at.checkbox(key="pc_stop_legal").check().run()
         assert _pct(at) < 0
 
+    def test_chip_growth_sliders_move_the_mix_with_and_without_levers(self):
+        """Slower legal and smuggled chip growth shrinks China's mix and its
+        no-lever comparison alike, so the levers' change stays relative."""
+        at = self._app()
+
+        def _tots(at):
+            caps = " ".join(str(c.value) for c in at.caption)
+            m = re.search(r"~([\d.]+)M H100e under .*?against "
+                          r"~([\d.]+)M with no levers", caps)
+            return float(m.group(1)), float(m.group(2))
+
+        pol, base = _tots(at)
+        assert pol == base
+        at.slider(key="pc_smug_growth").set_value(0).run()
+        at.slider(key="pc_legal_growth").set_value(0).run()
+        _assert_no_error(at, "Pacing / chip growth 0%")
+        pol0, base0 = _tots(at)
+        assert pol0 == base0 < base
+
     def test_smuggling_and_legal_sales_levers_stack_on_the_slowdown(self):
         """Cutting smuggling or stopping legal sales slows China's domestic
         compute growth, each named in the settings hover, and the two

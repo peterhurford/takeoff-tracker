@@ -4563,14 +4563,17 @@ class TestChinaComputeSources:
         cap = {y: m * 1e6 for y, _l, m, _h in duv["continue_trend"]}
         f27 = d["flow"]["2027"]
         run = {k: d["stock"]["2027"][k][0] for k in f27}
+        hw = vp._CN_SRC_CHIP_PERF_GROWTH
         for y in vp._CN_SRC_PROJ_YEARS:
             f = p["flow"][str(y)]
-            assert f["legal"][0] == f27["legal"][0]
-            # Same smuggled chip count, each chip better, 2027's range.
-            g = vp._CN_SRC_SMUGGLED_CHIP_GROWTH ** (y - 2027)
+            # More chips each year, each chip better; smuggling keeps
+            # 2027's range.
+            gl = ((1 + vp._CN_SRC_LEGAL_COUNT_GROWTH) * hw) ** (y - 2027)
+            gs = ((1 + vp._CN_SRC_SMUGGLED_COUNT_GROWTH) * hw) ** (y - 2027)
+            assert f["legal"][0] == pytest.approx(f27["legal"][0] * gl)
             for i in range(3):
                 assert f["smuggled"][i] == pytest.approx(
-                    f27["smuggled"][i] * g)
+                    f27["smuggled"][i] * gs)
             assert f["domestic"][0] <= cap[y]
             assert f["domestic"][1] <= f["domestic"][0] <= f["domestic"][2]
             # Low, central and high each grow from 2027's own value.
@@ -4585,6 +4588,29 @@ class TestChinaComputeSources:
                 assert p["stock"][str(y)][k][0] == pytest.approx(run[k])
         # Offshore leasing flattens after 2027, so remote additions fall.
         assert p["flow"]["2029"]["remote"][0] < f27["remote"][0]
+
+    def test_chip_count_growth_moves_only_its_own_channel(self):
+        """The default 10%/yr more legal and smuggled chips put ~5.0M and
+        ~5.7M H100e of each in China by end-2030 (~24.4M in China, ~28.9M
+        with remote); 0% smuggling growth holds 2027's count, and each rate
+        moves only its own channel."""
+        d = self._data()
+        s30 = vp._cn_src_projection(d)["stock"]["2030"]
+        assert s30["legal"][0] == pytest.approx(4.98e6, rel=0.01)
+        assert s30["smuggled"][0] == pytest.approx(5.66e6, rel=0.01)
+        in_cn = sum(s30[k][0] for k in ("domestic", "legal", "smuggled"))
+        assert in_cn == pytest.approx(24.4e6, rel=0.01)
+        assert in_cn + s30["remote"][0] == pytest.approx(28.9e6, rel=0.01)
+        held = vp._cn_src_projection(d, smug_growth=0.0)["flow"]
+        f27 = d["flow"]["2027"]["smuggled"]
+        for y in vp._CN_SRC_PROJ_YEARS:
+            g = vp._CN_SRC_CHIP_PERF_GROWTH ** (y - 2027)
+            assert held[str(y)]["smuggled"][0] == pytest.approx(f27[0] * g)
+        base = vp._cn_src_projection(d)["flow"]["2030"]
+        fast = vp._cn_src_projection(d, legal_growth=0.3)["flow"]["2030"]
+        assert fast["legal"][0] > base["legal"][0]
+        for k in ("domestic", "smuggled", "remote"):
+            assert fast[k] == base[k]
 
     def test_compute_payoff_default_is_the_mean_of_ours_and_ifps(self):
         """IFP's 10.8 months per 10x at the US's 15.7 ECI/yr is ~14 ECI;
@@ -4654,6 +4680,27 @@ class TestChinaComputeSources:
         assert pol["stock"]["2026"]["remote"][0] == 0.0
         assert (pol["flow"]["2030"]["legal"][0] == 0.0
                 < base["flow"]["2030"]["legal"][0])
+
+    def test_levers_cut_the_growing_channels_by_their_own_share(self):
+        """Faster-growing legal and smuggled channels are still cut: the
+        smuggling cut halves its flow from the pacing year, stopping legal
+        sales zeroes it, and the share of China's growth they remove (the
+        supply cut) rises with the channels' growth."""
+        today, start = datetime(2026, 10, 19), datetime(2028, 1, 1)
+        d = self._data()
+        grow = dict(legal_growth=0.3, smug_growth=0.3)
+        base = vp._cn_src_with_policy(today, data=d, **grow)
+        pol = vp._cn_src_with_policy(today, smug_start=start, smug_cut=0.5,
+                                     legal_start=start, stop_legal=True,
+                                     data=d, **grow)
+        for y in ("2029", "2030"):
+            assert pol["flow"][y]["smuggled"][0] == pytest.approx(
+                0.5 * base["flow"][y]["smuggled"][0])
+            assert pol["flow"][y]["legal"][0] == 0.0
+        e = datetime(2031, 12, 31)
+        for ch in ({"smuggled": 1.0}, {"legal": 1.0}):
+            assert (vp._cn_src_channel_cut(start, e, ch, **grow)
+                    > vp._cn_src_channel_cut(start, e, ch))
 
     def test_compute_ratio_is_one_without_levers_and_scales_with_power(self):
         today = datetime(2026, 10, 19)

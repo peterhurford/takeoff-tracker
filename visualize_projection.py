@@ -12346,11 +12346,18 @@ _CN_SRC_OFFSHORE_GW = {2026: 1.45, 2027: 2.45, 2028: 2.8, 2029: 2.9,
 # H100e per MW of newly leased capacity grows with compute per watt (~1.3-1.6
 # x/yr on the catalogue's US sites).
 _CN_SRC_DENSITY_GROWTH = 1.4
-# Past 2027 the smuggled chip count holds at IFP's 2027 level, since larger
-# flows are easier to catch, while each chip improves at Epoch's 16-bit ML
+# Past 2027 each legal and smuggled chip improves at Epoch's 16-bit ML
 # hardware trend (37%/yr, doubling every 2.2 years; epoch.ai/data-insights/
-# peak-performance-hardware-on-different-precisions).
-_CN_SRC_SMUGGLED_CHIP_GROWTH = 1.37
+# peak-performance-hardware-on-different-precisions): legal chips stay a
+# generation behind the frontier, modelled as that smooth trend.
+_CN_SRC_CHIP_PERF_GROWTH = 1.37
+# Past 2027 the count of chips sold legally and smuggled grows this much a
+# year (Pacing's `pc_legal_growth` / `pc_smug_growth` sliders).
+_CN_SRC_LEGAL_COUNT_GROWTH = 0.10
+_CN_SRC_SMUGGLED_COUNT_GROWTH = 0.10
+# `_cn_src_with_policy` keywords that set the projection rather than a policy
+# lever: the no-lever comparison carries them too.
+_CN_SRC_GROWTH_KEYS = ("legal_growth", "smug_growth")
 
 
 def _cn_src_mtime():
@@ -12372,18 +12379,20 @@ def load_china_compute_sources(mtime=None):
     return out
 
 
-def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
+def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH,
+                       legal_growth=_CN_SRC_LEGAL_COUNT_GROWTH,
+                       smug_growth=_CN_SRC_SMUGGLED_COUNT_GROWTH):
     """Flows and stocks for `_CN_SRC_PROJ_YEARS`, in `data`'s format.
 
     From the last stored year: domestic output grows at `growth` (its range
     at ÷/× `_DUV_CN_OUTPUT_SPREAD`, each from the last stored year's own
     central, low or high), capped at the CTS lithography ceiling on
-    today's allocation; legal sales hold flat; smuggling keeps its chip
-    count, so its H100e grow `_CN_SRC_SMUGGLED_CHIP_GROWTH` a year, with
-    the last stored year's relative range; remote access adds
-    SemiAnalysis's new offshore power at a density rising
-    `_CN_SRC_DENSITY_GROWTH` a year. Only domestic and smuggling carry a
-    range; the rest are central.
+    today's allocation; legal sales and smuggling each grow their chip
+    count by `legal_growth` / `smug_growth` a year (fractions) while each
+    chip improves `_CN_SRC_CHIP_PERF_GROWTH` a year, smuggling keeping the
+    last stored year's relative range; remote access adds SemiAnalysis's
+    new offshore power at a density rising `_CN_SRC_DENSITY_GROWTH` a year.
+    Only domestic and smuggling carry a range; the rest are central.
     """
     duv = load_duv_production(_duv_mtime())
     cap = {y: p50 * 1e6 for y, _lo, p50, _hi in duv["continue_trend"]}
@@ -12399,11 +12408,13 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
              growth * _DUV_CN_OUTPUT_SPREAD)
     flow, stock = {}, {}
     run = {k: list(v) for k, v in s0.items()}
+    hw = _CN_SRC_CHIP_PERF_GROWTH
     for y in _CN_SRC_PROJ_YEARS:
         dom = [min(d * g, cap[y]) for d, g in zip(dom, rates)]
         f = {"domestic": tuple(dom),
-             "legal": (f0["legal"],) * 3,
-             "smuggled": tuple(x * _CN_SRC_SMUGGLED_CHIP_GROWTH ** (y - base)
+             "legal": (f0["legal"] * ((1.0 + legal_growth) * hw)
+                       ** (y - base),) * 3,
+             "smuggled": tuple(x * ((1.0 + smug_growth) * hw) ** (y - base)
                                for x in smug),
              "remote": (f0["remote"] * (gw[y] - gw[y - 1])
                         / (gw[base] - gw[base - 1])
@@ -12415,19 +12426,23 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH):
     return {"flow": flow, "stock": stock}
 
 
-def _cn_src_channel_cut(start, end, cuts, data=None):
+def _cn_src_channel_cut(start, end, cuts, data=None,
+                        legal_growth=_CN_SRC_LEGAL_COUNT_GROWTH,
+                        smug_growth=_CN_SRC_SMUGGLED_COUNT_GROWTH):
     """Share of China's in-China compute growth (log) that cutting channels
     from `start` to `end` removes.
 
     `cuts` maps a source to the fraction of its additions stopped. Each
     year's flow is spread evenly across it, from the stored data and
-    `_cn_src_projection`; past the last projected year nothing more is
+    `_cn_src_projection` at the given chip-count growth rates; past the
+    last projected year nothing more is
     removed. 1 − ln(S_end'/S_start) / ln(S_end/S_start) over the in-China
     stock, so the Pacing tab can compound it with its other cuts to China's
     domestic compute growth. 0.0 for an empty window or no cuts.
     """
     data = data or load_china_compute_sources(_cn_src_mtime())
-    proj = _cn_src_projection(data)
+    proj = _cn_src_projection(data, legal_growth=legal_growth,
+                              smug_growth=smug_growth)
     flow = {**data["flow"], **proj["flow"]}
     if end <= start or not any(cuts.values()):
         return 0.0
@@ -12458,8 +12473,11 @@ def _cn_src_channel_cut(start, end, cuts, data=None):
 def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
                         stop_legal=False, legal_start=None, remote_cut=None,
                         dom_cut=0.0, dom_cut_path=None, hbm_cut=0.0,
-                        hbm_start=None, data=None):
-    """China's compute mix by year under the Pacing tab's chip levers.
+                        hbm_start=None, data=None,
+                        legal_growth=_CN_SRC_LEGAL_COUNT_GROWTH,
+                        smug_growth=_CN_SRC_SMUGGLED_COUNT_GROWTH):
+    """China's compute mix by year under the Pacing tab's chip levers, on
+    `_cn_src_projection` at the chip-count growth rates given.
 
     Smuggling falls by `smug_cut` (0-1) from `smug_start` and legal sales
     stop from `legal_start` (dates; None is today), each year prorated by
@@ -12473,7 +12491,8 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
     less the flows removed. Same format as `load_china_compute_sources`.
     """
     data = data or load_china_compute_sources(_cn_src_mtime())
-    proj = _cn_src_projection(data)
+    proj = _cn_src_projection(data, legal_growth=legal_growth,
+                              smug_growth=smug_growth)
     flow = {**data["flow"], **proj["flow"]}
     stock = {**data["stock"], **proj["stock"]}
     def _after(d, p):
@@ -12526,14 +12545,21 @@ def _duv_cut_path(years, ban_imports, decay, growth,
             for y in years}
 
 
+def _cn_src_growth_kw(mix):
+    """The chip-count growth rates in `mix` (`_CN_SRC_GROWTH_KEYS`), which a
+    no-lever comparison keeps."""
+    return {k: v for k, v in (mix or {}).items() if k in _CN_SRC_GROWTH_KEYS}
+
+
 def _cn_src_supply_cut(today, origin, mix):
     """t (years from `origin`) -> share of China's in-China compute growth
     the chip-supply levers in `mix` remove in that calendar year: 1 -
-    ln-growth of the in-China stock with them over without. Remote access is
+    ln-growth of the in-China stock with them over without, both at `mix`'s
+    chip-count growth rates. Remote access is
     left out (the Pacing sim handles it as a setback); held at the last
     year's value after it, 0 before the first."""
     keep = {k: v for k, v in mix.items() if k != "remote_cut"}
-    base = _cn_src_with_policy(today)
+    base = _cn_src_with_policy(today, **_cn_src_growth_kw(mix))
     pol = _cn_src_with_policy(today, **keep)
 
     def _in(rows):
@@ -12559,7 +12585,10 @@ def _cn_src_compute_ratio(today, origin, mix, power):
     """t (years from `origin`) -> (China's installed compute under `mix` /
     with no levers) ** `power`, log-interpolated between year ends, 1 before
     the first and held after the last. `mix` is `_cn_src_with_policy`'s
-    keywords. The Pacing tab scales China's AI speed-up by it, with `power`
+    keywords. The base is the default projection, the one China's takeoff
+    calibrates on (`_cn_tk_calibration`), so `mix`'s chip-count growth rates
+    move the ratio as well as its levers. The Pacing tab scales China's AI
+    speed-up and experiment compute by it, with `power`
     the Takeoff model's parallelization exponent: AI research labour grows
     with compute to that power there."""
     base = _cn_src_with_policy(today)
@@ -16795,10 +16824,13 @@ def _cn_src_proj_note():
     return (f"Past 2027: Huawei and Cambricon output grows \u00d7{g:g}/yr "
             f"(\u00d7{g / sp:.1f}\u2013{g * sp:.1f}, the lithography "
             "section's rate), capped at CTS's lithography ceiling on today's "
-            "allocation; legal sales hold at 2027's; smuggled chips hold at "
-            "2027's count, each "
-            f"\u00d7{_CN_SRC_SMUGGLED_CHIP_GROWTH:g}/yr more powerful (Epoch's "
-            "hardware trend), since larger flows are easier to catch; remote "
+            "allocation; legal and smuggled chips grow "
+            f"{_CN_SRC_LEGAL_COUNT_GROWTH:.0%} and "
+            f"{_CN_SRC_SMUGGLED_COUNT_GROWTH:.0%} a year in number from "
+            "2027's, each chip "
+            f"\u00d7{_CN_SRC_CHIP_PERF_GROWTH:g}/yr more powerful (Epoch's "
+            "hardware trend; legal chips stay a generation behind it), the "
+            "count rates being the Pacing tab's slider defaults; remote "
             "access adds SemiAnalysis's new "
             "offshore leasing (2.45 GW in 2027 to ~3 GW in 2030) at "
             f"\u00d7{_CN_SRC_DENSITY_GROWTH:g}/yr more H100e per MW.")
@@ -17731,6 +17763,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_internal",
                   "pc_cut_smuggling", "pc_stop_legal", "pc_dist_cut",
+                  "pc_legal_growth", "pc_smug_growth",
                   "pc_duv_service", "pc_duv_decay", "pc_duv_wafer",
                   "pc_duv_growth",
                   "pc_dist_when", "pc_remote_when", "pc_smug_when",
@@ -17869,6 +17902,8 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
                 "pc_internal": True,
                 "pc_cut_smuggling": 0, "pc_stop_legal": False,
+                "pc_legal_growth": round(100 * _CN_SRC_LEGAL_COUNT_GROWTH),
+                "pc_smug_growth": round(100 * _CN_SRC_SMUGGLED_COUNT_GROWTH),
                 "pc_dist_cut": 95,
                 "pc_duv_service": False,
                 "pc_duv_decay": _DUV_SERVICE_DECAY_PCT,
@@ -19170,7 +19205,7 @@ def _pc_cn_abroad(today, mix, years):
     (`_cn_src_with_policy`) over its no-lever in-China stock, linear between
     year-ends, held past the last; 0 from a remote cut."""
     pol = _cn_src_with_policy(today, **(mix or {}))["stock"]
-    base = _cn_src_with_policy(today)["stock"]
+    base = _cn_src_with_policy(today, **_cn_src_growth_kw(mix))["stock"]
     ps = sorted(pol, key=int)
     t = [(datetime(int(p), 12, 31) - today).days / 365.25 for p in ps]
     frac = [pol[p]["remote"][0]
@@ -19207,7 +19242,7 @@ def _pc_render_compute_mix(ci):
     if not m:
         return
     today = ci['today']
-    base = _cn_src_with_policy(today)
+    base = _cn_src_with_policy(today, **_cn_src_growth_kw(m))
     pol = _cn_src_with_policy(today, **m)
     # From last year to *Project through*, or the mix's last year if sooner.
     years = [p for p in pol["stock"]
@@ -19256,6 +19291,13 @@ def _pc_render_compute_mix(ci):
         ("these settings",
          "Chips China can use, from the China tab's compute mix "
          "(Epoch to 2025, IFP for 2026\u201327, our projection after). "
+         "Past 2027 legal sales grow "
+         f"{100 * m.get('legal_growth', _CN_SRC_LEGAL_COUNT_GROWTH):.0f}% "
+         "and smuggling "
+         f"{100 * m.get('smug_growth', _CN_SRC_SMUGGLED_COUNT_GROWTH):.0f}% "
+         "more chips a year, each chip "
+         f"\u00d7{_CN_SRC_CHIP_PERF_GROWTH:g}/yr more powerful, with or "
+         "without levers. "
          "Legal sales stop, smuggling falls and remote access stops (its "
          "stock lost) from their cut-off dates; HBM controls remove "
          f"{_PC_HBM_CUT:.0%} of domestic output, and the DUVi bans and any "
@@ -20355,11 +20397,28 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  f"settings: **{_svc_path['2028']:.0%}** less chip-output "
                  "growth in 2028.")
         _cut_end = horizon if horizon is not None else _PC_HORIZON
+        legal_growth = st.slider(
+            "Legal US chip sales grow, chips a year past 2027", 0, 50,
+            value=_PC_DEFAULTS["pc_legal_growth"], step=5, format="%d%%",
+            key="pc_legal_growth",
+            help="How fast the number of chips sold legally to China grows "
+                 "after IFP's 2027 estimate, with no new controls. Each chip "
+                 f"also gets ×{_CN_SRC_CHIP_PERF_GROWTH:g} more powerful "
+                 "a year (Epoch's hardware trend; legal chips stay a "
+                 "generation behind the frontier). Sets China's compute mix "
+                 "with or without levers, so it sizes what stopping legal "
+                 "sales removes; China's experiment compute follows it.")
+        # The smuggling growth slider sits below this help text, so read it
+        # a rerun early, as the cut-off dates are.
+        _grow = dict(legal_growth=legal_growth / 100.0,
+                     smug_growth=st.session_state.get(
+                         "pc_smug_growth", _PC_DEFAULTS["pc_smug_growth"])
+                     / 100.0)
         # The cut-off dates sit under Advanced, below this help text, so
         # read them a rerun early, as the DUVi growth rate is.
         _legal_cut = _cn_src_channel_cut(
             _pc_when_date(st.session_state.get("pc_legal_when"), today),
-            _cut_end, {"legal": 1.0})
+            _cut_end, {"legal": 1.0}, **_grow)
         stop_legal = st.checkbox(
             "Stop legal US chip sales to China", key="pc_stop_legal",
             help="No more H200 licences or RTX gaming and workstation cards, "
@@ -20372,7 +20431,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "From today unless dated later under *Advanced*.")
         _hbm_g = _cn_src_channel_cut(
             _pc_when_date(st.session_state.get("pc_hbm_when"), today),
-            _cut_end, {"domestic": _PC_HBM_CUT})
+            _cut_end, {"domestic": _PC_HBM_CUT}, **_grow)
         hbm_ctl = st.checkbox(
             "Control smuggled foreign HBM", key="pc_hbm",
             help="Close the co-packaging loophole, red-flag guidance and "
@@ -20383,6 +20442,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  f"**{_hbm_g:.0%}** less domestic compute growth to "
                  f"{_cut_end.year}. From today unless dated later under "
                  "*Advanced*.")
+        smug_growth = st.slider(
+            "Smuggled chips grow, chips a year past 2027", 0, 50,
+            value=_PC_DEFAULTS["pc_smug_growth"], step=5, format="%d%%",
+            key="pc_smug_growth",
+            help="How fast the number of chips smuggled into China grows "
+                 "after IFP's 2027 estimate, with no new enforcement. Each "
+                 f"chip also gets ×{_CN_SRC_CHIP_PERF_GROWTH:g} more "
+                 "powerful a year (Epoch's hardware trend). 0% holds the "
+                 "count at 2027's, since larger flows are easier to catch. "
+                 "Sets China's compute mix with or without levers, so it "
+                 "sizes what the smuggling cut removes; China's experiment "
+                 "compute follows it.")
         cut_smuggling = st.slider(
             "Cut smuggling to China by", 0, 100,
             value=_PC_DEFAULTS["pc_cut_smuggling"], step=5, format="%d%%",
@@ -20694,12 +20765,17 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                                wafer=duv_wafer / 100.0) or 0.0)
     d_smug = _pc_when_date(smug_when, today)
     d_legal = _pc_when_date(legal_when, today)
+    _grow = dict(legal_growth=legal_growth / 100.0,
+                 smug_growth=smug_growth / 100.0)
     smug_cut = _cn_src_channel_cut(d_smug, _cut_end,
-                                   {"smuggled": cut_smuggling / 100.0})
-    legal_cut = (_cn_src_channel_cut(d_legal, _cut_end, {"legal": 1.0})
+                                   {"smuggled": cut_smuggling / 100.0},
+                                   **_grow)
+    legal_cut = (_cn_src_channel_cut(d_legal, _cut_end, {"legal": 1.0},
+                                     **_grow)
                  if stop_legal else 0.0)
     d_hbm = _pc_when_date(hbm_when, today)
-    hbm_g = (_cn_src_channel_cut(d_hbm, _cut_end, {"domestic": _PC_HBM_CUT})
+    hbm_g = (_cn_src_channel_cut(d_hbm, _cut_end, {"domestic": _PC_HBM_CUT},
+                                 **_grow)
              if hbm_ctl else 0.0)
     dom_slow_pct = int(round(100 * (1 - (1 - dom_slow_user / 100.0)
                                     * (1 - duv_cut) * (1 - smug_cut)
@@ -20981,7 +21057,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 stop_legal=bool(stop_legal), legal_start=d_legal,
                 remote_cut=d_remote if stop_remote else None,
                 dom_cut=dom_slow_user / 100.0, dom_cut_path=_duv_path,
-                hbm_cut=_PC_HBM_CUT if hbm_ctl else 0.0, hbm_start=d_hbm)
+                hbm_cut=_PC_HBM_CUT if hbm_ctl else 0.0, hbm_start=d_hbm,
+                **_grow)
     # Share of China's domestic compute growth the chip-supply levers remove,
     # year by year (t in years from China's anchor); the slider is constant.
     _sup = _cn_src_supply_cut(
