@@ -619,6 +619,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     bends a country's compute; `compute_rates` / `experiment_rates` then only
     set the history-free parts (the serial speed-up's clock, the reported
     rates). Neither slows from `compute_slow_years`: a path carries its own.
+    The post-RSI `rsi_compute_boost` multiplies a compute path's own rise,
+    so a flat or falling path gets no boost.
 
     `follower` runs a country behind the frontier (see `FOLLOWER_KEYS`): its
     human hours are those of the leader's scenario at the same ECI (run back
@@ -1040,8 +1042,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         boosting = np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
         in_force = np.where(boosting, np.clip(since / ramp, 0, 1) if ramp > 0
                             else (since >= 0).astype(float), 0.0)
-        boost_step = np.where(boosting, boost * in_force * np.where(t + dt / 2 < slow_at, compute_rate,
-                                                         compute_late) * dt, 0.0)
+        # The boost scales the frontier's own log growth over the step: the
+        # constant rate, or a supplied path's rise (none where it is flat or
+        # falls; `test_a_flat_compute_path_stays_flat_under_the_rsi_boost`).
+        growth = (np.where(t + dt / 2 < slow_at, compute_rate, compute_late) * dt
+                  if cpath is None else np.maximum(frontier_log(end) - frontier_log(t), 0.0))
+        boost_step = np.where(boosting, boost * in_force * growth, 0.0)
         compute_log = base_compute_log + boost_log + boost_step / 2
         # Experiment compute's shortfall from the frontier, and staff headcount
         # (vs today) on the draw's own RSI clock.

@@ -1011,6 +1011,18 @@ def test_a_compute_path_reproduces_constant_growth():
                                rtol=0.01, atol=0.05)
 
 
+def test_a_flat_compute_path_stays_flat_under_the_rsi_boost():
+    """The post-RSI boost scales the path's own growth, so a frozen
+    `compute_path` stays frozen after RSI however large the boost."""
+    params = dict(tk.POINT_ESTIMATE, years=6, rsi_compute_boost=3.0,
+                  rsi_compute_delay=0.0, rsi_compute_ramp=0.0)
+    grid = np.linspace(0, 6, 73)
+    run = tk.simulate(params, n=3, onset_years=np.array([0.5, 1.0, 2.0]),
+                      compute_path=(grid, np.zeros((3, len(grid)))))
+    assert np.isfinite(run["events"]["RSI"]).all()
+    np.testing.assert_allclose(run["workflow_progress"]["compute_log"], 0.0, atol=1e-12)
+
+
 def test_a_leak_cut_fades_over_the_absorption_window():
     """Cutting the leak today stops ideas leaving the leader from today: those
     already on their way keep arriving, spread over the absorption years, so

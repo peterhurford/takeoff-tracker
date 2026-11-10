@@ -389,7 +389,8 @@ run; everything else is the same equation.
   cumulative ECI is `follow_eci`.
 
 `compute_path` / `experiment_path` replace constant compute growth with log paths, for
-policy that bends a country's compute over time; `draw_rows` runs a subset of a full run's
+policy that bends a country's compute over time (the post-RSI boost then multiplies the
+path's own rise, so a frozen path stays frozen); `draw_rows` runs a subset of a full run's
 scenarios with their exact draws, so a follower can pair with every k-th leader scenario.
 
 Because distillation is proportional to the gap, the lag is held near the gap's time
