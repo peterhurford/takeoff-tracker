@@ -10420,16 +10420,17 @@ def render_revenue():
             _backtest_summary(all_bt)
 
     # --- Milestone arrival estimates ---
-    # A milestone already reached is dropped. The floor is per series, so
-    # switching the combined line on never hides a company's own rows.
-    _rev_reached = max(oai_display_vals + ant_display_vals)
+    # A milestone the series had reached by *Project as of* is dropped; one
+    # reached later is still a prediction, so a backtest keeps it.
+    def _rev_reached(vals_fit):
+        return max(vals_fit) if vals_fit else 0.0
     if show_milestones:
         with st.expander("Milestone details"):
-            _ms_rows = [("OpenAI", oai_proj_dates, oai_traj, _rev_reached),
-                        ("Anthropic", ant_proj_dates, ant_traj, _rev_reached)]
+            _ms_rows = [("OpenAI", oai_proj_dates, oai_traj, _rev_reached(oai_vals_fit)),
+                        ("Anthropic", ant_proj_dates, ant_traj, _rev_reached(ant_vals_fit))]
             if show_combined:
                 _ms_rows.append((_REV_COMBINED_NAME, comb_proj_dates, comb_traj,
-                                 max(comb_display_vals)))
+                                 _rev_reached(comb_vals_fit)))
             for name, p_dates, traj, reached in _ms_rows:
                 if p_dates is None or traj is None:
                     continue

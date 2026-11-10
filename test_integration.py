@@ -1094,6 +1094,26 @@ class TestRevenueDefaults:
                                         *vp._parse_revenue(vp._ANTHROPIC_REVENUE))
         assert at.slider(key="comb_n_recent").value == len(cv)
 
+    @pytest.mark.parametrize("as_of", ["Dec 2025", None])
+    def test_milestones_floor_at_each_series_record_by_as_of(self, as_of):
+        """Each company's milestone table starts at the first milestone above
+        its own record by *Project as of*, so a backtest still predicts the
+        ones reached later and one company's lead never hides the other's."""
+        import visualize_projection as vp
+        at = self._rev_app()
+        if as_of:
+            sb = at.selectbox(key="rev_proj_as_of")
+            sb.set_value(next(o for o in sb.options if o.startswith(as_of))).run()
+            _assert_no_error(at, "Revenue / backtest")
+        tables = [el.value for el in at.table if "Milestone" in el.value.columns]
+        cut = datetime.strptime(as_of, "%b %Y") if as_of else None
+        for raw, tbl in zip([vp._OPENAI_REVENUE, vp._ANTHROPIC_REVENUE], tables):
+            dates, vals = vp._parse_revenue(raw)
+            rec = max(v for d, v in zip(dates, vals)
+                      if cut is None or (d.year, d.month) <= (cut.year, cut.month))
+            first = next(lbl for v, lbl in vp._REV_MILESTONES if v > rec)
+            assert tbl["Milestone"].iloc[0] == first
+
 
     def test_chinese_labs_chart_renders_every_lab(self):
         import json
