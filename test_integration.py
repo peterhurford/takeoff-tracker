@@ -735,6 +735,28 @@ class TestRliMilestones:
                 assert arrive.iloc[i]["Median"] == record['date'].strftime('%b %Y')
 
 
+class TestRliProjectionLine:
+    @pytest.mark.parametrize("basis", [None, "Superexponential (logit)"])
+    def test_line_runs_inside_the_fan(self, basis):
+        """The blue line is the fan's median, so it starts at the record (the
+        fan's floor) and stays inside the 50% band, rather than at the OLS fit."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "rli"
+        if basis:
+            at.session_state["rli_proj_basis"] = basis
+        at.run()
+        _assert_no_error(at, "RLI tab")
+        traces = json.loads(at.get("plotly_chart")[0].proto.spec)["data"]
+        line = next(t for t in traces if t.get("name", "").startswith("Projection"))
+        band = next(t for t in traces if t.get("name") == "50% CI")
+        n = len(line["y"])
+        hi, lo = band["y"][:n], band["y"][n:][::-1]
+        assert line["y"][0] == pytest.approx(vp.rli_frontier_all[-1]["rli_score"])
+        for i in range(0, n, max(n // 20, 1)):
+            assert lo[i] - 1e-9 <= line["y"][i] <= hi[i] + 1e-9, i
+
+
 class TestMeasuredCard:
     @pytest.mark.parametrize("tab", ["metr", "eci", "rli"])
     def test_measured_card_shows_no_ci(self, tab):

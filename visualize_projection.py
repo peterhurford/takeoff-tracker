@@ -6225,8 +6225,9 @@ def render_rli():
     else:
         all_logit_traj = rli_proj_start_logit[:, None] + proj_days_arr[None, :] * rli_proj_logit_slope[:, None]
 
-    # Convert to percentage space
-    all_trajectories = _inv_logit(all_logit_traj) * 100
+    # Convert to percentage space, floored at the record as the cards are.
+    all_trajectories = np.maximum(_inv_logit(all_logit_traj) * 100, rli_current_score)
+    rli_median_traj = np.median(all_trajectories, axis=0)
 
     pct5 = np.percentile(all_trajectories, 5, axis=0)
     pct10 = np.percentile(all_trajectories, 10, axis=0)
@@ -6288,16 +6289,10 @@ def render_rli():
                         name=f'Segment {si+1} (2x odds: {seg_dt:.0f}d)',
                         hovertext=hover_seg, hoverinfo='text',
                     ))
-                    # Projected portion: user DT slope from last data point
+                    # Projected portion: the fan's median, from its blended start
                     _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
-                    _user_logit_slope = np.log(2) / _user_dt_center
-                    _ols_logit_at_last = seg_params[0] + seg_params[1] * d_last
-                    _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
-                    d1 = (proj_end_date - base_date).days
-                    days_proj = np.arange(d_last, d1 + 1, 1)
-                    logit_proj = _proj_intercept + _user_logit_slope * days_proj
-                    y_proj = _inv_logit(logit_proj) * 100
-                    dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+                    y_proj = rli_median_traj
+                    dates_proj = proj_dates
                     hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
                     fig.add_trace(go.Scatter(
                         x=dates_proj, y=y_proj.tolist(),
@@ -6336,16 +6331,10 @@ def render_rli():
                 name=f'OLS trend (2x odds: {rli_ols_dt:.0f}d)',
                 hovertext=hover_seg, hoverinfo='text',
             ))
-            # Projected portion: user DT slope from last data point
+            # Projected portion: the fan's median, from its blended start
             _user_dt_center = np.sqrt(rli_custom_dt_lo * rli_custom_dt_hi)
-            _user_logit_slope = np.log(2) / _user_dt_center
-            _ols_logit_at_last = rli_ols_params[0] + rli_ols_params[1] * d_last
-            _proj_intercept = _ols_logit_at_last - _user_logit_slope * d_last
-            d1 = (proj_end_date - base_date).days
-            days_proj = np.arange(d_last, d1 + 1, 1)
-            logit_proj = _proj_intercept + _user_logit_slope * days_proj
-            y_proj = _inv_logit(logit_proj) * 100
-            dates_proj = [base_date + timedelta(days=int(d)) for d in days_proj]
+            y_proj = rli_median_traj
+            dates_proj = proj_dates
             hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
             fig.add_trace(go.Scatter(
                 x=dates_proj, y=y_proj.tolist(),
@@ -6368,15 +6357,10 @@ def render_rli():
             name=f'Superexp fit (2x odds: {rli_superexp_dt_fitted:.0f}d, HL={rli_superexp_halflife}d)',
             hovertext=hover_hist, hoverinfo='text',
         ))
-        # Projected portion: use same formula as trajectories with center DT
+        # Projected portion: the fan's median
         _rli_user_dt = np.sqrt(rli_superexp_dt_ci_lo * rli_superexp_dt_ci_hi)
-        d_end = (proj_end_date - base_date).days
-        days_proj = np.arange(0, d_end - d_last + 1, 1)
-        logit_proj_growth = np.log(2) * superexp_trajectory(
-            days_proj, _rli_user_dt, rli_superexp_halflife, rli_superexp_dt_floor)
-        logit_proj = _rli_se_fitted_logit + logit_proj_growth
-        y_proj = _inv_logit(logit_proj) * 100
-        dates_proj = [rli_current['date'] + timedelta(days=int(d)) for d in days_proj]
+        y_proj = rli_median_traj
+        dates_proj = proj_dates
         hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.2f}%" for dt, y in zip(dates_proj, y_proj)]
         fig.add_trace(go.Scatter(
             x=dates_proj, y=y_proj.tolist(),
