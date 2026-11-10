@@ -7055,7 +7055,7 @@ def render_rsi(end_year):
                  "milestones are dated off released models, so anything earlier "
                  "than release pulls them back — see the note under the cards.")
         with st.expander("Advanced options"):
-            st.button("Reset to defaults", key="reset_rsi",
+            st.button("Reset evidence settings", key="reset_rsi",
                       on_click=lambda: st.session_state.update(_reset_rsi=True))
             _default_dt_lo, _default_dt_hi = _rsi_dt_ci(rsi_frontier_all, _fit_dt)
             _dt_lo_col, _dt_hi_col = st.columns(2)
@@ -7664,8 +7664,10 @@ def _render_rsi_survey(end_year):
     fig.add_annotation(
         xref='x domain', x=0.01, y=np.log10(_PC_RSI_SURVEY_TARGET_X),
         yanchor='bottom', xanchor='left', showarrow=False,
-        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}x — the milestone bar, about a "
-             "doubling and a half past the last round",
+        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}x — the milestone bar, " + (
+            f"passed by {cur['name']}" if cur['uplift'] >= _PC_RSI_SURVEY_TARGET_X
+            else f"{np.log2(_PC_RSI_SURVEY_TARGET_X / cur['uplift']):.1f} "
+                 "doublings past the last round"),
         font=dict(size=11, color='#e74c3c'))
     _add_today_diamond(fig, 'Median projection', lambda v: f"~{v:.1f}×", label="trend", log=True)
     _add_today_vline(fig)
@@ -7689,20 +7691,20 @@ def _render_rsi_survey(end_year):
         plot_bgcolor='white', paper_bgcolor='white')
     st.plotly_chart(fig, width="stretch")
 
+    _n_rounds = len(rows)
     _fn_caption(
         "Anthropic surveys its own technical staff on productivity uplift per "
-        "frontier model. The rounds differ, the newest point is an assumed "
-        "value, and the trend is fitted on the log of the multiple. Source: "
-        f"[Redacted Risk Report, August 2026, \u00a73.4.2]({_RSI_SOURCE_URL}) "
-        "and the corresponding Claude system cards.",
-        ("The rounds differ", "In who was sampled and which statistic was "
-                              "reported \u2014 hover a point for its own note."),
-        ("an assumed value", "Mythos Preview is the most recent surveyed round: "
-                             "no new survey was run for Mythos 5 or for Model 2 "
-                             "(internal), which is shown at the ~4x Mythos "
-                             "Preview reported. It is included in the fit, which "
-                             "it flattens."),
-        ("fitted on the log of the multiple", "Those four points, projected the "
+        f"frontier model: {_TK_NUMBER_WORDS[_n_rounds] if _n_rounds < 10 else _n_rounds} "
+        f"rounds since {rows[0]['date']:%b %Y}, the latest {cur['name']} at "
+        f"~{cur['uplift']:g}x. The rounds differ in sample and statistic, and the "
+        "trend is fitted on the log of the multiple. Source: "
+        f"[Redacted Risk Report, August 2026, \u00a73.4.2]({_RSI_SOURCE_URL}), "
+        f"the corresponding Claude system cards and [METR's chart]({_METR_ACCEL_SOURCE_URL}).",
+        ("differ in sample and statistic",
+         "Targeted surveys of heavy users and broad opt-in Slack polls, medians and "
+         "geometric means; the METR-chart rounds are polls METR calls very loose "
+         "evidence. Hover a point for its own note."),
+        ("fitted on the log of the multiple", f"All {_n_rounds} points, projected the "
                                               "way the CoBench fan above is, but "
                                               "only a year out \u2014 compounded "
                                               "further it leaves the chart, which "
@@ -18160,11 +18162,22 @@ def _seeded_rng(seed):
         np.random.set_state(state)
 
 
+def _tk_ultra_min(today=None):
+    """The lowest ultraintelligence threshold the input takes: the first multiple
+    of 5 above today's trained frontier plus a year of today's ECI climb, so a
+    threshold is never one the starting draws already sit at."""
+    eci_today = st.session_state.get("tk_eci_today", _TK_ECI_TODAY)
+    if not isinstance(eci_today, (int, float)) or not np.isfinite(eci_today) or eci_today <= 0:
+        eci_today = _TK_ECI_TODAY
+    level = _tk_trained_now(float(eci_today), today or _today()) + float(eci_today)
+    return float(max(_TK_ULTRA_RANGE[0], 5.0 * (np.floor(level / 5.0) + 1)))
+
+
 def _tk_ultra_eci():
     """The ECI level that counts as ultraintelligence (`tk_ultra_eci`), the
     default when unset or out of range."""
     value = st.session_state.get("tk_ultra_eci", _TK_ULTRA_ECI)
-    lo, hi = _TK_ULTRA_RANGE
+    lo, hi = _tk_ultra_min(), _TK_ULTRA_RANGE[1]
     return float(value) if isinstance(value, (int, float)) and np.isfinite(value) \
         and lo <= value <= hi else _TK_ULTRA_ECI
 
@@ -18543,9 +18556,8 @@ def _pc_rsi_eta(frontier, target_pct=_RSI_SUBSTITUTION_BAR, n=None, samples=Fals
 
 
 # The staff-survey companion: when do Anthropic researchers self-report this
-# much speedup. 10x is roughly a doubling and a half past the most recent
-# round's ~4x, so it sits just outside the measured range rather than deep in
-# the extrapolation the RSI tab's own caption warns about.
+# much speedup. Once a round reaches the target, the milestone reads as reached
+# from the data and no projection is drawn for it.
 _PC_RSI_SURVEY_TARGET_X = 10.0
 
 
@@ -18554,7 +18566,7 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     """(early, median, late) dates for self-reported speedup to reach `target_x`.
 
     The RSI tab's survey fan at its defaults — OLS on log(multiple) over
-    every round the tab fits (the carried-over `estimated` point included),
+    every round the tab fits,
     doubling time lognormal around the fit over `_rsi_survey_dt_ci()`'s
     t-widened interval, position lognormal on the fit from
     `_fan_start_on_trend()`, reaching the latest round, base width `_RSI_SURVEY_POS_FACTOR`. Returns None if the fitted slope is flat or
@@ -23824,6 +23836,20 @@ def _tk_eci_rates(params, hist=None, ppy=None):
             "pooled_b_time": pooled['b_time'] if pooled else None}
 
 
+def _tk_pace_base_parts():
+    """The 1x research pace's ECI climb at the sidebar's compute setting:
+    {'ppy' (the US frontier's 2024-25 fit, points a year), 'compute' (the
+    points compute adds), 'algo' (the rest)}, as `_tk_eci_today_pace` divides."""
+    ss = st.session_state
+    params = dict(takeoff.DEFAULTS,
+                  compute_growth=float(ss.get("tk_compute_growth",
+                                              takeoff.DEFAULTS["compute_growth"])))
+    hist = (_tk_hist_compute_rate() if ss.get("tk_dc_compute", True)
+            else np.log(params["compute_growth"]))
+    r = _tk_eci_rates(params, hist)
+    return {"ppy": r["ppy"], "compute": r["ppy"] - r["algo_ppy"], "algo": r["algo_ppy"]}
+
+
 def _tk_eci_today_pace(params, hist, eci_today):
     """Today's software pace over the fitted ECI line's: today's algorithmic
     points a year (`eci_today` less compute's share) over the fit's. Software
@@ -24658,12 +24684,17 @@ def _tk_in_time(years, prep="in"):
 def _tk_rsi_odds_text(rsi, horizon, today, end_date):
     """The line under the RSI definition: the RSI card's 10th and 50th
     percentiles as times from now, so it moves with the card."""
-    def when(q, say):
+    def chance(q, what):
         value = takeoff.quantile(rsi, q, horizon)
-        return say(value) if np.isfinite(value) else f"not before {end_date:%b %Y}"
-    return ("Based on the below evidence, we think this runaway RSI is likely to be "
-            f"technically possible {when(0.1, _tk_in_time)} (10%) and "
-            f"{when(0.5, lambda v: 'probably ' + _tk_in_time(v, 'within'))} (50%).")
+        if np.isfinite(value):
+            return f"a {q:.0%} chance{what} {_tk_in_time(value, 'within')}"
+        return f"less than a {q:.0%} chance{what} by {end_date:%b %Y}"
+    return (f"The model below gives {chance(0.1, ' that RSI is technically possible')} "
+            f"and {chance(0.5, '')}.")
+
+
+_TK_ODDS_CAVEAT = ("Dates are shares of simulated scenarios under the assumptions in the "
+                   "sidebar, not calibrated forecasts. ECI is Epoch's Capabilities Index.")
 
 
 # Steps the takeoff tab's loading bar walks through, each (share done, text).
@@ -25413,7 +25444,7 @@ def _cn_tk_source_rows(cn, today, horizon_year):
             continue
         rows.append({"Source of China's ECI gain": name,
                      **{label: f"{np.median(values[:, k]):+.1f}" for label, k in cols}})
-    rows.append({"Source of China's ECI gain": "Total (median scenario)",
+    rows.append({"Source of China's ECI gain": "Total (median)",
                  **{label: f"{np.median(cn['paths'][:, k] - cn['level']):+.1f}"
                     for label, k in cols}})
     return rows
@@ -25632,9 +25663,9 @@ def _tk_render_china(run, today, view_end, end_date, horizon):
     st.plotly_chart(_cn_tk_pace_fig(_cn_tk_pace(cn, run["eci"], today), today),
                     width="stretch")
     _fn_caption(
-        "Where China's ECI gains come from, in the median scenario.",
-        ("median scenario",
-         "Each source's median across scenarios, so the rows need not add to the total. "
+        "Where China's ECI gains come from: each source's median across scenarios, so "
+        "the rows do not add up to the total.",
+        ("median across scenarios",
          "Compute is training compute's share of China's deployed models; own research its "
          "algorithms; distillation and US software what the US hands it."))
     st.table(_cn_tk_source_rows(cn, today, view_end.year))
@@ -25742,25 +25773,57 @@ def _render_takeoff(loading):
     st.markdown("---")
     with st.sidebar:
         st.subheader("Takeoff assumptions")
-        st.button("Reset to defaults", key="tk_reset", on_click=_tk_reset)
+        st.button("Reset takeoff assumptions", key="tk_reset", on_click=_tk_reset)
         st.caption("Coding automation comes from the automated coder projection; "
                    "its settings are in the RSI evidence section.")
         _ship_lag_inputs(st, china=False)
         with st.expander("What decides ultraintelligence", expanded=True):
-            number("Ultraintelligence threshold (ECI)", "ultra_eci", *_TK_ULTRA_RANGE, 5.0,
-                   "The ECI level that counts as ultraintelligence. Default 250 is about two "
-                   "more GPT-4-to-GPT-6-sized jumps (43 points each) past today's frontier; "
-                   "each extra jump is about +43. A model at this level also counts as "
-                   "having automated coding, so moving it can move RSI too. The Pacing "
-                   "tab's ultraintelligence milestone uses the same level.")
-            st.caption("Across a plausible range, r moves the ultraintelligence date "
-                       "\u22125 to +6 months, judgment \u22123 to +2, parallelization not at "
-                       "all; \u03c1, more AI copies, the scale-dependent share, faster cycles "
-                       "and autopilot about 2\u20133 each; the training-run wait 1\u20133 (7 "
-                       "sooner if no gain waits). Compute growth after RSI, delayed 18 "
-                       "months, barely moves it; with no delay, 2\u00d7 brings it 5 months "
-                       "sooner. Everything else under Advanced moves it a few months at "
-                       "most.")
+            _j_lo_name, _j_lo, _j_hi_name, _j_hi = _TK_ULTRA_JUMP
+            _jump = _j_hi - _j_lo
+            _trained = _tk_trained_now(float(st.session_state["tk_eci_today"]), _today())
+            _ultra_min = _tk_ultra_min()
+            number("Ultraintelligence threshold (ECI)", "ultra_eci", _ultra_min,
+                   _TK_ULTRA_RANGE[1], 5.0,
+                   f"The ECI level that counts as ultraintelligence. Default "
+                   f"{_TK_ULTRA_ECI:g} is about {(_TK_ULTRA_ECI - _trained) / _jump:.1f} "
+                   f"{_j_lo_name}-to-{_j_hi_name}-sized jumps ({_jump:.0f} points each) "
+                   f"past today's trained frontier, ~{_trained:.0f}; each extra jump is "
+                   f"about +{_jump:.0f}. The lowest setting, {_ultra_min:g}, is the first "
+                   "multiple of 5 past a year of today's ECI growth. A model at this "
+                   "level also counts as having automated coding, so moving it can move "
+                   "RSI too. The Pacing tab's ultraintelligence milestone uses the same "
+                   "level.")
+            _base = _tk_pace_base_parts()
+            number("Today's ECI growth (points a year)", "eci_today", 10.0, 60.0, 0.5,
+                   on_change=_tk_reread_evidence, help=
+                   "How fast the trained frontier's ECI climbs today. This sets today's "
+                   "research pace, so it moves every date: pace = (this, less the "
+                   f"{_base['compute']:.2f} points a year compute adds) ÷ the "
+                   f"{_base['algo']:.2f} algorithmic points a year of the US frontier's "
+                   "2024–25 average. The software doubling time under Advanced "
+                   "is sped up by that pace. Default: the running best of every US lab's "
+                   "models on Epoch's scale, Anthropic's internal ones included, "
+                   "smoothed, at the latest model "
+                   f"(*Research pace so far*, section 1). The 2024–25 average, "
+                   f"{_base['ppy']:.2f}, is 1×. "
+                   "Changing it re-reads the evidence at that pace: the judgment and coding "
+                   "elasticities and the calibration's capability growth reset.")
+            number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
+                   "Discounts coding and judgment gains beyond today. Zero removes "
+                   "AI feedback; baseline research and compute can still improve models.")
+            _fn_caption("In a one-at-a-time sweep, r from 0.5 to 2 moves the "
+                        "ultraintelligence date +4 to \u22123 months, judgment from half to "
+                        "double +1 to \u22122, parallelization from 0.3 to 0.8 0 to \u22121; "
+                        "\u03c1, more AI copies, the scale-dependent share, faster cycles and "
+                        "autopilot 1\u20132 each; the training-run wait from 12.5% to 50% +1 "
+                        "to \u22122 (5 sooner if no gain waits). Compute growth after RSI, "
+                        "delayed 18 months, does not move it; with no delay, 2\u00d7 brings it "
+                        "2 months sooner. Everything else under Advanced moves it a month at "
+                        "most.",
+                        ("one-at-a-time sweep",
+                         "Run at seed 42 on the November 2026 defaults, when the date was "
+                         "Nov 2028; it is not rerun live, so the shifts can drift as the "
+                         "data updates."))
             number("Parallelization exponent", "parallelization", 0.1, 1.0, 0.1,
                    "0.5 gives square-root returns to more coding labor or experiment compute.")
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
@@ -25824,7 +25887,8 @@ def _render_takeoff(loading):
                    "to Forethought, whose model has no wait: 100 here on a one-week fast "
                    "cycle gives 56% of scenarios 3 years of progress in RSI's first year "
                    "and 24% 10 years, about Forethought's 57% and 18%; adding \u03c1 at 0.5 "
-                   "with no spread gives 94% and 63% (24% and 2% at the defaults).")
+                   "with no spread gives 94% and 63%. The *Progress in RSI's first "
+                   "year* card's help gives the shares at the current settings.")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
                    "Multiplies each scenario's log compute growth after its own RSI "
@@ -25858,7 +25922,7 @@ def _render_takeoff(loading):
                    "direction over buys research only as AI judgment grows.")
             st.caption("RSI otherwise follows the coding-automation date, and research "
                        "direction's starting share and halving time under Advanced.")
-        with st.expander("Advanced (small effects)"):
+        with st.expander("Advanced"):
             st.checkbox("Use the Data Centers tab's compute projection", key="tk_dc_compute",
                         help="Each scenario's compute grows at the average rate of one "
                              "sampled US largest-training-run trajectory from the Data "
@@ -25870,7 +25934,7 @@ def _render_takeoff(loading):
             number("Coding date tracks research direction (correlation)", "coding_pairing",
                    0.0, 1.0, 0.1,
                    "How closely each scenario's coding-automation date, from the RSI "
-                   "tab, follows when its research direction could be handed over: a "
+                   "evidence section, follows when its research direction could be handed over: a "
                    "late date goes with a scenario slow to hand it over. 0 pairs them at "
                    "random; 1 matches them exactly. Either way direction waits for coding. "
                    "The automated coder projection's dates are unchanged. 0.9 is a judgment: "
@@ -25930,18 +25994,6 @@ def _render_takeoff(loading):
                    "about 1.7\u00d7. Epoch finds today's scaling feasible through 2030; "
                    "past it, power and spending limits bind, and no published estimate "
                    "gives the rate. 100 keeps today's growth.")
-            number("Today's ECI growth (points a year)", "eci_today", 10.0, 60.0, 0.5,
-                   on_change=_tk_reread_evidence, help=
-                   "How fast the trained frontier's ECI climbs today. This sets today's "
-                   "research pace, so it moves every date: pace = (this, less the ~3 "
-                   "points a year compute adds) ÷ the ~13 algorithmic points a year of "
-                   "the US frontier's 2024–25 average. The software doubling time below "
-                   "is sped up by that pace. Default: the running best of every US lab's "
-                   "models on Epoch's scale, Anthropic's internal ones included, "
-                   "smoothed, at the latest model "
-                   "(*Research pace so far*, section 1). The 2024–25 average, ~16.4, is 1×. "
-                   "Changing it re-reads the evidence at that pace: the judgment and coding "
-                   "elasticities and the calibration's capability growth reset.")
             st.markdown("**Feedback starting today**")
             number("Undeployed research today (months of baseline progress)",
                    "pipeline_months", 0.0, 12.0, 0.5,
@@ -25949,9 +26001,10 @@ def _render_takeoff(loading):
                    "successor incorporation. The same-compute reference starts with "
                    "the identical backlog. Zero starts with an empty pipeline.")
             number("Coding human hours already automated today (%)", "coding_today", 0.0, 94.0, 1.0,
-                   "Assumed share, not code authorship. The RSI date anchors 95% automation. "
-                   "Between today and that date, remaining coding hours decline smoothly. "
-                   "For past RSI dates the coding milestone is already satisfied.")
+                   "Assumed share, not code authorship. Each scenario's coding-automation "
+                   "date anchors 95% automation. Between today and that date, remaining "
+                   "coding hours decline smoothly. For a coding-automation date already "
+                   "past, the coding milestone is already satisfied.")
             number("Fast validation cycle (months)", "fast_months", 0.25, 12.0, 0.25,
                    "Each cycle validates discoveries available at its start. Like successor "
                    "training, unfinished work cannot improve the available research system.")
@@ -26034,9 +26087,6 @@ def _render_takeoff(loading):
             number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
                    "Default fitted from the staff survey above: the yearly growth in "
                    "self-reported output, read as AI coding labor.")
-            number("Extra AI research output that transfers (%)", "transfer", 0, 100, 5,
-                   "Discounts coding and judgment gains beyond today. Zero removes "
-                   "AI feedback; baseline research and compute can still improve models.")
             number("AI research judgment today (× people's)", "judgment_today", 0.25, 4.0, 0.05,
                    "AI's judgment against people's on the research direction it does "
                    "today. Quality is normalized to 1 today, so it moves only what "
@@ -26143,7 +26193,9 @@ def _render_takeoff(loading):
         rsi, eci_base = result["events"]["RSI"], run["eci_base"]
         experiment_starts, pace_today, pace_yield = (
             run["experiment_starts"], run["pace_today"], run["pace_yield"])
-        rsi_odds.markdown(_tk_rsi_odds_text(rsi, horizon, today, end_date))
+        with rsi_odds.container():
+            st.markdown(_tk_rsi_odds_text(rsi, horizon, today, end_date))
+            st.caption(_TK_ODDS_CAVEAT)
         def _card(col, label, samples, help):
             col.metric(label, _tk_date(takeoff.quantile(samples, 0.5, horizon), today),
                        help=help + f" {100 * np.mean(samples <= horizon):.0f}% of scenarios "

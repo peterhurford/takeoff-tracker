@@ -71,8 +71,8 @@ date, `rsi_compute_boost` (default 2) multiplies its log compute growth, standin
 speeding chip design, fabs and spending: Forethought's chip-technology and chip-production
 feedback loops. It waits 18 months (a chip generation, a fab's build) and ramps in over a
 year; the frozen-AI reference never gets it. The size is an assumption. With the delay the
-ultraintelligence median moves a month at most; at once, 2x brings it 6 months sooner,
-since scale-dependent gains then wait less. The
+ultraintelligence median does not move (seed 42, November 2026 defaults); at once, 2x
+brings it 2 months sooner than 1x, since scale-dependent gains then wait less. The
 other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage

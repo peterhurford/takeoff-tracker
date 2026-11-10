@@ -144,7 +144,9 @@ scan that counts it runs on through thousands of lines. Tokenize, or edit by han
 *Share view* is drawn at the end of the run, once the URL is synced, into
 `_sidebar_tools`, a slot reserved right under the tab picker, so it sits above every
 tab's controls. Every tab's main reset reads *Reset to defaults*
-(`test_share_view_sits_under_the_tab_picker_on_every_tab`).
+(`test_share_view_sits_under_the_tab_picker_on_every_tab`), except Takeoff's two, which
+name what they reset: *Reset takeoff assumptions* and *Reset evidence settings*
+(`test_resets_name_what_they_reset`).
 
 Above it, `_render_changed_badge` shows *N settings changed* when any tracked setting is
 off its default, counted as the URL's tracked keys (`_changed_settings`), so it counts

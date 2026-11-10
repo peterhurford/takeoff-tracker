@@ -1966,17 +1966,20 @@ class TestTakeoffTab:
         median = next(m.value for m in at.metric if m.label == rsi_label)
         assert median != "Beyond horizon"
         # The line under the RSI definition gives the card's median as months from now.
-        odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
-        assert re.search(r"possible (in \S+ (months?|years)|within a month) \(10%\)", odds)
+        odds = next(m.value for m in at.markdown if m.value.startswith("The model below gives"))
+        assert re.search(r"a 10% chance that RSI is technically possible within "
+                         r"(\S+ (months?|years)|a month)", odds)
         card = datetime.strptime(median, "%b %Y")
         card_months = 12 * (card.year - date.today().year) + card.month - date.today().month
-        said = re.search(r"probably within (\d+) months \(50%\)", odds)
+        said = re.search(r"a 50% chance within (\d+) months", odds)
         assert said and abs(int(said.group(1)) - card_months) <= 1
+        import visualize_projection as vp
+        assert vp._TK_ODDS_CAVEAT in [c.value for c in at.caption]
         at.number_input(key="tk_human_floor").set_value(6.0).run()
         _assert_no_error(at, "Takeoff / persistent human bottleneck")
         assert next(m.value for m in at.metric if m.label == rsi_label) == "Beyond horizon"
-        odds = next(m.value for m in at.markdown if "runaway RSI is likely" in m.value)
-        assert "Beyond horizon" not in odds and "probably within" not in odds
+        odds = next(m.value for m in at.markdown if m.value.startswith("The model below gives"))
+        assert "Beyond horizon" not in odds and "less than a 50% chance by" in odds
         assert not any(m.label == "ECI when RSI arrives" for m in at.metric)
         assert _qp(at, "tk_human_floor") == ["6.0"]
         # The bar's own help says why: it names the floor it now sits under, and
@@ -2061,7 +2064,7 @@ class TestTakeoffTab:
         assert second["y"] == curve["y"]
 
     def test_horizon_resets_and_rsi_settings_survive_reset(self):
-        """*Reset to defaults* restores the Takeoff horizon but keeps the RSI
+        """*Reset takeoff assumptions* restores the Takeoff horizon but keeps the RSI
         settings Takeoff inherits."""
         at = _fresh_app()
         at.query_params.update(tab="takeoff", rsi_atc_penalty="50")
@@ -2179,15 +2182,73 @@ class TestTakeoffTab:
         """A model at the ultraintelligence threshold has automated coding, on
         both sides, even with the threshold just above today's frontier."""
         at = _fresh_app()
-        at.query_params.update(tab="takeoff", tk_ultra_eci="180")
+        at.query_params["tab"] = "takeoff"
         at.run()
+        lowest = at.number_input(key="tk_ultra_eci").min
+        at.number_input(key="tk_ultra_eci").set_value(lowest).run()
         cards = {m.label: m.value for m in at.metric}
 
         def month(v):
             d = datetime.strptime(v, "%b %Y")
             return d.year * 12 + d.month
-        assert month(cards["Full coding automation"]) <= month(cards["Ultraintelligence: ECI 180"])
+        assert month(cards["Full coding automation"]) <= month(cards[f"Ultraintelligence: ECI {lowest:g}"])
         assert month(cards["China: Automated coder"]) <= month(cards["China: Ultraintelligence"])
+
+    def test_ultra_minimum_sits_a_year_past_the_trained_frontier(self):
+        """The threshold's lowest setting is a multiple of 5 above today's
+        trained frontier plus a year of today's climb."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        _assert_no_error(at, "Takeoff / ultra minimum")
+        lowest = at.number_input(key="tk_ultra_eci").min
+        floor = vp._tk_trained_now(vp._TK_ECI_TODAY) + vp._TK_ECI_TODAY
+        assert lowest % 5 == 0 and floor < lowest <= max(floor + 5, vp._TK_ULTRA_RANGE[0])
+        assert f"{lowest:g}" in at.number_input(key="tk_ultra_eci").proto.help
+
+    def test_pace_help_quotes_the_live_base(self):
+        """Today's-growth help quotes the 2024-25 compute/algorithm split the
+        model computes, not typed numbers."""
+        import visualize_projection as vp
+        import takeoff_model
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        r = vp._tk_eci_rates(dict(takeoff_model.DEFAULTS), vp._tk_hist_compute_rate())
+        text = at.number_input(key="tk_eci_today").proto.help
+        assert f"{r['ppy']:.2f}" in text and f"{r['algo_ppy']:.2f}" in text
+
+    def test_pace_and_transfer_sit_with_the_threshold(self):
+        """Today's ECI growth and transfer sit under *What decides
+        ultraintelligence*, not *Advanced*."""
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        decides = next(e for e in at.sidebar.expander
+                       if e.label == "What decides ultraintelligence")
+        advanced = next(e for e in at.sidebar.expander if e.label == "Advanced")
+        keys = {w.key for w in decides.number_input}
+        assert {"tk_ultra_eci", "tk_eci_today", "tk_transfer"} <= keys
+        assert not {"tk_eci_today", "tk_transfer"} & {w.key for w in advanced.number_input}
+
+    def test_resets_name_what_they_reset(self):
+        """Takeoff's two resets say which half of the tab they reset."""
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        assert at.button(key="tk_reset").label == "Reset takeoff assumptions"
+        assert at.button(key="reset_rsi").label == "Reset evidence settings"
+
+    def test_china_sources_total_is_a_median(self):
+        """The China source table's rows are medians, so the total row says so
+        and the caption says they do not add up."""
+        at = _fresh_app()
+        at.query_params["tab"] = "takeoff"
+        at.run()
+        tab = next(t for t in at.table if "Source of China's ECI gain" in t.value.columns)
+        assert "Total (median)" in list(tab.value["Source of China's ECI gain"])
+        assert any("do not add up" in c.value for c in at.caption)
 
     def test_china_section_says_where_each_side_starts(self):
         """The starting table says where each side starts: the US from its

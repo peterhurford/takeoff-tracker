@@ -129,20 +129,20 @@ integrated step by step alongside the actual path (`reference_gained`), not by t
 closed-form `reference_software`, since its labor and experiments now grow differently. The
 pace chart's factors split exactly: compute with neither AI help nor extra staff, staff's
 addition at the share people still do (zero on autopilot), AI the rest.
-The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, today's
-defaults; months to ultraintelligence from Nov 2029): r (0.5/2: +6/−5), the judgment
-elasticity (half/double: +2/−3), parallelization (0.8/0.3: 0/0), ρ (−0.5/0: +2/−1),
-`ai_copies` (0/2: +3/−2), the training-run wait `fast_share` (12.5/50%: +1/−3; 100%: −7),
-`scale_dependent` (25/75%: −3/+3), `serial_speedup` and `rsi_autopilot` (off: +3, +2) and `rsi_compute_boost` (default 2×;
-under *Advanced*, the software ceiling moves it −2 if removed, +2 at 3–8 orders of
-magnitude). The boost multiplies each draw's log compute growth after its own
+The sidebar leads with the parameters of a one-at-a-time sweep (seed 42, 5,000 samples,
+the November 2026 defaults; months to ultraintelligence from Nov 2028): r (0.5/2: +4/−3),
+the judgment elasticity (half/double: +1/−2), parallelization (0.3/0.8: 0/−1), ρ (−0.5/0:
++1/−1), `ai_copies` (0/2: +1/−1), the training-run wait `fast_share` (12.5/50%: +1/−2;
+100%: −5), `scale_dependent` (25/75%: −1/+2), `serial_speedup` and `rsi_autopilot` (off:
++2, +1) and `rsi_compute_boost` (default 2×; under *Advanced*, the software ceiling moves
+it −1 if removed, +1 at 3–8 orders of magnitude, and data-center compute −1 off). The
+sidebar caption quotes these as fixed text, footnoted with the sweep's date. The boost multiplies each draw's log compute growth after its own
 RSI date, waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
 `test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it moves the
-ultraintelligence median a month at most; switched on at once, 2× brings it 6 months
-sooner, since scale-dependent gains then wait less. The rest,
-data-center compute included (~1 month), sit in one *Advanced* expander. Retarget that
+ultraintelligence median not at all; switched on at once, 2× brings it 2 months
+sooner than 1× with no delay. The rest sit in one *Advanced* expander. Retarget that
 grouping, and the expander's caption, if a rerun of the sweep reorders them.
 AI judgment is gated by the direction stage's human share, uncapped
 (`test_ai_judgment_only_counts_where_ai_directs_research`), at `judgment_today` (default 1)
@@ -163,8 +163,16 @@ never): its capability has passed any coding milestone
 draw's ECI first reaches `tk_ultra_eci`, interpolated inside the month (`_tk_first_reach`, as
 Pacing's `_pc_cross_years` reads it; ECI at RSI and at coding is read the same way,
 `_tk_path_at`) (*Ultraintelligence threshold*, default
-`_TK_ULTRA_ECI` = 250, read by `_tk_ultra_eci`, which falls back to 250 outside
-`_TK_ULTRA_RANGE`; `_tk_run` passes it to `_tk_eci` as `ultra_level`, which every card,
+`_TK_ULTRA_ECI` = 250, read by `_tk_ultra_eci`, which falls back to 250 below
+`_tk_ultra_min()` or above `_TK_ULTRA_RANGE`'s top. The minimum is the first multiple of 5
+above today's trained frontier plus a year of `tk_eci_today`'s climb, so the threshold can
+never sit at or under a model that already exists
+(`test_ultra_minimum_sits_a_year_past_the_trained_frontier`); the input's help gives 250 in
+`_TK_ULTRA_JUMP`s past that frontier. *Today's ECI growth* and *transfer* sit beside it under
+*What decides ultraintelligence*, not under *Advanced*
+(`test_pace_and_transfer_sit_with_the_threshold`), and the pace help quotes
+`_tk_pace_base_parts()`, the 2024–25 compute and algorithmic split at the current compute
+setting (`test_pace_help_quotes_the_live_base`); `_tk_run` passes it to `_tk_eci` as `ultra_level`, which every card,
 chart and caption reads, and Pacing's milestone takes it from there). Raising it moves RSI's
 late tail through the coding shortcut, not its median
 (`test_ultraintelligence_threshold_moves_the_card_chart_and_explainer`). The explainer under
@@ -183,7 +191,9 @@ at full automation, so its hover says to compare loosely. The loop, brakes and t
 the tab, above the evidence: they render into a `st.container()` slot made before
 `render_rsi`, since they need its settings first. The RSI definition under the header is
 followed by `_tk_rsi_odds_text`, the RSI card's 10th and 50th percentiles as times from now
-(`_tk_in_time`: "in nine months", "within 15 months"), drawn into a
+(`_tk_in_time`: "in nine months", "within 15 months"), each as "a 10% chance ... within",
+with `_TK_ODDS_CAVEAT` (shares of simulated scenarios, not calibrated forecasts) as a
+caption under it, drawn into a
 slot filled once the scenarios run so it always matches the card
 (`test_grounded_thresholds_and_workflow_floor`). The cards' dates (`_tk_date`) round to the
 nearest month the same way, so 8.6 months from Nov 10 reads Aug, not Jul
@@ -220,8 +230,8 @@ Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv
 for assumed historical compute and coding gains, and fits a quality elasticity blended with
 the prior. A supplied validated-progress ratio overrides the experiment proxy. Matched-stage
 human hours can set current shares/halving times; missing inputs are zero, not invented data.
-The `tk_cal_` and `tk_measure_` inputs round-trip in URLs. *Reset to defaults* resets all
-Takeoff inputs and preserves RSI. Workflow fit callbacks validate before changing widgets.
+The `tk_cal_` and `tk_measure_` inputs round-trip in URLs. *Reset takeoff assumptions* resets all
+Takeoff inputs and preserves RSI's; *Reset evidence settings* resets the evidence half. Workflow fit callbacks validate before changing widgets.
 
 The model's source digest is checked on app reruns, reloads stale imported model code, and
 is an explicit argument to `_tk_simulate`'s Streamlit cache. Preserve this dependency when
