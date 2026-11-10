@@ -19,6 +19,15 @@ The full tab table, plus the UK Cyber, ECI organization-matching and Frontier Th
 | Frontier Thresholds | `frontier_thresholds.render(st)` | `frontier_thresholds.json` | dated threshold events per lab and risk category; no projection (see *Frontier Thresholds* below) |
 | Release Lag | `render_release_lag()` | `metr_aeci.csv` (`produced`) + ECI | days: the *snapshot lag* (each released Claude model, training finish to release, `_rl_snapshot_rows`) against the *frontier lead* (each internal model to the first Claude or US release at its ECI, `_rl_lead_rows`; unmatched models lead by at least the days so far). The lead is what `us_ship_lag` means; the snapshot lag is what ECI's *Date at training finish* (`eci_trained`, default on, `_eci_redate_trained`) moves non-Anthropic US releases back by, Anthropic's taking METR's own finish dates (`test_training_finish_dates_fable_5_2_as_model_3_early`, `test_it_shows_snapshot_lag_and_frontier_lead`) |
 
+## Project through and card dates
+
+METR, ECI, RLI, UK Cyber, Revenue and Employment offer `_end_year_options()` (this year and
+the next three) and default to `_default_end_year()`, the year after this one or after the
+latest row, whichever is later (Employment one more). `_proj_end()` keeps a projection at
+least two days long when the data already passes the chosen year. Projection cards come
+from `_card_targets()`, which drops any date not after today. `TestEndYearFromToday` and
+`test_cards_are_dated_after_today` guard these.
+
 ## UK Cyber tab caveats
 
 Five load-bearing constraints; don't "simplify" them away:

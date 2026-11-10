@@ -718,7 +718,46 @@ class TestAllTracked:
         assert defaults["metr_proj_basis"] == "Piecewise linear"
         assert defaults["log_scale"] is True
         assert defaults["rli_proj_basis"] == "Linear (logit)"
-        assert defaults["rev_end_year"] == 2026
+        assert defaults["rev_end_year"] in vp._end_year_options()
+
+
+class TestEndYearFromToday:
+    """*Project through* choices, defaults and card dates come from today, and
+    a projection never runs backwards when the data passes the chosen year."""
+
+    def test_options_start_this_year(self):
+        assert vp._end_year_options()[0] == datetime.now().year
+
+    def test_default_runs_past_the_latest_row(self):
+        y = datetime.now().year
+        assert vp._default_end_year([datetime(y - 2, 1, 1)]) == y + 1
+        assert vp._default_end_year([datetime(y + 1, 3, 1)]) == y + 2
+        _, defaults = vp._all_tracked()
+        for k in ("metr_end_year", "rli_end_year", "rev_end_year", "eci_end_year",
+                  "ukc_end_year", "emp_end_year"):
+            assert defaults[k] in vp._end_year_options(), k
+            assert defaults[k] > y, k
+
+    def test_projection_end_follows_data_past_the_year(self):
+        last = datetime(2027, 3, 1)
+        assert vp._proj_end(2026, last) == last + timedelta(days=1)
+        assert vp._proj_end(2028, last) == datetime(2028, 12, 31)
+
+    def test_revenue_projects_from_a_row_past_the_end(self):
+        dates = [datetime(2025, 1, 1), datetime(2025, 7, 1), datetime(2026, 1, 1),
+                 datetime(2027, 3, 1)]
+        out = vp._rev_fit_and_project(dates, [1.0, 2.0, 4.0, 9.0], 4,
+                                      datetime(2026, 12, 31), n_samples=50)
+        assert len(out[0]) >= 2 and len(out[1][50]) == len(out[0])
+
+    def test_card_dates_are_after_today(self):
+        today = datetime.now()
+        for junes in ((0,), (1,)):
+            cards = vp._card_targets(junes)
+            assert cards and all(d > today for _, d in cards)
+            assert [d for _, d in cards] == sorted(d for _, d in cards)
+        assert ("End of " + str(today.year + 1), datetime(today.year + 1, 12, 31)) \
+            in vp._card_targets()
 
 
 class _MockStreamlit:

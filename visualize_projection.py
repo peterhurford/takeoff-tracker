@@ -342,6 +342,40 @@ def fmt_hrs(h, hours_only=False):
     return f"{y}y{rem_mo}mo"
 
 
+_END_YEAR_CHOICES = 4  # *Project through* offers this year and the next three
+
+
+def _end_year_options():
+    """*Project through* choices: this year and the following ones."""
+    y = datetime.now().year
+    return list(range(y, y + _END_YEAR_CHOICES))
+
+
+def _default_end_year(dates):
+    """The year after this one or after the latest dated row, whichever is
+    later, so a default projection runs at least a year; capped at the last
+    choice `_end_year_options` offers."""
+    y = max([datetime.now().year] + [d.year for d in dates]) + 1
+    return min(y, _end_year_options()[-1])
+
+
+def _proj_end(end_year, last_date):
+    """A *Project through* year's Dec 31, or the day after `last_date` when the
+    data already runs past it, so the projection has at least two days."""
+    return max(datetime(int(end_year), 12, 31), last_date + timedelta(days=1))
+
+
+def _card_targets(junes=(1,)):
+    """Projection cards after today: each year end from this year's through
+    three years on, plus June 30 of this year plus each offset in `junes`,
+    labelled "End of 2026" and "End of Jun 2027"."""
+    today = datetime.now()
+    y = today.year
+    out = [(f"End of Jun {y + k}", datetime(y + k, 6, 30)) for k in junes]
+    out += [(f"End of {yr}", datetime(yr, 12, 31)) for yr in range(y, y + 4)]
+    return [(label, d) for label, d in sorted(out, key=lambda t: t[1]) if d > today]
+
+
 def fit_line(x, y):
     A = np.column_stack([np.ones_like(x), x])
     params, *_ = np.linalg.lstsq(A, y, rcond=None)
@@ -3593,7 +3627,7 @@ _METR_DEFAULTS = {
     "p80": False,
     "log_scale": True,
     "hours_only": False,
-    "metr_end_year": 2026,
+    "metr_end_year": _default_end_year([m['date'] for m in frontier_all]),
 }
 
 def render_metr():
@@ -3807,7 +3841,7 @@ def render_metr():
                 help="Backtest: project from an earlier model's vantage point.",
             )
             _metr_end_year = st.radio(
-                "Project through", [2026, 2027, 2028, 2029],
+                "Project through", _end_year_options(),
                 horizontal=True, key="metr_end_year")
 
     # ── Reliability metric keys ──────────────────────────────────────────────
@@ -3925,7 +3959,7 @@ def render_metr():
 
     # ── Plotly chart ─────────────────────────────────────────────────────────
 
-    proj_end_date = datetime(_metr_end_year, 12, 31)
+    proj_end_date = _proj_end(_metr_end_year, current['date'])
     proj_n_days = (proj_end_date - current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -4294,12 +4328,7 @@ def render_metr():
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026EOY", datetime(2026, 12, 31)),
-        ("2027 Jun EOM", datetime(2027, 6, 30)),
-        ("2027EOY", datetime(2027, 12, 31)),
-        ("2028EOY", datetime(2028, 12, 31)),
-        ("2029EOY", datetime(2029, 12, 31)),
-    ]
+    ] + _card_targets()
 
     def _proj_hrs_at(elapsed_days, start_hrs, dt_arr, superexp=False, hl=None, floor=None):
         if superexp and hl is not None:
@@ -4482,7 +4511,7 @@ def _eci_tab_defaults(p):
         f"{p}_eci_metr_proj": False,
         f"{p}_internal": True,
         f"{p}_trained": True,
-        f"{p}_end_year": 2027,
+        f"{p}_end_year": _default_end_year([m['date'] for m in eci_frontier_all]),
     }
 
 def _eci_metr_hover(eci_score, organization):
@@ -4727,7 +4756,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
                 help="Backtest: project from an earlier model's vantage point.",
             )
             _eci_end_year = st.radio(
-                "Project through", [2026, 2027, 2028, 2029],
+                "Project through", _end_year_options(),
                 horizontal=True, key=f"{p}_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
@@ -4821,7 +4850,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     eci_current_score = eci_current['eci_score']
 
     # ── Build trajectories ────────────────────────────────────────────────
-    proj_end_date = datetime(_eci_end_year, 12, 31)
+    proj_end_date = _proj_end(_eci_end_year, eci_current['date'])
     proj_n_days = (proj_end_date - eci_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [eci_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -5279,12 +5308,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026EOY", datetime(2026, 12, 31)),
-        ("2027 Jun EOM", datetime(2027, 6, 30)),
-        ("2027EOY", datetime(2027, 12, 31)),
-        ("2028EOY", datetime(2028, 12, 31)),
-        ("2029EOY", datetime(2029, 12, 31)),
-    ]
+    ] + _card_targets()
 
     def _proj_score_at(elapsed_days, start_scores, dpp_arr, superexp=False, hl=None, floor=None):
         """Project ECI score forward by elapsed_days."""
@@ -5840,7 +5864,7 @@ _RLI_DEFAULTS = {
     "rli_milestones": True,
     "rli_labels": True,
     "rli_log_scale": False,
-    "rli_end_year": 2026,
+    "rli_end_year": _default_end_year([m['date'] for m in rli_frontier_all]),
 }
 
 def render_rli():
@@ -6052,7 +6076,7 @@ def render_rli():
                 help="Backtest: project from an earlier model's vantage point.",
             )
             _rli_end_year = st.radio(
-                "Project through", [2026, 2027, 2028, 2029],
+                "Project through", _end_year_options(),
                 horizontal=True, key="rli_end_year")
 
     # ── Build data arrays ────────────────────────────────────────────────────
@@ -6147,7 +6171,7 @@ def render_rli():
     rli_current_score = rli_current['rli_score']
 
     # ── Build trajectories ────────────────────────────────────────────────
-    proj_end_date = datetime(_rli_end_year, 12, 31)
+    proj_end_date = _proj_end(_rli_end_year, rli_current['date'])
     proj_n_days = (proj_end_date - rli_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [rli_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -6480,12 +6504,7 @@ def render_rli():
 
     eoy_targets = [
         ("Projected today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026EOY", datetime(2026, 12, 31)),
-        ("2027 Jun EOM", datetime(2027, 6, 30)),
-        ("2027EOY", datetime(2027, 12, 31)),
-        ("2028EOY", datetime(2028, 12, 31)),
-        ("2029EOY", datetime(2029, 12, 31)),
-    ]
+    ] + _card_targets()
 
     def _proj_rli_at(elapsed_days, start_logit, logit_slopes, superexp=False, hl=None, slope_floor_val=None):
         """Project RLI score forward by elapsed_days. Returns percentage (0-100)."""
@@ -8830,7 +8849,7 @@ _UKC_DEFAULTS = {
     "ukc_labels": True,
     "ukc_show_open": True,
     "ukc_show_lag": True,
-    "ukc_end_year": 2027,
+    "ukc_end_year": _default_end_year([m['date'] for m in ukc_frontier_all]),
 }
 
 # Open-weight models are coloured by country so the confound stays visible.
@@ -8974,7 +8993,7 @@ def render_ukcyber():
             st.selectbox("Project as of", ukc_frontier_names,
                          index=ukc_as_of_idx, key='_ukc_proj_as_of',
                          help="Backtest: project from an earlier model's vantage point.")
-            ukc_end_year = st.radio("Project through", [2026, 2027, 2028, 2029],
+            ukc_end_year = st.radio("Project through", _end_year_options(),
                                     horizontal=True, key="ukc_end_year")
 
     # ── Fit ──────────────────────────────────────────────────────────────
@@ -9891,7 +9910,7 @@ def _rev_fit_and_project(dates, vals, n_recent, proj_end, n_samples=None,
     # Projection from last data point
     last_date = dates[-1]
     last_log = params[0] + params[1] * days[-1]  # fitted value at last point
-    proj_n_days = (proj_end - last_date).days + 1
+    proj_n_days = max((proj_end - last_date).days + 1, 2)
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates_out = [last_date + timedelta(days=int(d)) for d in proj_days_arr]
 
@@ -9988,8 +10007,8 @@ def render_revenue():
     with st.sidebar:
         st.header("Revenue Projection")
         rev_end_year = st.radio(
-            "Project through", [2026, 2027, 2028, 2029],
-            horizontal=True, key="rev_end_year", index=0)
+            "Project through", _end_year_options(), horizontal=True, key="rev_end_year",
+            index=_end_year_options().index(_REV_DEFAULTS["rev_end_year"]))
         log_scale = st.checkbox("Log scale", value=True, key="rev_log_scale")
         rev_2025_only = st.checkbox("2025+ only", value=False, key="rev_2025_only")
         show_milestones = st.toggle("Milestones", value=True, key="rev_milestones")
@@ -10070,7 +10089,8 @@ def render_revenue():
                 else:
                     st.caption("Need ≥3 data points to project")
 
-    proj_end = datetime(rev_end_year, 12, 31)
+    proj_end = _proj_end(rev_end_year, max(
+        [d[-1] for d in (oai_dates_fit, ant_dates_fit) if len(d)] or [datetime.now()]))
 
     # Filter display data for 2025+ if toggled (projections still use all data for fitting)
     _rev_cutoff = datetime(2025, 1, 1) if rev_2025_only else datetime(2000, 1, 1)
@@ -10743,7 +10763,8 @@ _EMP_DEFAULTS = {
     "emp_piecewise_n_seg": 1,
     "emp_custom_dt_dist": "Lognormal",
     "emp_custom_pos_dist": "Normal",
-    "emp_end_year": 2028,
+    "emp_end_year": min(_default_end_year([m['date'] for m in rli_frontier_all]) + 1,
+                        _end_year_options()[-1]),
     "emp_rli_coverage": 70.0,
     "emp_supervision_overhead": 10.0,
     "emp_remote_digital_share": 38.0,
@@ -11008,7 +11029,7 @@ def render_employment():
                 help="Project from an earlier model's vantage point.",
             )
             _emp_end_year = st.radio(
-                "Project through", [2026, 2027, 2028, 2029],
+                "Project through", _end_year_options(),
                 horizontal=True, key="emp_end_year")
 
     # ── Build RLI data arrays ────────────────────────────────────────────
@@ -11087,7 +11108,7 @@ def render_employment():
 
     # ── Build RLI trajectories ───────────────────────────────────────────
     emp_current = emp_frontier_used[-1]
-    proj_end_date = datetime(_emp_end_year, 12, 31)
+    proj_end_date = _proj_end(_emp_end_year, emp_current['date'])
     proj_n_days = (proj_end_date - emp_current['date']).days + 1
     proj_days_arr = np.arange(0, proj_n_days, 1)
     proj_dates = [emp_current['date'] + timedelta(days=int(d)) for d in proj_days_arr]
@@ -11347,12 +11368,7 @@ def render_employment():
     # ── Projections row ──────────────────────────────────────────────────
     eoy_targets = [
         ("Today", datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)),
-        ("2026 Jun", datetime(2026, 6, 30)),
-        ("2026EOY", datetime(2026, 12, 31)),
-        ("2027EOY", datetime(2027, 12, 31)),
-        ("2028EOY", datetime(2028, 12, 31)),
-        ("2029EOY", datetime(2029, 12, 31)),
-    ]
+    ] + _card_targets(junes=(0,))
 
     def _emp_at_date(target_date):
         elapsed = (target_date - emp_current['date']).days
@@ -11381,7 +11397,9 @@ def render_employment():
     # ── Model breakdown at a reference date ──────────────────────────────
     with st.expander("Model breakdown"):
         _bd_options = {label: d for label, d in valid_targets}
-        _bd_default_label = "2027EOY" if "2027EOY" in _bd_options else list(_bd_options.keys())[-1]
+        _bd_next_eoy = f"End of {datetime.now().year + 1}"
+        _bd_default_label = (_bd_next_eoy if _bd_next_eoy in _bd_options
+                             else list(_bd_options.keys())[-1])
         _bd_selected = st.selectbox("Reference date", list(_bd_options.keys()),
                                      index=list(_bd_options.keys()).index(_bd_default_label),
                                      key="emp_breakdown_date")
@@ -17097,7 +17115,9 @@ def render_compute_capabilities():
 # ── URL parameter persistence ────────────────────────────────────────────
 
 _REV_DEFAULTS = {
-    "rev_end_year": 2026,
+    "rev_end_year": _default_end_year(
+        [datetime.strptime(d, "%Y-%m-%d") for table in (_OPENAI_REVENUE, _ANTHROPIC_REVENUE)
+         for d, _ in table]),
     "rev_log_scale": True,
     "rev_2025_only": False,
     "rev_milestones": True,

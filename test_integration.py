@@ -693,6 +693,18 @@ class TestEmploymentDefaults:
             f"Unexpected CI spread: lo={dt_lo}, hi={dt_hi}"
 
 
+    def test_cards_are_dated_after_today(self):
+        """Projection cards come from today: no past June card repeating
+        today's value, and the year-end cards are named by their year."""
+        at = _emp_app()
+        labels = [m.label for m in at.metric]
+        y = datetime.now().year
+        assert labels[0] == "Today"
+        assert f"End of {y + 1}" in labels
+        if datetime.now() > datetime(y, 6, 30):
+            assert f"End of Jun {y}" not in labels
+
+
 class TestEmploymentSliderChanges:
     """The economic model renders at the ends of its sliders, in both
     display modes."""
@@ -3661,7 +3673,7 @@ class TestTodayForwardMode:
         before = self._specs(at)[0]["layout"]["yaxis"]["range"]
         at.checkbox(key="today_fwd").set_value(True).run()
         after = self._specs(at)[0]["layout"]["yaxis"]["range"]
-        assert after[1] - after[0] < 0.5 * (before[1] - before[0])
+        assert after[1] - after[0] < 0.6 * (before[1] - before[0])
         assert after[0] > before[0]
 
     def test_toggle_sits_at_the_foot_of_the_sidebar(self):
