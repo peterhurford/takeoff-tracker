@@ -3453,6 +3453,19 @@ class TestPacingTab:
             assert ends[:3] == [yr] * 3, ends
             assert ends[3] in (yr, yr + 1), ends
 
+    def test_race_table_years_stop_at_project_through(self):
+        """P(EOY …) columns run from next year through Project through, at
+        most three, so a short range never repeats its last year."""
+        at = self._app()
+        nxt = datetime.now().year + 1
+        for end in (2027, 2035):
+            if end < nxt:
+                continue
+            at.selectbox(key="pc_end_year").set_value(end).run()
+            _assert_no_error(at, f"Pacing / through {end}")
+            cols = [c for c in self._entities(at).columns if c.startswith("P(EOY")]
+            assert cols == [f"P(EOY {y})" for y in range(nxt, min(end, nxt + 2) + 1)]
+
     def test_horizon_too_narrow_still_describes_the_pause(self):
         """A pause past the projection range has no crossing to report, so
         the panel says so — but the state of play at the pause doesn't

@@ -17355,7 +17355,17 @@ def _sync_session_to_url():
 _PC_FALLBACK_THRESHOLD = 1e28
 _PC_RUN_OPTIONS = {"6-month run": "train_flop_6mo", "2-month run": "train_flop"}
 _PC_HORIZON = datetime(2031, 12, 1)   # crossing-search grid end
-_PC_TABLE_YEARS = (2027, 2028, 2029)  # P(crossed by EOY …) table columns
+_PC_TABLE_N_YEARS = 3   # at most this many P(crossed by EOY …) columns
+
+
+def _pc_table_years(end_year, today):
+    """The P(crossed by EOY …) columns: each year-end from next year through
+    *Project through*, at most `_PC_TABLE_N_YEARS`."""
+    first = today.year + 1
+    return tuple(range(first, min(end_year, first + _PC_TABLE_N_YEARS - 1) + 1)) \
+        or (end_year,)
+
+
 # The Pacing tab adds a third attribution: entities are countries, with China
 # listed twice (mainland alone, and with Chinese labs' sites abroad).
 _PC_PARTY_OPTIONS = dict(_DC_PARTY_OPTIONS, Country='country')
@@ -21995,6 +22005,7 @@ def render_pacing():
                                 since=_DC_DEFAULTS["dc_cty_since"],
                                 ref_steps=ref_steps, horizon=pc_horizon)
 
+    _pc_years = _pc_table_years(pc_end_year, _today)
     recs = []
     for label, kind, steps, names in rows:
         plan_d, plan_via = _pc_plan_crossing(steps, threshold)
@@ -22008,7 +22019,7 @@ def render_pacing():
             'share': float((idx < len(grid)).mean()),
             'p_by': {yr: float((idx <= bisect.bisect_right(
                          grid, datetime(yr, 12, 31)) - 1).mean())
-                     for yr in _PC_TABLE_YEARS},
+                     for yr in _pc_years},
         })
     recs.sort(key=lambda r: (
         (0, r['plan']) if r['crossed'] else
@@ -22139,7 +22150,7 @@ def render_pacing():
             "Projected (median)": med,
             "80% range": rng,
             **{f"P(EOY {yr})": f"{r['p_by'][yr]:.0%}"
-               for yr in _PC_TABLE_YEARS},
+               for yr in _pc_years},
         })
     st.table(table)
     if timing_label == "Data center construction":
