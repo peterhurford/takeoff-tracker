@@ -2975,7 +2975,9 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         _assert_no_error(at, "Pacing / defaults")
-        assert not any("China catches up" in md.value for md in at.markdown)
+        import visualize_projection as vp
+        assert not any("China catches up" in md.value for md in at.markdown
+                       if md.value != vp._PC_LEAD)
         tbl = next(x.value for x in at.table if "Compares" in x.value.columns)
         end = at.session_state["pc_end_year"]
         assert any(c == f"End-{end}, China not caught up" for c in tbl.columns)
@@ -3442,7 +3444,8 @@ class TestPacingTab:
         def _pct(at):
             caps = " ".join(str(c.value) for c in at.caption)
             m = re.search(r"with no levers \(([+-]\d+)%\)", caps)
-            return int(m.group(1))
+            # A zero change prints no parenthesis.
+            return int(m.group(1)) if m else 0
 
         assert _pct(at) == 0
         at.checkbox(key="pc_stop_legal").check().run()
@@ -3682,7 +3685,8 @@ class TestPacingTab:
             return sum(float(n) * units[u] for n, u in
                        re.findall(r"([\d.]+)(mo|y|w|d|h|m)", cell.replace(",", "")))
         for _, row in t.iterrows():
-            assert _hrs(row["METR horizon (p80)"]) < _hrs(row["METR horizon (p50)"]), row
+            assert _hrs(row["METR horizon (p80)"]) < \
+                _hrs(row["METR horizon (p50, work time: 1 week = 40 h)"]), row
         # The bar the crossing metric quotes is the US row of this table.
         m = next(m for m in at.metric if "paused US frontier" in str(m.label))
         assert abs(_card_bar(m)
@@ -3813,7 +3817,7 @@ class TestPacingTab:
         pace = at.select_slider(key="pc_pace")
         assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
         assert pace.options[-1] == "0% \u00b7 pause"
-        card = next(m for m in at.metric if "paced US" in str(m.label))
+        card = next(m for m in at.metric if "(no pacing)" in str(m.label))
         assert str(card.value).startswith("After ")
         assert "of samples by" in str(card.delta)
         assert at.get("plotly_chart")      # the race chart still draws
@@ -4182,6 +4186,69 @@ class TestPacingTab:
             "Nearby + announced fabric"
         assert at.selectbox(key="pc_timing").value == \
             "Training run finished"
+
+
+class TestPacingExplains:
+    """The Pacing tab says what it asks, and its text follows the levers set."""
+
+    @staticmethod
+    def _pacing(pace=None):
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        if pace is not None:
+            at.select_slider(key="pc_pace").set_value(pace).run()
+        _assert_no_error(at, f"Pacing at {pace}")
+        return at
+
+    def test_lead_and_section_titles(self):
+        import visualize_projection as vp
+        at = self._pacing()
+        assert "Pacing" in [h.value for h in at.header]
+        md = [m.value for m in at.markdown]
+        assert vp._PC_LEAD in md
+        assert "##### US and China frontier ECI" in md
+        assert any(m.startswith("##### State of play, today") for m in md)
+        assert "SL5: RAND's top security level" in \
+            at.checkbox(key="pc_theft_weights").proto.help
+
+    def test_unpaced_cards_never_advise_pacing(self):
+        """At 100% there is no pacing to tighten: the card says so and the
+        hint only widens the window."""
+        at = self._pacing()
+        labels = [str(m.label) for m in at.metric]
+        assert "China catches the US (no pacing)" in labels
+        assert not any("pace the US harder" in str(m.delta) for m in at.metric)
+
+    def test_paused_us_milestones_read_paused(self):
+        """A paused US never reaches a milestone above its pause level, so
+        the cell says paused instead of a date past the window."""
+        at = self._pacing(0)
+        t = next(t.value for t in at.table if "US (median, 80%)" in t.value.columns)
+        us = list(t["US (median, 80%)"])
+        assert not any(str(c).startswith("after ") for c in us), us
+        assert "paused" in us, us
+
+    def test_payoff_help_reads_the_live_fit(self):
+        import visualize_projection as vp
+        at = self._pacing()
+        fit, _, rate = vp._pc_payoff_fit(vp.load_eci_compute(mtime=vp._eci_mtime()))
+        h = at.radio(key="pc_payoff").proto.help
+        assert f"~{fit:.1f} ECI" in h and f"{rate:.1f} ECI a year" in h
+        assert f"~{vp._pc_compute_payoff(fit, rate, 'ifp'):.0f} ECI" in h
+
+    def test_text_follows_the_levers(self):
+        """With the leak uncut and nothing withheld, the run-out note names
+        neither; the race caption gives China its own band; the mix caption
+        drops a zero change."""
+        at = self._pacing(0)
+        caps = " ".join(str(c.value) for c in at.caption) + " ".join(
+            str(m.value) for m in at.markdown)
+        assert "Diffusion shrinks as the gap it feeds on closes" in caps
+        assert "with models withheld" not in caps
+        assert "rows run on its own evidence band" in caps
+        assert "(+0%)" not in caps and "(-0%)" not in caps
+        assert "runs at the share" in at.select_slider(key="pc_dist_when").proto.help
 
 
 class TestTodayForwardMode:

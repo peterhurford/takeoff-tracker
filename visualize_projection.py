@@ -17660,6 +17660,21 @@ _PC_PAYOFF_OPTIONS = {"Average of the two": "average", "Our fit": "fit",
                       "IFP's": "ifp"}
 
 
+def _pc_payoff_fit(cc_rows):
+    """(a_partial, b_time, US ECI/yr since 2024): the frontier-grade pair
+    (pooled fallback), as in _cc_us_vs_china, and the US slope that converts
+    IFP's months into ECI."""
+    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
+    fgm = _cc_frontier_grade_algo(
+        cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
+    if fgm:
+        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
+    us_fr = _cc_country_frontier(load_eci_frontier(mtime=_eci_mtime()),
+                                 'United States of America')
+    return a_partial, b_algo, (_cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1))
+                               or 15.0)
+
+
 def _pc_compute_payoff(fit, us_eci_per_yr, choice):
     """ECI per 10x training compute for the Pacing catch-up."""
     ifp = _PC_IFP_MO_PER_OOM * us_eci_per_yr / 12.0
@@ -19124,10 +19139,13 @@ def _pc_render_compute_mix(ci):
     end = years[-1]
     p_tot = sum(r[0] for r in pol["stock"][end].values())
     b_end = b_tot[-1] * 1e6
+    _chg = p_tot / b_end - 1
     _fn_caption(
         f"By end-{end} China has ~{p_tot / 1e6:.1f}M H100e under these "
-        f"settings against ~{b_end / 1e6:.1f}M with no levers "
-        f"({p_tot / b_end - 1:+.0%}).",
+        f"settings against ~{b_end / 1e6:.1f}M with no levers"
+        + (f" ({_chg:+.0%})." if round(_chg * 100) else ".")
+        + (f" The mix ends at end-{end}; *Project through* runs to "
+           f"{ci['horizon'].year}." if ci['horizon'].year > int(end) else ""),
         ("these settings",
          "Chips China can use, from the China tab's compute mix "
          "(Epoch to 2025, IFP for 2026\u201327, our projection after). "
@@ -19774,11 +19792,16 @@ def _pc_render_why(chan, grid0, traj0, target0, years, years_base, *,
         + ". At its starting pace that would take "
         f"{_mo(r0)}; as distillation and diffusion run out it slows, so the "
         f"actual average gives **{_mo(ravg)}**.",
-        ("run out", "Diffusion fades after the leak is cut, over the "
-                    "absorption time under *Advanced*. "
-                    "Distillation fades as China nears the best model it can "
-                    "learn from, which with models withheld sits below the "
-                    "bar."),
+        ("run out",
+         ("Diffusion fades after the leak is cut, over the absorption time "
+          "under *Advanced*. "
+          if st.session_state.get("pc_leak_cut", _PC_DEFAULTS["pc_leak_cut"])
+          else "Diffusion shrinks as the gap it feeds on closes. ")
+         + ("Distillation fades as China nears the best model it can learn "
+            "from, which with models withheld sits below the bar."
+            if withhold else
+            "Distillation fades as China nears the US frontier it learns "
+            "from.")),
         ("actual average", f"Net of China's {cn_lag_d:.0f}-day lag from a "
                            "model finishing training to its release, as on "
                            "the card; the card is a median over paths, so "
@@ -20312,7 +20335,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             help="China lifts its frontier to the best model the US has "
                  "trained, once or every month after (set under *Advanced*), "
                  "then keeps progressing from there. Off, the model assumes "
-                 "~SL5-secure weights.")
+                 "~SL5-secure weights (SL5: RAND's top security level, weights "
+                 "protected against the most capable state attackers).")
         with (advanced_box if advanced_box is not None
               else st.expander("Advanced")):
             st.markdown("**Pacing windows**")
@@ -20363,7 +20387,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 disabled=not stop_dist,
                 help="Enforcement takes time. Until this date China keeps "
                      "distilling under the gap-decay law; after it the channel "
-                     "is gone. Needs the checkbox above.")
+                     "runs at the share *Share of harvested data stopped* leaves. "
+                     "Needs the checkbox above.")
             leak_when = st.select_slider(
                 "Methods leak cut off", options=_opts,
                 value=_PC_DEFAULTS["pc_leak_when"], key="pc_leak_when",
@@ -20532,20 +20557,23 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             st.markdown("**What compute buys**")
             if st.session_state.get("pc_payoff") not in _PC_PAYOFF_OPTIONS:
                 st.session_state.pop("pc_payoff", None)
+            _pf, _, _pr = _pc_payoff_fit(load_eci_compute(mtime=_eci_mtime()))
+            _pi = _pc_compute_payoff(_pf, _pr, "ifp")
             payoff_label = st.radio(
                 "Capability from 10\u00d7 more training compute",
                 list(_PC_PAYOFF_OPTIONS),
                 index=list(_PC_PAYOFF_OPTIONS).index(
                     _PC_DEFAULTS["pc_payoff"]),
                 key="pc_payoff",
-                help="Our fit on frontier-grade models gives ~6 ECI (~5 "
-                     "months of US progress) per 10\u00d7; IFP's lead model "
-                     f"gives {_PC_IFP_MO_PER_OOM:g} months (~14 ECI) before "
+                help=f"Our fit on frontier-grade models gives ~{_pf:.1f} ECI "
+                     f"(~{_pf / _pr * 12:.0f} months of US progress at "
+                     f"{_pr:.1f} ECI a year) per 10\u00d7; IFP's lead model "
+                     f"gives {_PC_IFP_MO_PER_OOM:g} months (~{_pi:.0f} ECI) before "
                      "distillation. Neither is settled, so the default is "
                      "their average. China's total pace still matches its "
                      "observed slope, so this changes what the chip levers "
-                     "buy (roughly double at IFP's value against ours), not "
-                     "the catch-up without them.")
+                     f"buy (about {_pi / _pf:.1f}\u00d7 as much at IFP's value "
+                     "as at ours), not the catch-up without them.")
     # China's catch-up run is drawn beside the US run length, under the
     # caller's compute settings.
     us_run_mo = max(int(round(run_days / 30)), 1)
@@ -20608,16 +20636,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         st.success(f"{pretty(anchor_name)} is already at the US frontier.")
         return
 
-    # Frontier-grade coefficient pair, as in _cc_us_vs_china (pooled fallback).
-    a_partial, b_algo = _cc_pooled_decomp(cc_rows)
-    fgm = _cc_frontier_grade_algo(
-        cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
-    if fgm:
-        a_partial, b_algo = fgm['a_partial'], fgm['b_time']
-    a_fit = a_partial
-    a_partial = _pc_compute_payoff(
-        a_fit, _cc_frontier_eci_slope(us_fr, datetime(2024, 1, 1)) or 15.0,
-        _PC_PAYOFF_OPTIONS[payoff_label])
+    a_fit, b_algo, _us_rate24 = _pc_payoff_fit(cc_rows)
+    a_partial = _pc_compute_payoff(a_fit, _us_rate24,
+                                   _PC_PAYOFF_OPTIONS[payoff_label])
     # A longer Chinese run is a one-off *level* move, not a faster rate: it
     # puts ×(L/L_us) the compute into one model, worth a_partial per ×10 of
     # capability, and needs proportionally less cluster so the hardware is
@@ -21085,7 +21106,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
                 if c else "—"),
             "Frontier ECI": f"~{e50:.0f} ({e10:.0f}–{e90:.0f})",
-            "METR horizon (p50)": _pc_fmt_horizon(
+            "METR horizon (p50, work time: 1 week = 40 h)": _pc_fmt_horizon(
                 _eci_to_metr_p50_min(e50)[0] / 60),
             "METR horizon (p80)": _pc_fmt_horizon(
                 _eci_to_metr_p80_min(e50)[0] / 60),
@@ -21192,7 +21213,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               f"({inno[0]:.0f}\u2013{inno[1]:.0f} ECI/yr)")
            + " plus compute, with diffusion and distillation fading as set in "
              "the sidebar."))
+    _unpaced = pace >= 1 and not pace_wins
     _card1 = ("China reaches paused US frontier" if _paused
+              else "China catches the US (no pacing)" if _unpaced
               else "China catches the paced US")
     # The pacing settings ride the first card's hover, ahead of its clock.
     _setup = ((f"The US pauses in {d_pause_v:%b %Y} at ECI ~{lvl50:.0f}"
@@ -21259,7 +21282,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              _setup + f"Fewer than half the samples see China reach {_bar} "
              f"by the end of {_yr_end}. " + _clock),
             ("Time for China to surpass", f"> {_pc_span(_left, 0)}",
-             "pace the US harder or widen Project through", _method)]
+             "widen Project through" if _unpaced
+             else "pace the US harder or widen Project through", _method)]
         if _left <= 0:
             # The pacing starts after the projection ends: nothing to time.
             _cards[1] = ("Time for China to surpass", f"{_start.title()} after {_yr_end}",
@@ -21711,6 +21735,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     for _tr in fig.data:
         if _tr.name != ' ':
             _tr.legendrank = _rank.get(_tr.name, 99) * 10
+    st.markdown("##### US and China frontier ECI")
     _fn_caption(
         "Both lines are each side's best trained model, not its best release.",
         ("best trained model",
@@ -21759,7 +21784,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         _ms_rows.append({
             "Milestone": _ms_name[0].upper() + _ms_name[1:],
             "At ECI": f"~{np.nanmedian(_lvl):.0f}",
-            "US (median, 80%)": _ms_cell(du),
+            "US (median, 80%)": ("paused" if _paused and du[1] is None
+                                 else _ms_cell(du)),
             "China (median, 80%)": _ms_cell(dc),
             "Gap": _ms_gap(du[1], dc[1]),
         })
@@ -21935,6 +21961,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _pc_render_compute_mix(compute_info)
 
 
+_PC_LEAD = ("**If the US slows or pauses frontier AI training, when does China "
+            "reach the US frontier?** Set how hard the US paces and which export "
+            "and security levers are on; the chart shows each side's best trained "
+            "model and the cards show when, and how often, China catches up.")
+
+
 def render_pacing():
     _today = datetime.now()
 
@@ -22041,7 +22073,7 @@ def render_pacing():
     party = _PC_PARTY_OPTIONS[party_label]
     pc_horizon = datetime(pc_end_year, 12, 1)
 
-    st.header("Pacing")
+    _tab_intro("Pacing", _PC_LEAD)
     st.badge("Under construction, not final", icon=":material/construction:",
              color="orange")
 
@@ -22179,6 +22211,8 @@ def render_pacing():
     # The state of play at the pause sits right above the race it sets the
     # bar for.
     if state_rows:
+        _when = next(iter(state_rows[0]))
+        st.markdown(f"##### State of play, {_when[0].lower() + _when[1:]}")
         st.table(state_rows)
 
     # ── Headline ──
@@ -22272,7 +22306,8 @@ def render_pacing():
         + (" \u00b7 each country is its largest networkable group"
            if party == 'country' else " \u00b7 \u2020 = no recorded tenant"),
         ("diamond + band", "Plan slip plus a fitted trend past ~18 months "
-                           "\u2014 the Data Centers tab's model. Non-US "
+                           "\u2014 the Data Centers tab's model. China's "
+                           "rows run on its own evidence band; other non-US "
                            "entities borrow the US pace, widened by any "
                            "disagreement with their own."),
         *([("its largest networkable group",

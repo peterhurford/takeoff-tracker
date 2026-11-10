@@ -131,6 +131,12 @@ is its consumer. Load-bearing:
 
 ## Pacing tab
 
+**Text.** `_PC_LEAD` opens the tab; the main chart and the state-of-play table carry
+section titles, and the METR column names its work-time unit. At 100% pace with no windows
+the first card reads *China catches the US (no pacing)* and never advises pacing harder; a
+paused US's milestone cells read *paused*. The run-out note, the mix caption and the race
+caption follow the levers set and China's own evidence band (`TestPacingExplains`).
+
 `render_pacing()` renders the pause counterfactual **first**
 (`_pc_render_us_pause()`) and the *Compute Thresholds* race second — the tab's
 question is what a US pause on a chosen date buys, and the race is the per-actor
@@ -499,8 +505,10 @@ grid end (+120d pad) instead of auto-fitting to content, and the pause panel tak
 year the P(cross by …) column is quoted for.
 
 *What compute buys* (`pc_payoff`, under *Advanced*) sets the catch-up's ECI per 10×
-training compute (`_pc_compute_payoff`): our frontier-grade fit (~6.3), IFP's 10.8 months
-of US progress (~14), or their mean, the default. Channels are rescaled to China's observed
+training compute (`_pc_compute_payoff`): our frontier-grade fit (~7.4), IFP's 10.8 months
+of US progress (~15.5 at the US's 17.2 ECI/yr), or their mean, the default. `_pc_payoff_fit`
+gives the sim and the control's help the same fit and US rate
+(`test_payoff_help_reads_the_live_fit`). Channels are rescaled to China's observed
 slope, so it moves what the chip levers buy, not the no-lever crossing
 (`test_compute_payoff_default_is_the_mean_of_ours_and_ifps`).
 
