@@ -118,11 +118,16 @@ the standalone fallback marker (`.vp-fn`). Their CSS lives in the global `<style
 block at the top of the file. The bubble is dark on purpose — it floats above the
 page.
 
-## Tab leads
+## Tab leads and top-of-page order
 
-Each tab opens with `_tab_intro(title, lead)`: its title and a one- or two-sentence
-bolded question plus answer, above the first chart (`TestMetrExplains` and its
-siblings per tab).
+Each tab opens with `_tab_intro(title, lead)`: the title equal to its `_TAB_LABEL`
+and a one- or two-sentence bolded question plus answer. Then come the headline
+cards, the main chart, and a collapsed *How to read this* expander holding the
+method notes. Cards computed from the chart's trajectories go in an
+`st.container()` placed before the chart and filled after it. Frontier Thresholds
+(`frontier_thresholds.py`) follows the same order with `st.header` + `st.markdown`.
+Takeoff and Pacing keep their own deliberate orders (`docs/takeoff.md`,
+`docs/china-pacing.md`). `TestTabTopOrder` holds the order on every other tab.
 
 ## Light theme only
 

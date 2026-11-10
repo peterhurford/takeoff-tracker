@@ -4387,6 +4387,7 @@ def render_metr():
                "length of task, in human working time, that a model completes half the "
                "time. Each point is the best model at its release; the fan shows where the "
                "horizon goes if the fitted trend continues.")
+    cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
@@ -4422,7 +4423,7 @@ def render_metr():
         (f"{current_label} ({current['date'].strftime('%b %Y')})", current['date']),
     ] + eoy_targets
     n_all_cols = len(all_targets)
-    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    cols = cards.columns([1.2] + [1] * (n_all_cols - 1))
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - current['date']).days
         proj_hrs = _proj_hrs_at(elapsed, start_hrs_samples, proj_dt, is_superexp, superexp_halflife, superexp_dt_floor if is_superexp else None)
@@ -5383,6 +5384,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
+    cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
     if eci_is_backtesting and eci_backtest_results:
         _backtest_summary(eci_backtest_results)
@@ -5418,9 +5420,9 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         (f"{eci_current_label} ({eci_current['date'].strftime('%b %Y')})", eci_current['date']),
     ] + eoy_targets
     n_all_cols = len(all_targets)
-    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    cols = cards.columns([1.2] + [1] * (n_all_cols - 1))
 
-    _eci_metr_a = 1 if eci_current.get('organization', '') == 'Anthropic' else 0
+    _eci_metr_a =1 if eci_current.get('organization', '') == 'Anthropic' else 0
 
     def _metr_median_str(eci_score):
         p50_min = 2 ** (0.24 * eci_score + 0.76 * _eci_metr_a - 28.68)
@@ -6600,6 +6602,7 @@ def render_rli():
         "scores the share of real freelance projects an AI completes to a standard "
         "a client would accept. Scores are fitted in log-odds, so the trend slows "
         "as it nears 100%.")
+    cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
     if rli_is_backtesting and rli_backtest_results:
         _backtest_summary(rli_backtest_results)
@@ -6635,7 +6638,7 @@ def render_rli():
         (f"{rli_current_label} ({rli_current['date'].strftime('%b %Y')})", rli_current['date']),
     ] + eoy_targets
     n_all_cols = len(all_targets)
-    cols = st.columns([1.2] + [1] * (n_all_cols - 1))
+    cols = cards.columns([1.2] + [1] * (n_all_cols - 1))
     for col, (label, target_date) in zip(cols, all_targets):
         elapsed = (target_date - rli_current['date']).days
         proj_scores = _proj_rli_at(
@@ -9164,12 +9167,76 @@ def render_ukcyber():
     pct = _pctiles(all_trajectories, (5, 10, 25, 50, 75, 90, 95))
 
     # ── Chart ────────────────────────────────────────────────────────────
-    st.header("AISI Narrow Cyber Tasks — open-weight lag behind the closed frontier")
+    _tab_intro("UK Cyber",
+               "**How far do open-weight models trail the closed frontier on AISI's "
+               "narrow cyber tasks?** Each point is a model's average success rate; the "
+               "fan projects the closed frontier, and the open-weight lag dates when "
+               "China reaches the target.")
 
     # Computed before the chart because the callout below reports on it too.
     lag_rows = ukc_lag_rows(ukc_all, ukc_frontier_all)
     tlo_all, tlo_lag_rows = ukc_tlo_lag_rows()
     _render_ukcyber_newest_open(lag_rows, tlo_all, tlo_lag_rows)
+
+    # ── Time for open-weight models to reach the target ──────────────────
+    st.subheader(f"Time for China to reach {_UKC_TARGET:.0f}%")
+
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    eta =ukc_target_eta(ukc_all, ukc_frontier_all, _UKC_TARGET)
+    if eta is None:
+        st.info(f"The closed frontier has not yet reached {_UKC_TARGET:.0f}%, "
+                "so there is no crossing date to lag behind.")
+    else:
+        _c1, _c2, _c3 = st.columns(3)
+        with _c1:
+            st.metric("Closed frontier crossed it",
+                      eta['frontier_date'].strftime('%b %Y'))
+            _btw = [n for n in eta['frontier_between'] if n]
+            st.caption(" → ".join(_btw) if len(_btw) > 1 else (_btw[0] if _btw else ""))
+        with _c2:
+            st.metric("Measured open-weight lag",
+                      f"{eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} mo")
+            st.caption("From the two open-weight models observed")
+        with _c3:
+            _lo, _hi = eta['date_lo'], eta['date_hi']
+            _span = (f"{_lo.strftime('%b')}–{_hi.strftime('%b %Y')}"
+                     if _lo.year == _hi.year else
+                     f"{_lo.strftime('%b %Y')}–{_hi.strftime('%b %Y')}")
+            st.metric(f"China reaches {_UKC_TARGET:.0f}%", _span)
+            _m_lo = (_lo - today).days / _UKC_DAYS_PER_MONTH
+            _m_hi = (_hi - today).days / _UKC_DAYS_PER_MONTH
+            _open_hit = any(m['weights'] == 'open' and m['cyber_score'] >= _UKC_TARGET
+                            for m in ukc_all)
+            if _m_hi < 0:
+                st.caption("Already passed")
+            elif _m_lo <= 0:
+                # Inside the window: say when it opened and whether any
+                # open-weight model has been measured at the target.
+                st.caption(f"Window opened {_lo:%b %Y}; " + (
+                    f"an open-weight model is measured at {_UKC_TARGET:.0f}%"
+                    if _open_hit else
+                    f"no open-weight model measured at {_UKC_TARGET:.0f}% yet"))
+            else:
+                st.caption(f"{_m_lo:.1f}–{_m_hi:.1f} months from today")
+
+        _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
+        _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "
+                       f"{_direct.strftime('%b %Y')} — a fragile fit from two points "
+                       f"53 days apart, shown only as a sanity check."
+                       if _direct is not None else "")
+        _btw_txt = (f" (interpolated between {eta['frontier_between'][0]} and "
+                    f"{eta['frontier_between'][1]})"
+                    if all(eta['frontier_between']) else "")
+    # The cards' method note, drawn under the chart in *How to read this*.
+    _eta_note = None if eta is None else (
+        f"The closed frontier reached {_UKC_TARGET:.0f}% around "
+        f"{eta['frontier_date'].strftime('%b %Y')}{_btw_txt}; open-weight models "
+        f"have trailed it by {eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} "
+        "months, so they reach it that much later." + _direct_txt,
+        ("trailed it by", "Lags are measured against the frontier's interpolated "
+                          "crossing of each score, not against the next model up "
+                          "— snapping to the next model up would equate "
+                          "scores several points apart."))
 
     fig = go.Figure()
 
@@ -9355,64 +9422,9 @@ def render_ukcyber():
     st.plotly_chart(fig, width="stretch")
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
-
-    # ── Time for open-weight models to reach the target ──────────────────
-    st.subheader(f"Time for China to reach {_UKC_TARGET:.0f}%")
-
-    eta = ukc_target_eta(ukc_all, ukc_frontier_all, _UKC_TARGET)
-    if eta is None:
-        st.info(f"The closed frontier has not yet reached {_UKC_TARGET:.0f}%, "
-                "so there is no crossing date to lag behind.")
-    else:
-        _c1, _c2, _c3 = st.columns(3)
-        with _c1:
-            st.metric("Closed frontier crossed it",
-                      eta['frontier_date'].strftime('%b %Y'))
-            _btw = [n for n in eta['frontier_between'] if n]
-            st.caption(" → ".join(_btw) if len(_btw) > 1 else (_btw[0] if _btw else ""))
-        with _c2:
-            st.metric("Measured open-weight lag",
-                      f"{eta['lag_lo']:.1f}–{eta['lag_hi']:.1f} mo")
-            st.caption("From the two open-weight models observed")
-        with _c3:
-            _lo, _hi = eta['date_lo'], eta['date_hi']
-            _span = (f"{_lo.strftime('%b')}–{_hi.strftime('%b %Y')}"
-                     if _lo.year == _hi.year else
-                     f"{_lo.strftime('%b %Y')}–{_hi.strftime('%b %Y')}")
-            st.metric(f"China reaches {_UKC_TARGET:.0f}%", _span)
-            _m_lo = (_lo - today).days / _UKC_DAYS_PER_MONTH
-            _m_hi = (_hi - today).days / _UKC_DAYS_PER_MONTH
-            _open_hit = any(m['weights'] == 'open' and m['cyber_score'] >= _UKC_TARGET
-                            for m in ukc_all)
-            if _m_hi < 0:
-                st.caption("Already passed")
-            elif _m_lo <= 0:
-                # Inside the window: say when it opened and whether any
-                # open-weight model has been measured at the target.
-                st.caption(f"Window opened {_lo:%b %Y}; " + (
-                    f"an open-weight model is measured at {_UKC_TARGET:.0f}%"
-                    if _open_hit else
-                    f"no open-weight model measured at {_UKC_TARGET:.0f}% yet"))
-            else:
-                st.caption(f"{_m_lo:.1f}–{_m_hi:.1f} months from today")
-
-        _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
-        _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "
-                       f"{_direct.strftime('%b %Y')} — a fragile fit from two points "
-                       f"53 days apart, shown only as a sanity check."
-                       if _direct is not None else "")
-        _btw_txt = (f" (interpolated between {eta['frontier_between'][0]} and "
-                    f"{eta['frontier_between'][1]})"
-                    if all(eta['frontier_between']) else "")
-        _fn_caption(
-            f"The closed frontier reached {_UKC_TARGET:.0f}% around "
-            f"{eta['frontier_date'].strftime('%b %Y')}{_btw_txt}; open-weight models "
-            f"have trailed it by {eta['lag_lo']:.1f}\u2013{eta['lag_hi']:.1f} "
-            "months, so they reach it that much later." + _direct_txt,
-            ("trailed it by", "Lags are measured against the frontier's interpolated "
-                              "crossing of each score, not against the next model up "
-                              "\u2014 snapping to the next model up would equate "
-                              "scores several points apart."))
+    if _eta_note is not None:
+        with st.expander("How to read this"):
+            _fn_caption(*_eta_note)
 
     # ── Cross-check: the same question on the long-horizon cyber range ───
     _render_ukcyber_tlo(lag_rows)
@@ -10090,9 +10102,10 @@ def _rev_median_past(median):
 
 
 def render_revenue():
-    st.header("Revenue Projections (ARR)")
-    st.warning("Warning: projections assume lines go up indefinitely, which is "
-               "obviously not realistic.")
+    _tab_intro("Revenue",
+               "**How fast is the leading AI labs' revenue growing?** Annualized "
+               "revenue run-rate (ARR) for OpenAI and Anthropic; the fans extend each "
+               "lab's fitted growth.")
 
     openai_dates, openai_vals = _parse_revenue(_OPENAI_REVENUE)
     anthropic_dates, anthropic_vals = _parse_revenue(_ANTHROPIC_REVENUE)
@@ -10497,6 +10510,9 @@ def render_revenue():
         fig.update_yaxes(range=[0, y_max])
 
     st.plotly_chart(_tf(fig), width="stretch")
+    with st.expander("How to read this"):
+        st.warning("Warning: projections assume lines go up indefinitely, which is "
+                   "obviously not realistic.")
 
     # --- Backtest summary ---
     if _rev_backtesting:
@@ -11365,8 +11381,11 @@ def render_employment():
         jobs_pct95 = np.percentile(jobs_above_baseline, 95, axis=0)
 
     # ── Main content ─────────────────────────────────────────────────────
-    st.header("AI Employment Displacement Model")
-    st.warning("Warning: incomplete, not final.")
+    _tab_intro("Employment",
+               "**How much unemployment could AI's remote-work gains cause?** A simple "
+               "displacement model driven by the Remote Labor Index projection and the "
+               "sidebar's assumptions.")
+    cards = st.container()   # the cards are computed after the chart, shown above it
 
     # ── Fan chart ──────────────────────────────────────────────────────────
     fig = go.Figure()
@@ -11508,6 +11527,8 @@ def render_employment():
     )
 
     st.plotly_chart(fig, width="stretch")
+    with st.expander("How to read this"):
+        st.warning("Warning: incomplete, not final.")
 
     # ── Projections row ──────────────────────────────────────────────────
     eoy_targets = [
@@ -11523,7 +11544,7 @@ def render_employment():
 
     valid_targets = [(label, d) for label, d in eoy_targets if d <= proj_end_date]
     if valid_targets:
-        cols = st.columns(len(valid_targets))
+        cols = cards.columns(len(valid_targets))
         for col, (label, target_date) in zip(cols, valid_targets):
             unemp_samples, rli_samples, _t_idx = _emp_at_date(target_date)
             p50_r = np.percentile(rli_samples, 50)
@@ -13376,21 +13397,7 @@ def render_data_centers():
         cap_date = cap_date + timedelta(days=shift_days)
 
     # ── Header ──
-    _tab_intro("Frontier Data Centers Over Time", _DC_LEAD)
-
-    if key in ('train_flop', 'train_flop_6mo'):
-        run_days = cfg.get("run_days", _DAYS_2MO)
-        st.caption(
-            f"Methodology: *{metric_label}* = log₁₀(peak 8-bit OP/s × "
-            f"{run_days // 30}-month run × {_DC_UTILIZATION:.0%} utilization). "
-            "Order-of-magnitude estimates.")
-    elif key in ('gpt5s', 'mythos'):
-        target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
-                         else ("1e27 FLOP", "Mythos scale"))
-        st.caption(
-            f"Methodology: time to train one {target} ({scale}) model = {target} "
-            f"÷ (peak 8-bit OP/s × {_DC_UTILIZATION:.0%} utilization). Shorter = "
-            "bigger site.")
+    _tab_intro("Data Centers", _DC_LEAD)
 
     if not series:
         st.warning("No data available for this metric.")
@@ -13403,7 +13410,24 @@ def render_data_centers():
         {v['company'] for v in series.values()} & _DC_EXCLUDE_COMPANIES,
         key=lambda c: -_peak_h100.get(c, 0.0))
     _shown_unattr = [c for c in _shown_hosts if c in unattributed]
-    if _shown_hosts:
+
+    def _how_to_read():
+        """The method and scope notes, drawn under the first chart."""
+        if key in ('train_flop', 'train_flop_6mo'):
+            run_days = cfg.get("run_days", _DAYS_2MO)
+            st.caption(
+                f"Methodology: *{metric_label}* = log₁₀(peak 8-bit OP/s × "
+                f"{run_days // 30}-month run × {_DC_UTILIZATION:.0%} utilization). "
+                "Order-of-magnitude estimates.")
+        elif key in ('gpt5s', 'mythos'):
+            target, scale = (("2e25 FLOP", "GPT-5 scale") if key == 'gpt5s'
+                             else ("1e27 FLOP", "Mythos scale"))
+            st.caption(
+                f"Methodology: time to train one {target} ({scale}) model = {target} "
+                f"÷ (peak 8-bit OP/s × {_DC_UTILIZATION:.0%} utilization). Shorter = "
+                "bigger site.")
+        if not _shown_hosts:
+            return
         _fn_caption(
             "Scope: AI labs, plus cloud and colocation hosts with a "
             f"{_dc_fmt_value(_DC_EXCLUDE_MIN_H100, 'h100')}-H100e site within "
@@ -13522,6 +13546,9 @@ def render_data_centers():
         y_range=_dc_yrange(_dc_visible_vals(env, x_start), log_scale),
         kind=kind))
     st.plotly_chart(fig1, width="stretch")
+    if _shown_hosts or key in ('train_flop', 'train_flop_6mo', 'gpt5s', 'mythos'):
+        with st.expander("How to read this"):
+            _how_to_read()
 
     comp = _dc_company_series(series)
     peaks = {co: max(v for _, v, _ in steps)
@@ -14828,7 +14855,7 @@ def _cc_pooled_decomp(rows):
 
 
 def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
-                    run_key='train_flop', run_days=_DAYS_2MO):
+                    run_key='train_flop', run_days=_DAYS_2MO, how_to_read=None):
     """Section 4: the US-China frontier read through the compute lens.
 
     The honest headline is a *mismatch of scale*: the US holds a training-compute
@@ -15029,6 +15056,9 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         yaxis=dict(gridcolor='rgba(0,0,0,0.12)'))
     _cc_logop_yaxis(figc, "Training compute (log₁₀ OP)")
     st.plotly_chart(figc, width="stretch")
+    if how_to_read is not None:   # the tab's method notes, under its main chart
+        with st.expander("How to read this"):
+            how_to_read()
     _fn_caption(
         f"<b>Solid</b> = largest actual runs Epoch estimates: "
         f"~{_logop_lbl(us_run_lf)} (US) vs ~{_logop_num(cn_run_lf)} (China), a "
@@ -17302,15 +17332,17 @@ def render_compute_capabilities():
             st.rerun()
 
     _tab_intro("China", _CC_LEAD)
-    _fn_caption(
-        "Compute is in log OP and H100e, capability in ECI, gaps in OOM.",
-        ("log OP", "log10 of the operations one training run delivers; +1 is "
-                   "ten times more compute."),
-        ("H100e", "H100-equivalents: chips converted to the number of Nvidia "
-                  "H100s with the same compute."),
-        ("ECI", "Epoch's Capabilities Index, a single score combining many "
-                "benchmarks."),
-        ("OOM", "Order of magnitude, a factor of 10."))
+
+    def _units():
+        _fn_caption(
+            "Compute is in log OP and H100e, capability in ECI, gaps in OOM.",
+            ("log OP", "log10 of the operations one training run delivers; +1 is "
+                       "ten times more compute."),
+            ("H100e", "H100-equivalents: chips converted to the number of Nvidia "
+                      "H100s with the same compute."),
+            ("ECI", "Epoch's Capabilities Index, a single score combining many "
+                    "benchmarks."),
+            ("OOM", "Order of magnitude, a factor of 10."))
     horizon = datetime(cc_end_year, 12, 31)
     run_key = _PC_RUN_OPTIONS[run_label]
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
@@ -17320,7 +17352,7 @@ def render_compute_capabilities():
     # Section 1: US vs. China — the exchange-rate decomposition read by country
     # ══════════════════════════════════════════════════════════════════════
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
-                    run_key=run_key, run_days=run_days)
+                    run_key=run_key, run_days=run_days, how_to_read=_units)
 
     # ══════════════════════════════════════════════════════════════════════
     # Section 2: where China's compute comes from, by source
@@ -26870,11 +26902,12 @@ def render_release_lag():
     leads = _rl_lead_rows(today)
     lead_a = [r['Anthropic'][2] for r in leads if r['Anthropic'][0]]
     lead_us = [r['US best'][2] for r in leads if r['US best'][0]]
-    st.header("Release Lag")
-    _fn_line(f"A released Claude model ships a median **{_rl_median(pub):.0f} days** "
-             f"after its training finishes, but Anthropic's best trained model leads its "
-             f"best release by a median **{_rl_median(lead_a):.0f} days**: the frontier "
-             "is held back, not the snapshots.")
+    _tab_intro("Release Lag",
+               "**How long does the best trained model wait before release?** "
+               f"A released Claude model ships a median **{_rl_median(pub):.0f} days** "
+               f"after its training finishes, but Anthropic's best trained model leads its "
+               f"best release by a median **{_rl_median(lead_a):.0f} days**: the frontier "
+               "is held back, not the snapshots.")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Snapshot lag (median)", f"{_rl_median(pub):.0f} days",
               help=f"Training finish to release for the {len(pub)} public Claude "

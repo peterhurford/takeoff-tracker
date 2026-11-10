@@ -167,8 +167,10 @@ def _event_detail(st, event):
 
 def render(st):
     events = load_events()
-    st.header('Frontier thresholds')
-    st.caption('Public assessments through September 6, 2026. Each lab uses its own definitions; these are not equivalent risk levels.')
+    st.header('Frontier Thresholds')
+    st.markdown("**Which dangerous-capability thresholds do the frontier labs say their "
+                "models have reached?** One timeline per lab of its public assessments in "
+                "the chosen risk category.")
     if st.session_state.get('ft_category', 'Cybersecurity') not in CATEGORY_MILESTONES:
         st.session_state['ft_category'] = 'Cybersecurity'
     category = st.radio('Risk category', list(CATEGORY_MILESTONES), horizontal=True, key='ft_category')
@@ -193,6 +195,8 @@ def render(st):
                 st.write(detail['details'])
             else:
                 st.caption('The supplied chronology contains no milestone selected for this category and lab.')
+    with st.expander('How to read this'):
+        st.caption('Public assessments through September 6, 2026. Each lab uses its own definitions; these are not equivalent risk levels.')
     with st.expander('Explore the full chronology · 55 events'):
         st.caption('Includes earlier Medium ratings, framework revisions, unchanged releases, and operational updates.')
         domains = sorted({d for e in events for d in e['domains']})

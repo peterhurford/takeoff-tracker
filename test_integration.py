@@ -216,6 +216,49 @@ class TestDefaultTab:
         assert _qp(at, "tab") == ["eci"]
 
 
+def _in_order(node):
+    """Every element under `node` in render order, containers before their contents."""
+    kids = getattr(node, "children", None)
+    if isinstance(kids, dict) and kids:
+        if node.type == "expander":
+            yield node
+        for k in sorted(kids):
+            yield from _in_order(kids[k])
+    else:
+        yield node
+
+
+class TestTabTopOrder:
+    """Every tab but Takeoff and Pacing (whose orders are deliberate, see their
+    docs/ records) opens on its label, a lead that asks the tab's question, its
+    headline cards, the main chart, then any *How to read this* notes."""
+
+    _CARDS = {"ECI", "Remote Labor Index", "METR Horizon", "UK Cyber", "Employment",
+              "China", "Release Lag"}
+
+    @pytest.mark.parametrize("tab", [t for t in _SLUG_FOR_TAB
+                                     if t not in ("Takeoff", "Pacing")])
+    def test_title_lead_cards_chart_then_notes(self, tab):
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = _SLUG_FOR_TAB[tab]
+        at.run()
+        _assert_no_error(at, tab)
+        els = list(_in_order(at.main))
+        types = [e.type for e in els]
+        h = types.index("header")
+        assert els[h].value == vp._TAB_LABEL.get(tab, tab)
+        lead = els[h + 1]
+        assert lead.type == "markdown" and lead.value.startswith("**")
+        assert "?" in lead.value.split("**")[1]
+        chart = types.index("plotly_chart")
+        if tab in self._CARDS:
+            assert h < types.index("metric") < chart
+        how = [i for i, e in enumerate(els)
+               if e.type == "expander" and e.label == "How to read this"]
+        assert all(i > chart for i in how)
+
+
 class TestReleaseLagTab:
     def test_it_shows_snapshot_lag_and_frontier_lead(self):
         at = _fresh_app()
@@ -2641,7 +2684,7 @@ class TestDataCentersByCountry:
         selectors define their terms."""
         import visualize_projection as vp
         at = self._dc_app()
-        assert "Frontier Data Centers Over Time" in [h.value for h in at.header]
+        assert "Data Centers" in [h.value for h in at.header]
         assert vp._DC_LEAD in [m.value for m in at.markdown]
         assert "H100-equivalents" in at.selectbox(key="dc_metric").proto.help
         assert "train one model together" in at.selectbox(key="dc_pool_n").proto.help
