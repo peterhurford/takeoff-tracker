@@ -5,8 +5,8 @@ explicit proxy calibration, not statistically identified probabilities.
 
 ## Today, coding automation, and existing assistance
 
-Every simulation starts today and ends at the selected calendar horizon (default
-December 31, 2031). The exact final RSI samples remain the coding-automation dates,
+Every simulation starts today and runs to December 31 of `_TK_SIM_END_YEAR` (2040); the
+calendar horizon (`tk_end_year`, default 2030) only crops the charts. The exact final RSI samples remain the coding-automation dates,
 including weights, conditioning, penalty, clock, past dates, and the late tail — with
 the AL5 card's weight set to zero, since full autonomy is not a coding milestone.
 They no longer shift an otherwise identical post-coding simulation forward in time.
@@ -53,8 +53,8 @@ today's) to the power `ai_copies` (default 1). Since only AI's share speeds up, 
 about 4% a year to research labor today, while people do about a third of the work, and
 counts in full once autopilot takes over at RSI. The staff survey's coding fit is netted of
 that 4%, and the experiment calibration credits copies before research judgment. With it,
-ultraintelligence comes 2 months sooner (May against Jul 2030) and 24% of scenarios make 3
-years of progress in RSI's first year (17% without).
+ultraintelligence comes about a month sooner (Nov against Dec 2028) and 53% of scenarios
+make 3 years of progress in RSI's first year (41% without).
 
 Labor speeds up as the human share h of research hours falls, by Amdahl's law:
 (h0 + (1 - h0)/s) / (h + (1 - h)/s), with s = `ai_speed` (default 30x) and h0 today's
@@ -154,7 +154,7 @@ No minimum of 1× is imposed.
 
 The reporting anchor is today's research pace, by the model's one definition: ECI
 growth less compute's share over the public 2024–26 line's algorithmic growth, set through
-`tk_eci_today` (default ~1.7×). Each draw keeps its RSI activity
+`tk_eci_today` (default 24.5 ECI a year, read live, a pace of 1.54×). Each draw keeps its RSI activity
 multiple's spread around that median. The chart rescales each draw to it before taking
 percentiles and never multiplies existing assistance in a second time; the dates move only
 through the software pace the same setting gives the dynamics.
@@ -266,17 +266,16 @@ alone can multiply research only so far against fixed experiment compute; at sig
 scales it. The model's FOOM odds therefore rest mostly on the weight sigma >= 1 gets.
 
 Forethought's own measure, years of progress made in the year after RSI, is counted in
-2025-level ECI progress: the 13.5 points the US frontier gained over 2025, about 5.8x a year
+2025-level ECI progress: the 16.1 points the US frontier gained over 2025, about 5.6x a year
 of effective compute here. Read through the two ECI rates, under the software ceiling and
-the scale-dependent share, its median is 1.8; 16% of scenarios make 3 years or more and
-1% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
+the scale-dependent share, its median is 3.2; 53% of scenarios make 3 years or more and
+14% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
 year of effective compute as a year, holds compute fixed and starts at full automation of AI
-R&D. Two features account for most of the gap. At today's defaults (24% and 2%), letting
-every gain skip the training-run wait on a one-week cycle gives 56% and 24%; labor and
-compute as substitutes (rho 0.5, no spread) gives 53% and 5%; both give 94% and 63%, and
-r at Forethought's 2025 central 1.2 on top 96% and 70%. Either alone now about matches
-Forethought; both together overshoot it, since the model also has more AI copies and
-autopilot, which Forethought's labor already stands for.
+R&D. Two features move the shares most. From the defaults (53% and 14%), letting every
+gain skip the training-run wait on a one-week cycle gives 69% and 34%; labor and compute as
+substitutes (rho 0.5, no spread) gives 76% and 27%; both give 90% and 62%, and r at 1.2 on
+top 94% and 69%. Either alone overshoots Forethought, since the model also has more AI
+copies and autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
 
@@ -404,7 +403,8 @@ the difference.
 
 All event times are years from today. Calendar CDFs use them directly; coding-relative
 plots subtract each draw's coding date and retain unreached draws in the denominator.
-Their follow-up ends at the calendar horizon, so late coding dates have less follow-up.
+Their follow-up ends with the simulation, at the end of `_TK_SIM_END_YEAR`, so late coding
+dates have less follow-up.
 Workflow plots show monthly medians and middle-80% intervals across scenarios. Marginal
 medians meeting every target do not establish joint automation. Completed paths retain
 last modeled workflow values and last measured rates. A draw whose research runs past

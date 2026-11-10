@@ -422,7 +422,7 @@ carried at the pace (`_tk_start_draws`; every display quotes the 20,000-draw med
 `_tk_trained_now`, and each run's draws shift its paths and coding level as offsets from it;
 `TestTkStartDraws`); China's its anchor plus its ship lag), and the pace both as the model uses it and like for like on releases. That last
 column is the section's key caveat: on releases the two climb at nearly the same pace
-(+2.4 ECI/yr since 2024, +1.4 smoothed now); the model's US starts ~8 faster because its
+(the column reads both live); the model's US starts faster because its
 trained frontier counts Anthropic's internal models, which have no Chinese counterpart in
 the data. Then the cards, the chart (US releases and the trained frontier with internal
 models drawn in, and China's start as a marker with its range), and the sources table

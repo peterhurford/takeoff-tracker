@@ -1,7 +1,26 @@
 # Takeoff parameter guide — September 8, 2026
 
-These are the current Central defaults, not necessarily a browser session's settings.
-Most exact values are illustrative assumptions introduced during development. The
+This guide records the `takeoff-v4` defaults as of that date, and its computed figures
+(such as the difficulty sensitivity) were run under them. The live defaults are
+`takeoff_model.DEFAULTS` overlaid by the app's `_TK_DEFAULTS`, which sets several from
+evidence; where they now differ:
+
+| Parameter | Here | Live default | Set by |
+|---|---:|---:|---|
+| Direction / experiments / verification: human work today | 40 / 30 / 50% | 93.2 / 43.5 / 76.3% | the activity table on the R&D Automation Index's mix today (`_tk_human_calibration`) |
+| Stage human-work halving times | 6 / 9 / 12 months | 19.4 months each | the index's past-year halving (`_tk_ladder_stage_halvings`) |
+| Persistent human-work floor | 1% | 0% | `takeoff_model.DEFAULTS` |
+| Research-quality elasticity prior | 0.8 | 0.39 | `_tk_taste_default` |
+| Coding elasticity | 0.8 | 0.66 | the staff survey (`_tk_survey_coding`) |
+| Undeployed research today | 2 months | 4 months, one full training-plus-validation cycle | `pipeline_months` |
+| Compute growth per year | 2× | the Data Centers tab's US largest-run fit (`tk_dc_compute`, about 3.0× now), keeping half its log growth after 2030 | `_tk_hist_compute_rate` |
+| Compute / capability growth over the evidence window | 2× / 2× | 1.93× / 4.77× | `_tk_evidence_window_growth` |
+| Increasing research difficulty | 0.5 | 0.5, set through returns to research r (default 1.0) as `parallelization` / r | `tk_returns` |
+| End year | 2031 | the simulation runs to 2040 (`_TK_SIM_END_YEAR`); `tk_end_year` (2030) crops the charts | |
+
+Useful-project completion, failure-rate halving, the required completion, acceleration and
+same-compute advantage, consecutive cycles, the breadth gaps and the AL5 weight are no longer
+in `takeoff_model.DEFAULTS`. Most exact values are illustrative assumptions introduced during development. The
 rationales below explain their intended role, not a claim that evidence identifies them.
 See `checkpoints/takeoff-defaults-2026-09-08.json` for exact machine-readable settings as of
 `takeoff-v4`; v5 adds `ladder_weight` = 50 and varies `difficulty`.
