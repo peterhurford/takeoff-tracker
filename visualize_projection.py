@@ -262,11 +262,19 @@ _NAMES = {
     'gpt_5_3_codex': 'GPT-5.3 Codex',
     'gpt_5_4_xhigh': 'GPT-5.4 (xhigh)',
     'claude_mythos_preview_early_inspect': 'Claude Mythos',
+    'claude_4_1_opus_inspect': 'Claude 4.1 Opus', 'gemini_3_1_pro': 'Gemini 3.1 Pro',
+    'gpt_5_4': 'GPT-5.4',
 }
 
 
 def pretty(name):
     return _NAMES.get(name, name)
+
+
+def _tab_intro(title, lead):
+    """A tab's title and its one- or two-sentence lead, above the first chart."""
+    st.header(title)
+    st.markdown(lead)
 
 
 def log2min_to_label(val, hours_only=False):
@@ -3656,6 +3664,24 @@ _METR_DEFAULTS = {
     "metr_end_year": _default_end_year([m['date'] for m in frontier_all]),
 }
 
+_METR_DT_HELP = "Doubling time of the horizon, 80% interval."
+_METR_POS_HELP = ("Uncertainty in where the trend is today; sets the spread, not the "
+                  "centre.")
+_METR_WORK_TIME_HELP = ("Work time: 1 day = 8 h, 1 week = 40 h, 1 month = 176 h, "
+                        "1 year = 2,000 h.")
+# Past this the benchmark's tasks say nothing; cards read ">100 work-years".
+_METR_CARD_CAP_HRS = 100 * 2000
+_METR_BEYOND_HELP = ("The benchmark cannot measure horizons this long; read it as "
+                     "'beyond the scale'.")
+
+
+def _metr_card_hrs(h, hours_only=False):
+    """A METR card's horizon, capped at ">100 work-years" (`_METR_CARD_CAP_HRS`)."""
+    if h > _METR_CARD_CAP_HRS:
+        return f">{_METR_CARD_CAP_HRS // 2000} work-years"
+    return fmt_hrs(h, hours_only=hours_only)
+
+
 def render_metr():
     if st.session_state.pop("_reset_metr", False):
         for k in _METR_RESET_KEYS:
@@ -3773,10 +3799,10 @@ def render_metr():
                 custom_dt_lo, custom_dt_hi = st.columns(2)
                 custom_dt_lo = _ss_number_input(custom_dt_lo,
                     "DT CI low (days)", "custom_dt_lo", _default_dt_lo,
-                    min_value=10, max_value=2000, step=5)
+                    min_value=10, max_value=2000, step=5, help=_METR_DT_HELP)
                 custom_dt_hi = _ss_number_input(custom_dt_hi,
                     "DT CI high (days)", "custom_dt_hi", _default_dt_hi,
-                    min_value=10, max_value=2000, step=5)
+                    min_value=10, max_value=2000, step=5, help=_METR_DT_HELP)
                 if custom_dt_lo > custom_dt_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
@@ -3788,10 +3814,10 @@ def render_metr():
                 _p_suffix = "_p80" if _sidebar_p80 else "_p50"
                 custom_pos_lo = _ss_number_input(_pos_lo_col,
                     "Pos CI low (h)", "custom_pos_lo" + _p_suffix, round(_def_lo_hrs, 1),
-                    min_value=0.01, step=0.5)
+                    min_value=0.01, step=0.5, help=_METR_POS_HELP)
                 custom_pos_hi = _ss_number_input(_pos_hi_col,
                     "Pos CI high (h)", "custom_pos_hi" + _p_suffix, round(_def_hi_hrs, 1),
-                    min_value=0.01, step=0.5)
+                    min_value=0.01, step=0.5, help=_METR_POS_HELP)
 
                 custom_dt_dist = st.radio(
                     "Trend distribution", ["Normal", "Lognormal", "Log-log"],
@@ -3839,10 +3865,10 @@ def render_metr():
                 _se_ci1, _se_ci2 = st.columns(2)
                 superexp_dt_ci_lo = _ss_number_input(_se_ci1,
                     "DT CI low (days)", "superexp_dt_ci_lo", _default_se_dt_lo,
-                    min_value=10, max_value=2000, step=5)
+                    min_value=10, max_value=2000, step=5, help=_METR_DT_HELP)
                 superexp_dt_ci_hi = _ss_number_input(_se_ci2,
                     "DT CI high (days)", "superexp_dt_ci_hi", _default_se_dt_hi,
-                    min_value=10, max_value=2000, step=5)
+                    min_value=10, max_value=2000, step=5, help=_METR_DT_HELP)
                 if superexp_dt_ci_lo > superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
@@ -3853,16 +3879,19 @@ def render_metr():
                 _p_suffix_se = "_p80" if _sidebar_p80 else "_p50"
                 superexp_pos_lo = _ss_number_input(_se_pos1,
                     "Pos CI low (h)", "superexp_pos_lo" + _p_suffix_se, round(_def_lo_hrs, 1),
-                    min_value=0.01, step=0.5)
+                    min_value=0.01, step=0.5, help=_METR_POS_HELP)
                 superexp_pos_hi = _ss_number_input(_se_pos2,
                     "Pos CI high (h)", "superexp_pos_hi" + _p_suffix_se, round(_def_hi_hrs, 1),
-                    min_value=0.01, step=0.5)
+                    min_value=0.01, step=0.5, help=_METR_POS_HELP)
 
         st.markdown("---")
         show_milestones = st.toggle("Milestones", key="milestones")
         show_labels = st.toggle("Labels", key="labels")
-        only_post_gpt4o = st.toggle("GPT-4o+ only", key="post_gpt4o")
-        use_p80 = st.toggle("Use p80", key="p80")
+        only_post_gpt4o = st.toggle(
+            "GPT-4o+ only", key="post_gpt4o",
+            help="Fit the trend only to frontier models from GPT-4o (May 2024) on.")
+        use_p80 = st.toggle("Use p80", key="p80",
+                            help="Tasks completed 80% of the time instead of 50%.")
         use_log_scale = st.toggle("Log scale", key="log_scale")
         hours_only = st.toggle("Hours only", key="hours_only")
 
@@ -4219,7 +4248,7 @@ def render_metr():
             continue
         lv = _yconv(m_log2)
         hrs = m[_val_key] / 60
-        hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{hrs:.1f}h"
+        hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{fmt_hrs(hrs, hours_only=hours_only)}"
         fig.add_trace(go.Scatter(
             x=[m['date']], y=[lv],
             mode='markers' + ('+text' if show_labels else ''),
@@ -4238,7 +4267,7 @@ def render_metr():
         is_selected = global_idx == proj_as_of_idx
         lv = _yconv(np.log2(m[_val_key]))
         hrs = m[_val_key] / 60
-        hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{hrs:.1f}h"
+        hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{fmt_hrs(hrs, hours_only=hours_only)}"
 
         if is_used:
             # Normal styling for models used in fitting
@@ -4335,6 +4364,7 @@ def render_metr():
         margin=dict(l=50, r=140, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(
+            title="Model release date",
             range=[frontier_plot[0]['date'] - timedelta(days=30),
                    proj_end_date + timedelta(days=30)],
             gridcolor='rgba(0,0,0,0.1)',
@@ -4351,6 +4381,11 @@ def render_metr():
     )
 
     # ── Render chart + metrics ──────────────────────────────────────────────
+    _tab_intro("METR Horizon",
+               "**How long a task can AI finish on its own?** METR's time horizon is the "
+               "length of task, in human working time, that a model completes half the "
+               "time. Each point is the best model at its release; the fan shows where the "
+               "horizon goes if the fitted trend continues.")
     st.plotly_chart(_tf(fig), width="stretch")
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
@@ -4393,9 +4428,12 @@ def render_metr():
         p10_h, p50_h, p90_h = np.percentile(proj_hrs, [10, 50, 90])
         display_h = current_hrs if elapsed == 0 else p50_h
         with col:
-            st.metric(label=label, value=fmt_hrs(display_h, hours_only=hours_only))
+            _beyond = display_h > _METR_CARD_CAP_HRS
+            st.metric(label=label, value=_metr_card_hrs(display_h, hours_only),
+                      help=(_METR_BEYOND_HELP + " " if _beyond else "") + _METR_WORK_TIME_HELP)
             st.caption("measured" if elapsed == 0 else
-                       f"80% CI: {fmt_hrs(p10_h, hours_only=hours_only)} \u2013 {fmt_hrs(p90_h, hours_only=hours_only)}")
+                       f"80% CI: {_metr_card_hrs(p10_h, hours_only)} \u2013 "
+                       f"{_metr_card_hrs(p90_h, hours_only)}")
 
     # Milestone tables in expander
     milestone_thresholds = [

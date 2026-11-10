@@ -118,6 +118,12 @@ the standalone fallback marker (`.vp-fn`). Their CSS lives in the global `<style
 block at the top of the file. The bubble is dark on purpose — it floats above the
 page.
 
+## Tab leads
+
+Each tab opens with `_tab_intro(title, lead)`: its title and a one- or two-sentence
+bolded question plus answer, above the first chart (`TestMetrExplains` and its
+siblings per tab).
+
 ## Light theme only
 
 `.streamlit/config.toml` sets `[theme] base = "light"` and no `[theme.dark]`, which

@@ -801,6 +801,32 @@ class TestArrivalIgnoresTheWindow:
         assert {k: short[k] for k in both} == {k: wide[k] for k in both}
 
 
+class TestMetrExplains:
+    def test_title_lead_axis_and_card_help(self):
+        """The tab opens on its label and a lead; the x axis is named; every
+        card says what a work-day is; the knobs say what they set."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "metr"
+        at.run()
+        _assert_no_error(at, "metr")
+        assert "METR Horizon" in [h.value for h in at.header]
+        assert any(m.value.startswith("**How long a task can AI finish on its own?**")
+                   for m in at.markdown)
+        fig = json.loads(at.get("plotly_chart")[0].proto.spec)
+        assert fig["layout"]["xaxis"]["title"]["text"] == "Model release date"
+        assert all("1 week = 40 h" in m.help for m in at.metric)
+        for key in ("post_gpt4o", "p80"):
+            assert at.toggle(key=key).help
+        names = {m["name"] for m in vp.metr_all}
+        assert not [n for n in names if n not in vp._NAMES]
+
+    def test_cards_cap_past_the_benchmarks_scale(self):
+        import visualize_projection as vp
+        assert vp._metr_card_hrs(150 * 2000) == ">100 work-years"
+        assert vp._metr_card_hrs(17.4) == "17h24m"
+
+
 class TestMeasuredCard:
     @pytest.mark.parametrize("tab", ["metr", "eci", "rli"])
     def test_measured_card_shows_no_ci(self, tab):
