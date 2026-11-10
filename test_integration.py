@@ -1730,6 +1730,16 @@ class TestTakeoffTab:
         assert "tk_end_year" not in at.query_params
         assert at.session_state["rsi_atc_penalty"] == 50
 
+    def test_horizon_at_its_minimum_renders(self):
+        """*Project through* this year leaves under the rate chart's six-month
+        window: the chart gives way to a caption and every section after it
+        still draws."""
+        at = self._app()
+        at.number_input(key="tk_end_year").set_value(datetime.now().year).run()
+        _assert_no_error(at, "Takeoff / project through this year")
+        assert any("six-month rate" in c.value for c in at.caption)
+        assert any(e.label.startswith("How fast ECI climbs") for e in at.expander)
+
     def test_reset_and_url_roundtrip(self):
         at = self._app()
         assert not _has_widget(at, "button", "tk_preset_Central")

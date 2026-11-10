@@ -23562,7 +23562,9 @@ def _tk_density(samples, edges):
     smoothed; draws outside the edges (never arriving included) count in the
     denominator, so the curve's area is the share arriving inside."""
     counts = np.histogram(samples[np.isfinite(samples)], edges)[0]
-    counts = np.convolve(counts, [0.25, 0.5, 0.25], mode="same")
+    # Zero-padded "valid" keeps len(counts) even under three bins, where "same"
+    # would return the kernel's length.
+    counts = np.convolve(np.pad(counts, 1), [0.25, 0.5, 0.25], mode="valid")
     return counts / len(samples) / np.diff(edges)
 
 
@@ -23956,10 +23958,13 @@ def _tk_eci_rate_quantiles(eci, years, window=_TK_ECI_RATE_WINDOW):
 
 def _tk_eci_rate_fig(result, today, eci, markers=()):
     """ECI points gained a year: the scenarios' median and middle 80%, against
-    today's setting and the US frontier's 2024-25 average (the 1x pace)."""
+    today's setting and the US frontier's 2024-25 average (the 1x pace).
+    None when the view is shorter than the centred window, leaving no points."""
     years = np.asarray(result["workflow_progress"]["years"], dtype=float)
     mid, q = _tk_eci_rate_quantiles(eci, years)
-    x = [today + timedelta(days=float(y * 365.25)) for y in mid]
+    if not len(mid):
+        return None
+    x =[today + timedelta(days=float(y * 365.25)) for y in mid]
     q = np.clip(q, 0.1, _TK_ECI_RATE_VIEW * 10)
     base = _tk_eci_scale(takeoff.DEFAULTS)[2]
     fig = go.Figure()
@@ -26434,8 +26439,12 @@ def _render_takeoff(loading):
              "Each scenario's ECI change over a centred six-month window, per year; then "
              "the median and middle 80% across scenarios. The dashed line is today's "
              "setting, the dotted one the 2024–25 average (1× pace)."))
-        st.plotly_chart(_tf(_tk_to(_tk_eci_rate_fig(result, today, eci, markers), view_end)),
-                        width="stretch")
+        rate_fig = _tk_eci_rate_fig(result, today, eci, markers)
+        if rate_fig is None:
+            st.caption("Too little of the chart's range is left to read a six-month rate: "
+                       "set *Project through* to a later year.")
+        else:
+            st.plotly_chart(_tf(_tk_to(rate_fig, view_end)), width="stretch")
         st.markdown("**2025-level ECI progress in each year**")
         _fn_caption(
             f"How many years of ECI progress at {_TK_YEARLY_BASE_YEAR}'s pace each calendar year "
