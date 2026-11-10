@@ -910,27 +910,28 @@ class TestMeasuredCard:
 
     def test_eci_measured_milestone_reads_as_reached(self):
         """A milestone at or below the record reads 100% at every date and
-        arrives at the record's date (RLI: `TestRliMilestones`). The US-best
-        milestones all sit above the record, so a US lead over China's best
-        supplies the passed one."""
-        at = _fresh_app()
-        at.query_params["tab"] = "eci"
-        at.query_params["a"] = "china"
-        at.query_params["b"] = "us"
-        at.run()
-        _assert_no_error(at, "eci")
+        arrives at the record's date (RLI: `TestRliMilestones`). The entity
+        is always the leader and US-best milestones start above the record,
+        so the views offer none today: every row is either ahead of the
+        projected side's record or reads as reached."""
         import visualize_projection as vp
-        record = max(m['eci_score'] for m in vp._eci_entity_data("US best")[1])
-        tables = [t.value for t in at.table]
-        probs = next(t for t in tables if "Milestone" in t.columns and "Median" not in t.columns)
-        arrive = next(t for t in tables if "Median" in t.columns)
-        passed = 0
-        for i, row in probs.iterrows():
-            if float(row["Milestone"].split()[-1]) <= record:
-                passed += 1
-                assert all(v == "100%" for v in list(row)[1:]), row
-                assert arrive.iloc[i]["80% CI"].split(" – ")[0] == arrive.iloc[i]["Median"]
-        assert passed
+        for params, subject in (({}, "US best"), ({"a": "us", "b": "china"}, "China best")):
+            at = _fresh_app()
+            at.query_params["tab"] = "eci"
+            for k, v in params.items():
+                at.query_params[k] = v
+            at.run()
+            _assert_no_error(at, "eci")
+            record = max(m['eci_score'] for m in vp._eci_entity_data(subject)[1])
+            tables = [t.value for t in at.table]
+            probs = next(t for t in tables
+                         if "Milestone" in t.columns and "Median" not in t.columns)
+            arrive = next(t for t in tables if "Median" in t.columns)
+            assert len(probs)
+            for i, row in probs.iterrows():
+                if float(row["Milestone"].split()[-1]) <= record:
+                    assert all(v == "100%" for v in list(row)[1:]), row
+                    assert arrive.iloc[i]["80% CI"].split(" – ")[0] == arrive.iloc[i]["Median"]
 
 
 class TestEmploymentDefaults:
