@@ -1735,6 +1735,7 @@ class TestCcComputeSourcesTab:
 
     _ORDER = ["How this compares with published estimates",
               "Where China's compute comes from",
+              "How much smuggling moves China's share",
               TestCcDuvCeilingTab._HEAD, "US vs. China"]
 
     def test_renders_in_order_and_cites_epoch(self):
@@ -1745,6 +1746,8 @@ class TestCcComputeSourcesTab:
         heads = [str(h.value) for h in at.subheader]
         assert [h for h in heads if h in self._ORDER] == self._ORDER
         assert heads[0] == self._ORDER[0]
+        assert "not percentiles of a simulation" in " ".join(
+            str(c.value) for c in at.caption)
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
         assert "Faded bars are projections" in caps

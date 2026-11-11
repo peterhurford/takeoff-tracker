@@ -69,7 +69,7 @@ distribution, not draw for draw; at defaults the strings agree
 
 The tab runs headline cards, *How this compares with published estimates*
 (`_render_cc_crosscheck`), *Where China's compute comes from*, the glossary expander, the
-lithography ceiling, then *US vs. China*: the evidence on China's compute before the
+smuggling range, the lithography ceiling, then *US vs. China*: the evidence on China's compute before the
 run-and-capability comparison that reads it (`TestCcComputeSourcesTab`). None of the moved
 sections draw, so the reorder moves no number.
 
@@ -80,6 +80,17 @@ Epoch's) exactly into the China-count term and minus the world-total term and na
 larger. Epoch's cluster share (`_WC_EPOCH_CLUSTER_SHARE`) sits beside our back-run share at
 its date, flagged as a share of tracked clusters holding an estimated 10-20% of world
 compute (`TestCcCrossCheck`, `test_cross_check_sets_the_app_beside_epoch`).
+
+## China tab — smuggling range
+
+`_render_cc_smuggling_range` holds every input central but the smuggled stock, set to its
+stored 5th, central and 95th (`_wc_stocks` at `z_smug` = -1.6449, 0, +1.6449), and prints
+China's share today and at end-2027 beside the stored smuggled stocks: Epoch's through
+2025 (`_CN_SRC_EPOCH_SMUGGLED_2025` as published, the file's row unrounded) and IFP's
+through 2027. Smuggled chips are in the world total either way, so only China's count
+moves. A footnote says IFP's bounds are not simulation percentiles; the file stores them as
+10th-90th and the world identity reads them as 5th-95th, as it does Epoch's
+(`TestCcSmugglingRange`).
 
 ## China tab text
 

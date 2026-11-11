@@ -12483,6 +12483,11 @@ _CN_SRC_FILE = 'china_compute_sources.csv'
 _CN_SRC_SOURCE_SMUGGLING = _WC_SOURCE_SMUGGLING
 _CN_SRC_SOURCE_OWNERS = "https://epoch.ai/data/ai-chip-owners"
 _CN_SRC_SOURCE_IFP = "https://ifp.org/how-to-increase-americas-ai-lead-over-china/"
+# Epoch's smuggling study (`_CN_SRC_SOURCE_SMUGGLING`) as published: 660k
+# H100e smuggled through 2025, 90% 290k-1.6M; the file's 2025 stock row is its
+# unrounded cumulative. The China tab's smuggling panel quotes it
+# (`TestCcSmugglingRange`).
+_CN_SRC_EPOCH_SMUGGLED_2025 = (660e3, 290e3, 1.6e6)
 # (key, label, colour), bottom of the stack first. Validated as adjacent
 # pairs for colour-vision deficiency; amber is under 3:1 on white, so the
 # legend and hovers carry it.
@@ -17151,6 +17156,64 @@ def _render_cc_crosscheck(today):
                           "of the world identity to that date."))
 
 
+def _cc_smuggling_range(today):
+    """China's share of world compute today and at end-2027 with only the
+    smuggled stock moved, to its stored 5th, central and 95th (`_wc_stocks`
+    at z_smug = -1.6449, 0, +1.6449; every other input central), beside the
+    stored smuggled stocks at end-2025 (Epoch) and end-2027 (IFP). Smuggled
+    chips are in the world total either way, so only China's count moves.
+    Deterministic (`TestCcSmugglingRange`)."""
+    end27 = datetime(2027, 12, 31)
+    world, china = _wc_stocks(today, [0.0, (end27 - today).days / 365.25],
+                              z_smug=np.array([-1.6449, 0.0, 1.6449]))
+    stock = load_china_compute_sources(_cn_src_mtime())["stock"]
+    return dict(
+        share_today=tuple(100.0 * china[0] / world[0]),
+        share_2027=tuple(100.0 * china[1] / world[1]),
+        smug_2025=stock["2025"]["smuggled"], smug_2027=stock["2027"]["smuggled"])
+
+
+def _render_cc_smuggling_range(today):
+    """How far smuggling alone moves China's share (`_cc_smuggling_range`),
+    beside Epoch's and IFP's published smuggling ranges."""
+    st.subheader("How much smuggling moves China's share")
+    r = _cc_smuggling_range(today)
+
+    def _k(v):
+        return f"{v / 1e6:.2f}M" if v >= 1e6 else f"{v / 1e3:.0f}k"
+    s25, s27 = r['smug_2025'], r['smug_2027']
+    rows = [{"Smuggled stock at": lab,
+             "Through 2025 (Epoch)": _k(s25[i]),
+             "Through 2027 (IFP)": _k(s27[i]),
+             "China's share today": f"{r['share_today'][j]:.1f}%",
+             "China's share, end-2027": f"{r['share_2027'][j]:.1f}%"}
+            for lab, i, j in (("Low (stored 5th)", 1, 0), ("Central", 0, 1),
+                              ("High (stored 95th)", 2, 2))]
+    st.table(pandas.DataFrame(rows).style.hide(axis="index"))
+    ep_mid, ep_lo, ep_hi = _CN_SRC_EPOCH_SMUGGLED_2025
+    lo_t, _, hi_t = r['share_today']
+    lo_e, _, hi_e = r['share_2027']
+    _fn_caption(
+        f"Epoch's smuggling study puts chips smuggled through 2025 at "
+        f"{_k(ep_mid)} H100e ({_k(ep_lo)}–{_k(ep_hi)}); IFP's end-2027 "
+        f"stock runs {_k(s27[1])}–{_k(s27[2])} around {_k(s27[0])}. "
+        f"Across that range alone China's share runs {lo_t:.1f}–"
+        f"{hi_t:.1f}% today and {lo_e:.1f}–{hi_e:.1f}% at end-2027.",
+        ("smuggling study", f"Epoch, Diversion and resale: estimating "
+                            f"compute smuggling to China "
+                            f"({_CN_SRC_SOURCE_SMUGGLING}): median and 90% "
+                            "interval through end-2025."),
+        ("IFP's", f"IFP ({_CN_SRC_SOURCE_IFP}): its low and high are bounds "
+                  "on its own estimate, which the source file stores as a "
+                  "10th–90th range. They are not percentiles of a "
+                  "simulation; the world identity reads them as its 5th and "
+                  "95th, as it does Epoch's."),
+        ("range alone", "Every other input at its central: the smuggled "
+                        "stock is interpolated log-linearly between its "
+                        "stored year-ends, and the world total does not "
+                        "move, since smuggled chips are in it either way."))
+
+
 def _render_cc_compute_sources():
     """China's AI compute by source, added each year and installed, 2022-2030.
 
@@ -17975,6 +18038,7 @@ def render_compute_capabilities():
     _render_cc_compute_sources()
     with st.expander("How to read this"):
         _units()
+    _render_cc_smuggling_range(_today)
     _render_cc_duv_ceiling(_today)
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)

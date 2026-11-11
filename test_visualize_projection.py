@@ -5235,6 +5235,30 @@ class TestCcCrossCheck:
             < vp._WC_EPOCH_CN_MID2026[2] < hi
 
 
+class TestCcSmugglingRange:
+    """The smuggling panel moves only China's smuggled stock to its stored
+    5th and 95th, so the world total holds and the central is the headline's."""
+
+    def test_only_china_moves_and_the_central_is_the_headline(self):
+        today = datetime(2026, 10, 23)
+        r = vp._cc_smuggling_range(today)
+        lo, mid, hi = r["share_today"]
+        assert lo < mid < hi and r["share_2027"][0] < r["share_2027"][2]
+        assert mid == pytest.approx(float(
+            vp._wc_central_shares(today, [0.0])[vp._WC_CN][0]), rel=1e-12)
+        t = [0.0, (datetime(2027, 12, 31) - today).days / 365.25]
+        w_lo, c_lo = vp._wc_stocks(today, t, z_smug=-1.6449)
+        w_hi, c_hi = vp._wc_stocks(today, t, z_smug=1.6449)
+        assert np.allclose(w_lo, w_hi)
+        assert hi == pytest.approx(100 * float(c_hi[0, 0] / w_hi[0, 0]))
+
+    def test_stored_rows_are_epochs_published_range(self):
+        r = vp._cc_smuggling_range(datetime(2026, 10, 23))
+        assert r["smug_2027"][3] == "ifp"
+        for got, pub in zip(r["smug_2025"][:3], vp._CN_SRC_EPOCH_SMUGGLED_2025):
+            assert got == pytest.approx(pub, rel=0.02)
+
+
 class TestDcMilestoneDates:
     """Hover milestones name a training run only for the train-OP metrics,
     and then the run length that metric assumes."""
