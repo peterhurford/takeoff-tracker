@@ -95,7 +95,7 @@ guard it.
 
 ## Frontier Thresholds
 
-`?tab=thresholds` dispatches to `frontier_thresholds.render(st)`. The 55 events in
+`?tab=thresholds` dispatches to `frontier_thresholds.render(st)`. The events in
 `frontier_thresholds.json` transcribe the user-supplied September 6, 2026 timeline;
 they are not independently source-verified. Keep model/configuration, domains,
 framework version, assessment type, date qualifications, and safeguards together.

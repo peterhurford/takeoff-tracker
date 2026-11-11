@@ -161,7 +161,7 @@ two live in `conftest.py`.
    bytecode is still exec'd into a fresh module each run.
 2. **A smaller Monte Carlo.** `N_SAMPLES` reads `_VP_SAMPLES`; `conftest.py` sets it to 400.
    Nothing asserted depends on the count — the CI defaults the tests check come from the
-   deterministic OLS fits, and only the Takeoff tab seeds its RNG. `_VP_SAMPLES=5000 pytest` runs
+   deterministic OLS fits, and every rerun is seeded (*Random seed* above). `_VP_SAMPLES=5000 pytest` runs
    at production fidelity as a check. Don't lower the *default*: the band edges are
    percentiles and go visibly ragged well before 5000.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight

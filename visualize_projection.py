@@ -5776,6 +5776,11 @@ def _rl_snapshot_rows():
             and r['epoch_model'] in rel]
 
 
+def _rl_model_days(model):
+    """Days from one METR snapshot's training finish to its release."""
+    return next(r['days'] for r in _rl_snapshot_rows() if r['model'] == model)
+
+
 def _eci_snapshot_lag_days():
     """Median days from training finish to release over `_rl_snapshot_rows`'
     public snapshots: how far a non-Anthropic US release is moved back."""
@@ -5884,7 +5889,8 @@ def render_eci():
             help="Dates every model when its training finished rather than at "
                  "release, so public models line up with the internal ones: "
                  "METR's estimated finish for Anthropic's models (Fable 5.2 is "
-                 "Model 3 Early, 75 days before release), other US releases "
+                 f"Model 3 Early, {_rl_model_days('Model 3 Early')} days before "
+                 "release), other US releases "
                  f"less the median Anthropic snapshot lag ({_eci_snapshot_lag_days():.0f} "
                  "days), Chinese releases less China's lag. Evidence: the "
                  "*Release Lag* tab.")
@@ -9267,9 +9273,11 @@ def render_ukcyber():
                 st.caption(f"{_pc_span(_m_lo)}–{_pc_span(_m_hi)} from today")
 
         _direct = ukc_target_eta_direct(ukc_all, _UKC_TARGET)
+        _open_dates = sorted(m['date'] for m in ukc_all if m['weights'] == 'open')
         _direct_txt = (f" Extrapolating the two open-weight models directly instead gives "
-                       f"{_direct.strftime('%b %Y')} — a fragile fit from two points "
-                       f"53 days apart, shown only as a sanity check."
+                       f"{_direct.strftime('%b %Y')} — a fragile fit from {len(_open_dates)} points "
+                       f"{(_open_dates[-1] - _open_dates[0]).days} days apart, "
+                       "shown only as a sanity check."
                        if _direct is not None else "")
         _btw_txt = (f" (interpolated between {eta['frontier_between'][0]} and "
                     f"{eta['frontier_between'][1]})"
@@ -17786,8 +17794,11 @@ def _ship_lag_inputs(parent, china=True):
              "one. Dates on Takeoff and Pacing are for trained models, so "
              "release-dated evidence is pulled back by this. Default 70: the "
              "median days from each Anthropic internal model's training finish "
-             "to the first US release at its ECI (69; Claude's own, 88), and "
-             "Fable 5.2 shipped 75 days after it finished as Model 3 Early. "
+             "to the first US release at its ECI "
+             f"({_rl_median(_rl_leads_us()):.0f}; Claude's own, "
+             f"{_rl_median(_rl_leads_claude()):.0f}), and "
+             f"Fable 5.2 shipped {_rl_model_days('Model 3 Early')} days after "
+             "it finished as Model 3 Early. "
              "Evidence: the *Release Lag* tab."),
             ("cn_ship_lag", "Chinese models' internal lead before release (days)",
              "How long a Chinese lab has a model internally before it ships: "
@@ -25885,6 +25896,11 @@ def _rl_leads_claude():
     return [r['Anthropic'][2] for r in _rl_lead_rows() if r['Anthropic'][0]]
 
 
+def _rl_leads_us():
+    """Days each matched internal model led the first US release at its ECI."""
+    return [r['US best'][2] for r in _rl_lead_rows() if r['US best'][0]]
+
+
 def _cn_tk_start_rows(cn, eci, today):
     """The *Where each side starts* table: per side, its best released model,
     the trained level the takeoff model starts from today, how one becomes
@@ -25933,7 +25949,8 @@ def _cn_tk_start_rows(cn, eci, today):
     fmt = lambda v: f"{v:.1f}" if v is not None else "—"
     gap_how = (f"The trained gap is wider: Anthropic's best trained model leads its "
                f"releases by a median {_rl_median(_rl_leads_claude()):.0f} days (Fable "
-               "5.2 shipped 75 days after it finished as Model 3 Early), while China's "
+               f"5.2 shipped {_rl_model_days('Model 3 Early')} days after it "
+               "finished as Model 3 Early), while China's "
                f"labs ship within {_ship_lag('cn'):.0f} days")
     notes = [("United States", us_how), ("China", cn_how), ("Gap", gap_how)]
     return [
@@ -27160,7 +27177,7 @@ def render_release_lag():
     pub = [r['days'] for r in snaps if not r['internal_first']]
     leads = _rl_lead_rows(today)
     lead_a = [r['Anthropic'][2] for r in leads if r['Anthropic'][0]]
-    lead_us = [r['US best'][2] for r in leads if r['US best'][0]]
+    lead_us = _rl_leads_us()
     _tab_intro("Release Lag",
                "**How long does the best trained model wait before release?** "
                f"A released Claude model ships a median **{_rl_median(pub):.0f} days** "
