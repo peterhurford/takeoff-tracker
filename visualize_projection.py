@@ -102,19 +102,22 @@ st.markdown("""<style>
         font-weight: 500; text-align: center; margin-bottom: 1.5rem; }
     [data-testid="stProgress"] div[role="progressbar"] div {
         height: 7rem !important; border-radius: 3.5rem !important; }
-    /* A first load of any other tab (`_BOOT_PILL`): the same bar as a small
-       pill pinned over the page, out of the flow, so the tab draws under it
-       and nothing moves when it goes. */
-    .st-key-_boot_pill { position: fixed; top: 0.6rem; left: 50%;
+    /* A first load of any other tab (`_BOOT_PILL`) and a Pacing rerun on new
+       settings (`_pc_loading_start`): the same bar as a small pill pinned
+       over the page, out of the flow, so the tab draws under it and nothing
+       moves when it goes. */
+    .st-key-_boot_pill, .st-key-pc_plan_pill { position: fixed; top: 0.6rem; left: 50%;
         transform: translateX(-50%); z-index: 1000000; width: min(24rem, 80vw);
         padding: 0.5rem 0.9rem 0.65rem; border-radius: 0.6rem; background: #fff;
         border: 1px solid rgba(41,128,185,0.45);
         box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
-    .st-key-_boot_pill [data-testid="stProgress"] { min-height: 0; padding: 0;
+    :is(.st-key-_boot_pill, .st-key-pc_plan_pill) [data-testid="stProgress"] {
+        min-height: 0; padding: 0;
         display: block; border: 0; border-radius: 0; background: none; }
-    .st-key-_boot_pill [data-testid="stProgress"] p { font-size: 0.9rem !important;
+    :is(.st-key-_boot_pill, .st-key-pc_plan_pill) [data-testid="stProgress"] p {
+        font-size: 0.9rem !important;
         font-weight: 400; text-align: left; margin-bottom: 0.3rem; }
-    .st-key-_boot_pill [data-testid="stProgress"] div[role="progressbar"] div {
+    :is(.st-key-_boot_pill, .st-key-pc_plan_pill) [data-testid="stProgress"] div[role="progressbar"] div {
         height: 0.35rem !important; border-radius: 0.2rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
     .vp-fn, .vp-fn-a { position: relative; cursor: help; }
@@ -18193,7 +18196,7 @@ def _pc_blend_parts(components):
 _PC_CARDS_PER_ROW = 4
 
 
-_PC_WIN_MAX = 5   # phases the plan builder offers
+_PC_WIN_MAX = 10  # phases the plan builder offers
 # What R&D compute is used for, in `takeoff.COMPUTE_USES` order: the key
 # suffix of each use's kept-share setting and its name on the page.
 _PC_USES = {"train": "training", "exp": "experiments", "agents": "AI researchers"}
@@ -18534,6 +18537,12 @@ def _pc_render_plan_builder(today):
                 st.button(name, key=f"pc_preset_{j}",
                           disabled=win_n + len(phases) > _PC_WIN_MAX,
                           on_click=_pc_apply_preset, args=(phases,))
+        if win_n + 1 > _PC_WIN_MAX:
+            st.caption(f"The plan is full at {_PC_WIN_MAX} phases: remove one "
+                       "with its X, or *Clear plan*, to add more.")
+        elif win_n + 5 > _PC_WIN_MAX:
+            st.caption(f"A greyed-out button adds more phases than the "
+                       f"{_PC_WIN_MAX - win_n} the plan has room for.")
         st.markdown("**From the pacing date on**")
         date_col, pace_col, cut_col, lasts_col = st.columns(4)
         pace_pct = pace_col.select_slider(
@@ -18603,28 +18612,28 @@ def _pc_render_plan_builder(today):
                  "it. One month is today's validation; without the ban, AI "
                  "doing the checking shrinks it toward a day.")
         review = review_mo if ban else None
-        # With no pacing nothing starts on the date, so the snapshot and the
-        # race read today, shown on a greyed stand-in; the chosen date stays
-        # in state (and the URL) for when pacing returns.
+        # With these rows untouched nothing starts on the date, so it is a
+        # greyed stand-in: the first phase's start, or today with no phases.
+        # The snapshot and the race read that; the chosen date stays in
+        # state (and the URL) for when these rows are used again.
         _help = ("From this date the US grows at the pace beside it, and any "
                  "R&D compute cut or RSI ban begins. It also "
                  "sets the compute and capability each side has then, the "
                  "date the model-access lever bites, and the bar "
-                 "the *Compute Thresholds* race runs to. With no pacing it is "
-                 "greyed out at today, and those read today.")
-        if (pace_pct == 100 and not _pc_pace_windows(today) and cut is None
-                and review is None):
+                 "the *Compute Thresholds* race runs to. With these rows "
+                 "untouched it is greyed out at the first phase's start, or "
+                 "at today with no phases, and those read that date.")
+        if pace_pct == 100 and cut is None and review is None:
             st.session_state["pc_pause_mo"] = st.session_state.get(
                 "pc_pause_mo", _PC_DEFAULTS["pc_pause_mo"])
+            pause_mo = _pc_first_phase_mo()
             date_col.select_slider(
-                "Pacing starts on", options=[0], value=0, disabled=True,
-                format_func=lambda m: f"{today:%b %Y}", help=_help)
-            pause_mo = 0
+                "Pacing starts on", options=[pause_mo], value=pause_mo,
+                disabled=True, format_func=month, help=_help)
         else:
             pause_mo = date_col.select_slider(
                 "US pauses on" if not pace_pct else "Pacing starts on"
-                if pace_pct < 100 or _pc_pace_windows(today)
-                else "Cut starts on" if cut else "Ban starts on",
+                if pace_pct < 100 else "Cut starts on" if cut else "Ban starts on",
                 options=months, value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
                 format_func=month, help=_help)
         cut_box = st.container()
@@ -18647,9 +18656,8 @@ def _pc_render_plan_builder(today):
             for col, (f, label, options, fmt) in zip(cols, fields):
                 key = f"pc_win{i}_{f}"
                 if st.session_state.get(key) not in options:
-                    st.session_state.pop(key, None)
-                col.selectbox(label, options, index=options.index(_PC_DEFAULTS[key]),
-                              key=key, format_func=fmt,
+                    st.session_state[key] = _PC_DEFAULTS[key]
+                col.selectbox(label, options, key=key, format_func=fmt,
                               label_visibility="visible" if i == 1 else "collapsed")
             cols[-1].button(":material/close:", key=f"pc_win{i}_x",
                             type="tertiary", help=f"Remove phase {i}",
@@ -18666,6 +18674,15 @@ def _pc_render_plan_builder(today):
 
 
 _PC_PHASE_FIELDS = ("pace", "start", "end", *_PC_USES)
+
+
+def _pc_first_phase_mo():
+    """Months from today to the earliest phase's start (phases that end on
+    or before their start left out, as `_pc_plan_phases`); 0 with none."""
+    spans = [[st.session_state.get(f"pc_win{i}_{f}", _PC_DEFAULTS[f"pc_win{i}_{f}"])
+              for f in ("start", "end")]
+             for i in range(1, int(st.session_state.get("pc_win_n", 0) or 0) + 1)]
+    return min((a for a, b in spans if b > a), default=0)
 
 
 def _pc_add_phase():
@@ -18757,7 +18774,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
                     (f"pc_win{i}_pace", 50),
                     (f"pc_win{i}_start", min(_pc_pause_default_mo() + 12 * (i - 1),
-                                             _PC_PAUSE_MO_MAX)),
+                                             _PC_PAUSE_MO_MAX - 1)),
                     (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12 * i,
                                            _PC_PAUSE_MO_MAX)),
                     *((f"pc_win{i}_{u}", 100) for u in _PC_USES))},
@@ -22156,6 +22173,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         kw['horizon_yrs'] = max((horizon - anchor_d).days / 365.25, 1.0)
     # China's path is China's takeoff, under these levers, beside each US
     # scenario; without a Takeoff run, the channel sim stands in.
+    _pc_loading(1)
     _cnp = None if tk is None else _pc_cn_takeoff_paths(
             today, tk, n_s=n_s, draw=np.arange(n_s) % len(_cn_rows), t_day=_t_day,
             cn_ship=_cn_ship,
@@ -23129,6 +23147,52 @@ _PC_LEAD = ("**If the US slows or pauses frontier AI training, when does China "
             "model and the cards show when, and how often, China catches up.")
 
 
+# Steps Pacing's loading pill walks through, each (share done, text).
+_PC_LOADING_STEPS = (
+    (0.15, "running the US through the Takeoff model"),
+    (0.55, "running China's takeoff beside it"),
+    (0.85, "drawing the cards and charts"),
+)
+_PC_LOADING = None    # this rerun's (slot, progress bar); the dispatch clears it
+
+
+def _pc_loading_start():
+    """On a rerun whose Pacing settings differ from the last one drawn (a
+    new plan, a lever, the first visit), a pill pinned over the page
+    (`.st-key-pc_plan_pill`; the first load's own pill when that is up) that
+    `_pc_loading` steps and the dispatch clears. A rerun that changes no
+    setting, such as a section opening, draws none."""
+    global _PC_LOADING
+    _PC_LOADING = None
+    sig = tuple(st.session_state.get(k, _PC_DEFAULTS[k]) for k in _PC_RESET_KEYS)
+    if st.session_state.get("_pc_drawn") == sig:
+        return
+    st.session_state["_pc_drawn"] = sig
+    if _BOOT_PILL is not None:
+        _PC_LOADING = (None, _BOOT_PILL)
+    else:
+        slot = st.empty()
+        _PC_LOADING = (slot, slot.container(key="pc_plan_pill").progress(0.0))
+    _pc_loading(0)
+
+
+def _pc_loading(step):
+    """Move this rerun's loading pill, if it has one, to `_PC_LOADING_STEPS[step]`."""
+    if _PC_LOADING is not None:
+        share, text = _PC_LOADING_STEPS[step]
+        _PC_LOADING[1].progress(
+            share, text=f"**Updating the pacing projection, step {step + 1} of "
+                        f"{len(_PC_LOADING_STEPS)}:** {text}…")
+
+
+def _pc_loading_done():
+    """Clear this rerun's loading pill."""
+    global _PC_LOADING
+    if _PC_LOADING is not None and _PC_LOADING[0] is not None:
+        _PC_LOADING[0].empty()
+    _PC_LOADING = None
+
+
 def render_pacing():
     _today = datetime.now()
 
@@ -23245,6 +23309,7 @@ def render_pacing():
     # stale.
     (pace_pct, pc_cut, pause_mo, pc_review, cut_box,
      plan_box) = _pc_render_plan_builder(_today)
+    _pc_loading_start()
 
     # ── Series shared by both halves of the tab ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
@@ -23296,6 +23361,7 @@ def render_pacing():
                         advanced_box=advanced_box,
                         pace=pace_pct / 100.0, cut=pc_cut, cut_box=cut_box,
                         review=pc_review)
+    _pc_loading(2)
 
     # ── Entities and projections ──
     series_all = series_unshifted
@@ -28301,6 +28367,7 @@ if not os.environ.get("_VP_TESTING"):
             elif active_tab == "Release Lag":
                 render_release_lag()
     finally:
+        _pc_loading_done()
         if _BOOT_BAR is not None:
             _BOOT_BAR.empty()
 

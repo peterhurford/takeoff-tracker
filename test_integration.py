@@ -215,18 +215,6 @@ class TestDefaultTab:
         _switch_tab(at, "ECI")
         assert _qp(at, "tab") == ["eci"]
 
-
-def _in_order(node):
-    """Every element under `node` in render order, containers before their contents."""
-    kids = getattr(node, "children", None)
-    if isinstance(kids, dict) and kids:
-        if node.type == "expander":
-            yield node
-        for k in sorted(kids):
-            yield from _in_order(kids[k])
-    else:
-        yield node
-
     def test_a_first_load_of_another_tab_clears_its_loading_pill(self):
         """A deep link to any other tab leaves no loading bar behind, on the
         first run (the pill) or the next (no bar at all)."""
@@ -239,6 +227,18 @@ def _in_order(node):
             assert at.session_state["_vp_booted"]
             at.run()
             assert not at.get("progress"), slug
+
+
+def _in_order(node):
+    """Every element under `node` in render order, containers before their contents."""
+    kids = getattr(node, "children", None)
+    if isinstance(kids, dict) and kids:
+        if node.type == "expander":
+            yield node
+        for k in sorted(kids):
+            yield from _in_order(kids[k])
+    else:
+        yield node
 
 
 class TestTabTopOrder:
@@ -3779,6 +3779,71 @@ class TestPacingTab:
         preset(at, "Clear plan")
         assert at.session_state["pc_win_n"] == 0
         assert not charts(at, "US pace")
+
+    def test_phases_alone_set_the_pacing_date_and_fill_to_the_cap(self):
+        """With the base rows untouched the pacing date is a greyed stand-in at
+        the earliest phase's start, and follows it. Presets keep adding
+        phases to `_PC_WIN_MAX`, where a caption says the plan is full."""
+        import visualize_projection as vp
+
+        def preset(at, name):
+            j = list(vp._pc_plan_presets(datetime.now())).index(name)
+            at.button(key=f"pc_preset_{j}").click().run()
+            _assert_no_error(at, f"Pacing / preset {name}")
+
+        def stand_in(at):
+            (s,) = [s for s in at.select_slider if s.label == "Pacing starts on"]
+            assert s.disabled
+            return s.value
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert stand_in(at) == 0
+        preset(at, "Halve R&D compute")
+        assert stand_in(at) == vp._PC_DEFAULTS["pc_pause_mo"]
+        at.selectbox(key="pc_win1_start").set_value(30).run()
+        _assert_no_error(at, "Pacing / phase 1 starts later")
+        assert stand_in(at) == 30
+        at.select_slider(key="pc_pace").set_value(50).run()
+        assert at.select_slider(key="pc_pause_mo").value == vp._PC_DEFAULTS["pc_pause_mo"]
+
+        preset(at, "Clear plan")
+        down_up = next(n for n in vp._pc_plan_presets(datetime.now()) if n.startswith("Down-and-up"))
+        preset(at, down_up)
+        preset(at, down_up)
+        assert at.session_state["pc_win_n"] == vp._PC_WIN_MAX == 10
+        assert at.button(key="pc_win_add").disabled
+        assert any("plan is full" in str(c.value) for c in at.caption)
+
+    def test_pacing_shows_a_loading_pill_only_when_its_settings_change(self, monkeypatch):
+        """A Pacing rerun on new settings steps a pill through
+        `_PC_LOADING_STEPS` and clears it; a rerun that changes nothing draws
+        none."""
+        import streamlit as st
+        shown = []
+        real = st.delta_generator.DeltaGenerator.progress
+
+        def progress(self, value, text=None, **kw):
+            shown.append(text)
+            return real(self, value, text, **kw)
+        monkeypatch.setattr(st.delta_generator.DeltaGenerator, "progress", progress)
+
+        def steps():
+            seen = [int(m.group(1)) for m in (
+                re.search(r"pacing projection, step (\d) of 3", t or "") for t in shown) if m]
+            shown.clear()
+            return seen
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert steps() == [1, 2, 3] and not at.get("progress")
+        at.run()
+        assert steps() == [] and not at.get("progress")
+        at.select_slider(key="pc_pace").set_value(50).run()
+        _assert_no_error(at, "Pacing / loading pill")
+        assert steps() == [1, 2, 3] and not at.get("progress")
 
     @staticmethod
     def _paired(el):
