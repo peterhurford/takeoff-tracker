@@ -40,6 +40,9 @@ the judgment elasticity, its drift and ρ each carry their own literature-sized 
 (`test_the_spreads_leave_a_runaway_possible_not_certain`). `POINT_ESTIMATE` zeroes every
 spread; deterministic tests use it. The per-draw values come back as `result["draws"]`.
 Append new factor rows to `z`, never insert, so earlier draws stay paired across versions.
+Row 21 draws each scenario's `fast_share`, logit-normal around the setting with
+`fast_share_spread` its 1σ in log-odds (80%: about 8–55% around 25%;
+`test_fast_share_is_drawn_per_scenario_around_its_setting`).
 Row 18 draws each scenario's software ceiling (`ceiling_low_oom`–`ceiling_high_oom`, default
 6–16 orders of magnitude above today's efficiency, Forethought's range): difficulty rises so
 returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceiling_step` is the
@@ -303,8 +306,8 @@ of `_TK_AL_HUMAN_HOURS` (`_tk_stage_shares`). Research hours then follow the ind
 exponential: `_tk_ladder_curve` builds the human share over the coming years from the
 ladder (AL4 from the projection's start at the "AL4 reaches 90%" card's median rate, AL5 as
 AL4 shifted by an AL4→AL5 gap, AL2/AL3 on their own fits, nested), times the hours per
-level, one curve per stage (`test_each_stage_follows_its_own_ladder_curve`). `_tk_ladder_curves` gives each scenario its own gap, lognormal over the AL5 card's
-80% range from a fixed seed, so RSI carries the unmeasured AL5 rung's uncertainty; one
+level, one curve per stage (`test_each_stage_follows_its_own_ladder_curve`). `_tk_ladder_curves` gives each scenario its own gap, the AL5 card's floored
+lognormal (`_rsi_al5_gap_shape`) from a fixed seed, so RSI carries the unmeasured AL5 rung's uncertainty; one
 curve per draw (rows on an even grid). Research direction, the stage RSI is defined on, also
 reads the next-step study: `_tk_nextstep_curves` (the researcher's odds of the better step
 in excess of the odds left at the study's ceiling, per-draw rate over the card's range),
@@ -580,14 +583,18 @@ Nine things are load-bearing.
    already — a visible band — so the observed absence wins and the
    projection uses `max(ladder, censor)`.
    `test_the_absent_al5_band_censors_the_lag_from_below` pins that it binds;
-   retarget it deliberately rather than loosening it. The lag's own 80% band
-   runs from the censored value to `_RSI_AL5_TAU_HI_MULT`x it — asymmetric
-   because the fast edge is what the data allows and the slow edge is a stated
-   judgement, and a symmetric band would put mass below what is already ruled
-   out. The slow edge is `_RSI_AL5_TAU_HI_MULT`x the larger of that lag and
-   `slow`, the same censored lag read off the recent AL4 months alone
-   (`test_lag_slow_edge_reads_the_recent_al4_months`). `rsi_al5_lag_mo`
-   exposes the fast edge, since it is the whole answer.
+   retarget it deliberately rather than loosening it. The lag is drawn as a
+   floored lognormal (`_rsi_al5_gap_shape`): its median is that censored lag,
+   its floor the shortest rung-to-rung step measured over
+   `_RSI_AUTO_REF_SWEEP` (`floor`, at most `_RSI_AL5_FLOOR_MAX_SHARE` of the
+   median), and its 90th percentile `_RSI_AL5_TAU_HI_MULT`x the larger of the
+   lag and `slow`, the same censored lag read off the recent AL4 months alone
+   (`test_lag_slow_edge_reads_the_recent_al4_months`). A median at the
+   measured spacing with the slow reading only in the tail; three pinned
+   points leave the far tail no freedom (95th percentile near 4.5 years), so
+   move the 90th percentile to change it
+   (`test_lag_band_is_a_long_tail_above_the_shortest_measured_step`).
+   `rsi_al5_lag_mo` sets the median.
 9. **Both fans come off the same sampled AL4 paths**, AL5's being those paths
    shifted per sample, so the two cannot tell different stories about the rung
    they share; `_pc_rsi_al5_eta` likewise calls `_pc_rsi_auto_eta` and shifts

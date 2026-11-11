@@ -1927,29 +1927,34 @@ def _rsi_auto_lag_spread(rows, lower, upper):
 # lag is exposed as a control and the caption says the structural uncertainty
 # is not in the band.
 #
-# The zeros are not useless, though: they censor the lag from below. If the
-# AL4->AL5 lag were as short as the extrapolation alone suggests, AL5 would
-# already be a visible band in the last rated month, and it is not.
+# The zeros are not useless, though: if the AL4->AL5 lag were as short as the
+# extrapolation alone suggests, AL5 would already be a visible band in the last
+# rated month, and it is not. That censored lag is the band's median; the
+# shortest measured step is its floor.
 
 # Deliberately the same level as `_RSI_AUTO_TARGET`: both rungs are dated
 # against one bar, so the gap between where the two fans cross it is the
 # ladder's own step made visible rather than a comparison of two thresholds.
 _RSI_AL5_TARGET = 90.0
 
-# The slow edge of the lag's 80% interval, as a multiple of the censored
-# central value: the judgement that removing the supervisor could be twice as
-# long a step as any measured rung. It is a stated assumption, not a fitted
-# quantity — there is nothing to fit it against.
+# The lag's 90th percentile, as a multiple of the censored central value: the
+# judgement that removing the supervisor could be twice as long a step as any
+# measured rung. It is a stated assumption, not a fitted quantity — there is
+# nothing to fit it against.
 _RSI_AL5_TAU_HI_MULT = 2.0
+# With a lag set by hand, the floor is at most this share of it.
+_RSI_AL5_FLOOR_MAX_SHARE = 0.8
 
 
 def _rsi_al5_lag(rows):
     """The AL4->AL5 lag in days: ladder extrapolation, censored by the zeros.
 
-    Returns {'ladder', 'censor', 'lag', 'slow'} or None if the rungs will not
-    fit. `slow` is the same censored lag read off the recent AL4 months alone
-    (see `_RSI_AUTO_RECENT_N`), never below `lag`; the band's slow edge is
-    `_RSI_AL5_TAU_HI_MULT` times it.
+    Returns {'ladder', 'censor', 'lag', 'slow', 'floor'} or None if the rungs
+    will not fit. `lag` is the band's median. `slow` is the same censored lag
+    read off the recent AL4 months alone (see `_RSI_AUTO_RECENT_N`), never
+    below `lag`; the band's 90th percentile is `_RSI_AL5_TAU_HI_MULT` times it.
+    `floor` is the shortest measured step between rungs over
+    `_RSI_AUTO_REF_SWEEP`, never above `lag`: no draw is shorter.
     `ladder` continues the measured step-to-step increment; `censor` is the
     shortest lag under which AL5 would still be invisible in the last rated
     month (`_RSI_AUTO_FLOOR`, the figure's ~1px floor). The lag used is the
@@ -1969,26 +1974,38 @@ def _rsi_al5_lag(rows):
     if full is None:
         return None
     recent = _censored(_rsi_auto_recent_rows(rows))
+    spreads = [_rsi_auto_lag_spread(rows, lo, hi) for lo, hi, _ in _rsi_auto_ladder(rows)]
     return {'ladder': full[0], 'censor': full[1], 'lag': full[2],
-            'slow': max(full[2], recent[2] if recent else full[2])}
+            'slow': max(full[2], recent[2] if recent else full[2]),
+            'floor': min([full[2]] + [sp[0] for sp in spreads if sp])}
 
 
-def _rsi_al5_tau_draws(lag_days, n, slow_days=None):
-    """Lognormal draws for the lag, 80% over
-    [lag, `_RSI_AL5_TAU_HI_MULT` x max(lag, slow_days)].
-
-    Asymmetric on purpose. The fast edge is the censored central value, which
-    is as short as the observed absence of an AL5 band allows; the slow edge
-    is the judgement above, applied to the slower reading of the ladder when
-    one is given. A symmetric band would put mass below what the data
-    already rules out.
-    """
+def _rsi_al5_gap_shape(lag_days, slow_days=None, floor_days=None):
+    """(floor, mu, sigma) of the lag's shifted lognormal, in days: floor +
+    exp(N(mu, sigma)) has its median at `lag_days` and its 90th percentile at
+    `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days). The floor is
+    `floor_days`, at most `_RSI_AL5_FLOOR_MAX_SHARE` of the lag (0 if None)."""
+    lag_days = float(lag_days)
     hi = max(lag_days, slow_days or 0.0) * _RSI_AL5_TAU_HI_MULT
-    return _lognormal_from_ci(lag_days, hi, n)
+    floor = min(floor_days or 0.0, _RSI_AL5_FLOOR_MAX_SHARE * lag_days)
+    return floor, np.log(lag_days - floor), np.log((hi - floor) / (lag_days - floor)) / 1.282
+
+
+def _rsi_al5_tau_draws(lag_days, n, slow_days=None, floor_days=None):
+    """Draws for the lag: `floor_days` plus a lognormal, median `lag_days`,
+    90th percentile `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days)
+    (`_rsi_al5_gap_shape`).
+
+    The median is the censored central value; the long tail is the judgement
+    above, applied to the slower reading of the ladder when one is given; the
+    floor keeps every draw at or above the shortest step measured.
+    """
+    floor, mu, sigma = _rsi_al5_gap_shape(lag_days, slow_days, floor_days)
+    return floor + np.random.lognormal(mu, sigma, n)
 
 
 def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
-                    samples=False, slow_days=None):
+                    samples=False, slow_days=None, floor_days=None):
     """(early, median, late) dates for the AL5 share to reach `target_pct`.
 
     AL5 is the AL4 curve shifted, so this is the AL4 sampler's own draw plus a
@@ -2004,8 +2021,8 @@ def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
         lag = _rsi_al5_lag(rows)
         if lag is None:
             return None
-        lag_days, slow_days = lag['lag'], lag['slow']
-    days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n, slow_days)
+        lag_days, slow_days, floor_days = lag['lag'], lag['slow'], lag['floor']
+    days_to = days_to + _rsi_al5_tau_draws(float(lag_days), n, slow_days, floor_days)
     return _pc_eta_out(anchor, np.maximum(days_to, 0.0), samples)
 
 
@@ -7397,14 +7414,17 @@ def _render_rsi_automation(end_year):
                 st, "Months AL5 trails AL4", "rsi_al5_lag_mo",
                 float(round(lag['lag'] / 30.44, 1)),
                 min_value=0.0, max_value=120.0, step=0.5,
-                help="The default is the censored ladder extrapolation. Raise "
-                     "it to price in that removing the supervisor is a harder "
-                     "step than any rung measured inside supervised work; the "
-                     "80% band already runs to "
-                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here, and "
+                help="The band's median; the default is the censored ladder "
+                     "extrapolation. Raise it to price in that removing the "
+                     "supervisor is a harder step than any rung measured "
+                     "inside supervised work; the band already has a long "
+                     "tail, its 90th percentile at "
+                     f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here and "
                      f"never below {lag['slow'] * _RSI_AL5_TAU_HI_MULT / 30.44:.0f} "
                      "months: twice the lag read off the AL4 months since "
-                     "May alone.")
+                     "May alone. No draw is shorter than "
+                     f"{lag['floor'] / 30.44:.1f} months, the shortest step "
+                     "measured between rungs.")
         lag_days = max(float(lag_mo) * 30.44, 1.0)
     else:
         lag_days = None
@@ -7430,7 +7450,7 @@ def _render_rsi_automation(end_year):
         # about the rung they share.
         shifts = {'al4': np.zeros(n)}
         if lag_days is not None:
-            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n, lag['slow'])
+            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n, lag['slow'], lag['floor'])
         bands = {
             'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
                     (10, 90, 'rgba(52,152,219,0.18)'),
@@ -23106,7 +23126,7 @@ def _tk_ladder_curve(hours=None, years=40.0, lag_days=None, monotone=True):
         return None
     slope = slope4                                           # per day, median: the fit
     if lag_days is None:
-        lag_days = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+        lag_days = lag['lag']
     lag_days = np.asarray(lag_days, dtype=float)
     cur, centre, _sigma = _rsi_auto_start(rows)
     fits = {k: _rsi_auto_level_fit(rows, k) for k in ('al2', 'al3')}
@@ -23152,7 +23172,7 @@ def _tk_staff_al5_check(hours=None):
     slope = slope4                       # the median rate is the fit's
     _cur, centre, _sigma = _rsi_auto_start(rows)
     lag = _rsi_al5_lag(rows)
-    median_gap = np.sqrt(lag['lag'] * max(lag['lag'], lag['slow']) * _RSI_AL5_TAU_HI_MULT)
+    median_gap = lag['lag']
     to_target = (_logit(_RSI_AL5_TARGET / 100) - centre) / slope
 
     def human_at(gap, when):
@@ -23272,17 +23292,15 @@ def _tk_blend_in_time(t, a, b, weight):
 def _tk_ladder_curves(hours, n, seed):
     """(years, the stages' weighted curve, [one curve per stage]), each one
     row per draw: `_tk_ladder_curve` at `hours` (stages x levels) with each
-    draw's own AL4->AL5 gap, lognormal over the AL5 card's own 80% range
-    (`_rsi_al5_tau_draws`'s), from a fixed seed so reruns pair. None if the
+    draw's own AL4->AL5 gap, the AL5 card's floored lognormal
+    (`_rsi_al5_gap_shape`), from a fixed seed so reruns pair. None if the
     ladder will not fit."""
     lag = _rsi_al5_lag(load_rsi_automation())
     if lag is None:
         return None
-    lo = lag['lag']
-    hi = max(lo, lag['slow']) * _RSI_AL5_TAU_HI_MULT
+    floor, mu, sigma = _rsi_al5_gap_shape(lag['lag'], lag['slow'], lag['floor'])
     rng = np.random.default_rng(int(seed) + 7)
-    gaps = np.exp(rng.normal((np.log(lo) + np.log(hi)) / 2,
-                             (np.log(hi) - np.log(lo)) / (2 * 1.282), n))
+    gaps = floor + np.exp(rng.normal(mu, sigma, n))
     overall = _tk_ladder_curve(hours, lag_days=gaps)
     if overall is None:
         return None
@@ -26328,6 +26346,12 @@ def _render_takeoff(loading):
                    "efficiency, the loop behind software-intelligence-explosion arguments; "
                    "0 keeps the number of copies fixed. While people still do much of the "
                    "work it adds little (about 4% a year today); after RSI it counts in full.")
+            number("Spread on the gains that skip the wait (%)", "fast_share_spread",
+                   0, 400, 10,
+                   "1\u03c3 of that share in log-odds, \u00d7100, around the setting below. "
+                   "100 gives an 80% range of about 8\u201355% around 25%: no source "
+                   "measures the share, and it moves ultraintelligence more than any "
+                   "other setting.")
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
@@ -26558,7 +26582,10 @@ def _render_takeoff(loading):
             st.markdown("**Compute and successor cycles**")
             
             
-            number("Training duration (months)", "training_months", 0.5, 12.0, 0.5)
+            number("Training duration (months)", "training_months", 0.5, 12.0, 0.5,
+                   help="How long each successor trains. Shorter runs train on less compute, "
+                        "so a shorter run is a smaller model, not a faster route to the same "
+                        "one: dates can come later, not sooner.")
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
             st.checkbox("Labs re-split compute as AI changes", key="tk_reallocate_compute",
                         help="On: the compute not used for training is re-split between "

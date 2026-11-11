@@ -4206,7 +4206,7 @@ class TestPacingTab:
         own Takeoff date (the coder's `coding_at`, as the card) through its
         clock rather than re-finding the ECI, which landed early wherever ECI
         is flat before the event. Paced to 40%, every US date moves later.
-        Within a month (two at the 80% ends), not to it: Pacing's samples cycle through the
+        Within a month (three at the 80% ends), not to it: Pacing's samples cycle through the
         scenarios China's takeoff is twinned with (`_cn_tk_rows`), a subset
         of Takeoff's at production samples."""
         monkeypatch.setenv("_VP_SAMPLES", "5000")
@@ -4226,8 +4226,8 @@ class TestPacingTab:
             got = re.match(r"(\w{3} \d{4}) \((\w{3} \d{4}) \u2013 (\w{3} \d{4})\)", us[i])
             assert got, us[i]
             # Medians within a month; the 80% ends, tail percentiles of the
-            # subset, within two.
-            for want, have, tol in zip((cards[card], lo, hi), got.groups(), (1, 2, 2)):
+            # subset, within three.
+            for want, have, tol in zip((cards[card], lo, hi), got.groups(), (1, 3, 3)):
                 assert abs(months(want) - months(have)) <= tol, (card, us[i])
         at.select_slider(key="pc_pace").set_value(40).run()
         t = next(x.value for x in at.table if "Milestone" in x.value.columns

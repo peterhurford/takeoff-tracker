@@ -1055,3 +1055,15 @@ def test_weight_theft_lifts_a_follower_to_the_trained_leader():
     # Just after, within the US's month of climb since; before, the full gap.
     assert np.median(eci[:, k] - level[:, k]) < 2.5
     assert np.median(eci[:, before] - level[:, before]) > 5.0
+
+
+def test_fast_share_is_drawn_per_scenario_around_its_setting():
+    """Logit-normal around the setting; no spread, 0 and 100 give the setting itself."""
+    base = dict(years=.25, transfer=0)
+    drawn = tk.simulate(dict(base, fast_share=25.0, fast_share_spread=100.0), n=4000)["draws"]["fast_share"]
+    assert np.median(drawn) == pytest.approx(25.0, abs=1.5)
+    assert np.percentile(drawn, 10) == pytest.approx(8.5, abs=1.5)
+    assert np.percentile(drawn, 90) == pytest.approx(54.6, abs=3.0)
+    for share, spread in ((25.0, 0.0), (0.0, 100.0), (100.0, 100.0)):
+        d = tk.simulate(dict(base, fast_share=share, fast_share_spread=spread), n=50)["draws"]["fast_share"]
+        assert np.allclose(d, share)

@@ -3252,10 +3252,27 @@ class TestRsiAl5:
         longer, and the band's slow edge is set off it."""
         lag = vp._rsi_al5_lag(vp.load_rsi_automation())
         assert lag['slow'] > lag['lag']
-        draws = vp._rsi_al5_tau_draws(lag['lag'], 20000, lag['slow'])
-        assert np.percentile(draws, 10) == pytest.approx(lag['lag'], rel=0.05)
+        draws = vp._rsi_al5_tau_draws(lag['lag'], 20000, lag['slow'], lag['floor'])
         assert np.percentile(draws, 90) == pytest.approx(
             lag['slow'] * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
+
+    def test_lag_band_is_a_long_tail_above_the_shortest_measured_step(self):
+        """Median on the censored lag, no draw below the shortest step any
+        two rungs show over the reference sweep, and the tail on the slow
+        side only."""
+        rows = vp.load_rsi_automation()
+        lag = vp._rsi_al5_lag(rows)
+        steps = [vp._rsi_auto_lag_spread(rows, lo, hi)[0]
+                 for lo, hi, _ in vp._rsi_auto_ladder(rows)]
+        assert lag['floor'] == pytest.approx(min(steps)) and lag['floor'] < lag['lag']
+        draws = vp._rsi_al5_tau_draws(lag['lag'], 20000, lag['slow'], lag['floor'])
+        assert draws.min() >= lag['floor']
+        assert np.median(draws) == pytest.approx(lag['lag'], rel=0.03)
+        assert (np.percentile(draws, 90) - lag['lag']
+                > 5 * (lag['lag'] - np.percentile(draws, 10)))
+        # A lag set by hand below the floor still draws around itself.
+        low = vp._rsi_al5_tau_draws(lag['floor'] / 2, 20000, None, lag['floor'])
+        assert np.median(low) == pytest.approx(lag['floor'] / 2, rel=0.03)
 
     def test_both_rungs_are_dated_against_the_same_bar(self):
         """One level, two crossings: the gap between them is the ladder's own

@@ -53,8 +53,8 @@ today's) to the power `ai_copies` (default 1). Since only AI's share speeds up, 
 about 4% a year to research labor today, while people do about a third of the work, and
 counts in full once autopilot takes over at RSI. The staff survey's coding fit is netted of
 that 4%, and the experiment calibration credits copies before research judgment. With it,
-ultraintelligence comes about a month sooner (Nov against Dec 2028) and 53% of scenarios
-make 3 years of progress in RSI's first year (41% without).
+ultraintelligence comes about a month sooner (Nov against Dec 2028) and 51% of scenarios
+make 3 years of progress in RSI's first year (39% without).
 
 Labor speeds up as the human share h of research hours falls, by Amdahl's law:
 (h0 + (1 - h0)/s) / (h + (1 - h)/s), with s = `ai_speed` (default 30x) and h0 today's
@@ -72,7 +72,7 @@ speeding chip design, fabs and spending: Forethought's chip-technology and chip-
 feedback loops. It waits 18 months (a chip generation, a fab's build) and ramps in over a
 year; the frozen-AI reference never gets it. The size is an assumption. With the delay the
 ultraintelligence median does not move (seed 42, November 2026 defaults); at once, 2x
-brings it 2 months sooner than 1x, since scale-dependent gains then wait less. The
+brings it a month sooner than 1x, since scale-dependent gains then wait less. The
 other research inputs keep their own growth, so research inputs slow by compute's share.
 
 Research judgment is gated by who directs research: people still in the direction stage
@@ -113,7 +113,7 @@ as weaker returns to research, so r stays at Forethought's 1.0.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
 can be delivered through fast improvements (tooling, kernels, and small updates) and 75%
-through successor training. The split is an assumption about deployable efficiency gains,
+through successor training; each scenario draws its own share around that setting. The split is an assumption about deployable efficiency gains,
 not a claim that all tooling improvements translate into compute savings. It sums to 100%,
 and an improvement never appears in both channels.
 
@@ -121,18 +121,18 @@ Cycles speed up with AI (default on): a model's validation shrinks with the shar
 verification AI does (to about a day on autopilot), and each new training run shortens when
 capability grows faster than today, by today's growth rate over the current one, since a
 run should not outlast the time better methods take to beat it. Shorter runs train on less
-compute, which the adoption rule weighs. It moves ultraintelligence 3 months sooner (Nov
-against Feb 2030) and doubles the share making 10 years of progress in RSI's first year.
+compute, which the adoption rule weighs. It moves ultraintelligence 2 months sooner (Nov 2028
+against Jan 2029) and doubles the share making 10 years of progress in RSI's first year.
 Labs re-split the compute not used for training between running AI researchers and
 experiments as AI changes what each is worth, following the labor-compute mean's
 first-order condition from today's split (on by default). With AI labor abundant and the
-two complements, the agents' share falls from 20% to about 5% by 2030 at the median. It
+two complements, the agents' share falls from 20% to about 7% by 2030 at the median. It
 moves little (the share making 10 years of progress in RSI's first year by about a point),
 because experiments can gain at most half again on their 40% share while training keeps its
 own. A scenario's software ceiling is also tied to its returns to research (correlation
 0.5): a nearer ceiling comes with lower r. That leaves the median alone and makes the
 high-r tail more explosive: among r > 2 scenarios where labor substitutes for compute, 81%
-make 10+ years of progress in RSI's first year, against 68% unlinked.
+make 10+ years of progress in RSI's first year, against 65% unlinked.
 The fast path validates its start-of-cycle discoveries over an assumed one month. The
 slow path freezes discoveries at training start, accumulates physical training compute,
 and deploys only after training plus validation (three plus one month by default).
@@ -185,15 +185,16 @@ rate, AL5 as AL4 shifted by a gap), times the human time each level takes in eac
 gives each stage its own curve. Direction keeps most of its hours at AL4 (AI works from a
 person's high-level prompt and the person decides what ships), so its curve holds near
 its start until AL5 arrives; experiments, handed over at AL4, fall sooner. AL5 has never
-been measured, so each scenario draws its own AL4-to-AL5 gap over the AL5 card's 80%
-range. Research direction, the stage RSI is defined on, also reads an independent source,
+been measured, so each scenario draws its own AL4-to-AL5 gap from the AL5 card's distribution: a median at
+the measured spacing of the rungs below (7.4 months), a floor at the shortest measured step
+(5.8) and a long slow tail (90th percentile 28 months). Research direction, the stage RSI is defined on, also reads an independent source,
 the next-step study: direction needs people in proportion to the odds a researcher still
 picks the better step, above the odds left at the study's own ceiling. Its dates and the
-ladder's are averaged, half each. Alone, each puts direction's 5% bar a median ~1.6 years
-out (ladder 1.57, next-step 1.71), so the weight moves the tails, not the median: at 0,
-0.5 and 1 the median RSI stays May 2028 while its 90th percentile is Oct 2029, Nov 2029
-and Feb 2030. Halving or doubling the AL5 gap moves the median RSI
-from May 2028 to April or August 2028. Each stage moves along its curve at the index's
+ladder's are averaged, half each. Alone, the ladder puts direction's 5% bar a median 1.0 years
+out and the next-step study 1.5, so the weight moves RSI by about a month: at 0, 0.5 and 1
+the median RSI is Nov 2027, Dec 2027 and Dec 2027 and its 90th percentile Mar 2029, Apr
+2029 and Apr 2029. Halving or doubling the AL5 gap moves the median RSI
+from Dec 2027 to Nov 2027 or Mar 2028. Each stage moves along its curve at the index's
 past-year pace, in months of capability progress at today's rate, so faster progress
 compresses it. A
 persistent human-work floor (default 0) and the stage paces remain adjustable. The available research system includes validated fast gains.
@@ -227,6 +228,7 @@ to the literature:
 
 | Scale-dependent share of algorithmic gains | 1.0 in log-odds | 80%: ~22–78% around 50% | Gundlach et al. 2025: most historical gains grew with compute |
 | Compute such a gain waits for | 0.7 in its log | 80%: 0.4–2.5 around 10x | No measurement |
+| Share of gains that skip the training wait | 1.0 in log-odds | 80%: ~8–55% around 25% | No measurement |
 
 A scale-dependent gain is worth something only once models train at larger compute, as
 Transformers and Chinchilla scaling were (Gundlach et al. 2025). Of the gains a model gets
@@ -235,30 +237,30 @@ frontier had when the gain was found (about two years at today's growth); fast g
 tooling and kernels, the paper's scale-invariant kind, count at once. Nothing AI-frozen
 research would have found waits, since history already balanced it with compute; gains AI
 finds faster wait, then count in full. This is separate from ρ, which sets how fast gains
-are discovered. At the 50% median it moves ultraintelligence from Mar to Aug 2030 and the
-share making 3 years of progress in RSI's first year from 27% to 16%; 2x compute growth from
-RSI with no delay brings ultraintelligence back to Feb 2030.
+are discovered. At the 50% median it moves ultraintelligence from Aug to Nov 2028 and the
+share making 3 years of progress in RSI's first year from 66% to 51%; 2x compute growth from
+RSI with no delay brings ultraintelligence back to Oct 2028.
 
 The ceiling raises difficulty so returns to research fall linearly to zero as a scenario's
 algorithmic efficiency nears it; no scenario then runs away without bound. It moves
-ultraintelligence from Jan to Mar 2030 and cuts the share making 10 years of progress in
-RSI's first year from 5% to 2%.
+ultraintelligence from Oct to Nov 2028 and cuts the share making 10 years of progress in
+RSI's first year from 26% to 14%.
 
 The judgment elasticity is still calibrated once at the ρ setting, not per draw.
 
 FOOM here means much progress fast after RSI, measured as the first-year progress card
 does (years of 2025-level ECI progress in the year after RSI). Pace doubling after RSI is
 the wrong measure: a scenario that runs to its software ceiling within months reads as
-slowing a year later. At today's defaults (seed 42) 42% of scenarios make 3+ years and 13%
+slowing a year later. At today's defaults (seed 42) 51% of scenarios make 3+ years and 14%
 make 10+. Split by each scenario's returns to research r and labor-compute elasticity
 sigma = 1/(1 - rho), the share making 10+ years is:
 
 | | sigma < 0.5 | 0.5-1 | >= 1 | all |
 |---|---|---|---|---|
-| r < 1 | 0% | 0% | 4% | 2% |
-| r 1-2 | 0% | 3% | 44% | 19% |
-| r > 2 | 3% | 12% | 81% | 37% |
-| all | 1% | 3% | 29% | 13% |
+| r < 1 | 0% | 0% | 5% | 2% |
+| r 1-2 | 1% | 5% | 44% | 20% |
+| r > 2 | 7% | 22% | 81% | 42% |
+| all | 2% | 5% | 30% | 14% |
 
 Substitution is the gate: below sigma 1 almost nothing FOOMs whatever r is, because labor
 alone can multiply research only so far against fixed experiment compute; at sigma >= 1
@@ -268,13 +270,13 @@ scales it. The model's FOOM odds therefore rest mostly on the weight sigma >= 1 
 Forethought's own measure, years of progress made in the year after RSI, is counted in
 2025-level ECI progress: the 16.1 points the US frontier gained over 2025, about 5.6x a year
 of effective compute here. Read through the two ECI rates, under the software ceiling and
-the scale-dependent share, its median is 3.2; 53% of scenarios make 3 years or more and
+the scale-dependent share, its median is 3.1; 51% of scenarios make 3 years or more and
 14% make 10, against Forethought's 57% and 18%, whose model has the ceiling but not the scale-dependent share. The yardsticks differ: Forethought counts about 10x a
 year of effective compute as a year, holds compute fixed and starts at full automation of AI
-R&D. Two features move the shares most. From the defaults (53% and 14%), letting every
-gain skip the training-run wait on a one-week cycle gives 69% and 34%; labor and compute as
-substitutes (rho 0.5, no spread) gives 76% and 27%; both give 90% and 62%, and r at 1.2 on
-top 94% and 69%. Either alone overshoots Forethought, since the model also has more AI
+R&D. Two features move the shares most. From the defaults (51% and 14%), letting every
+gain skip the training-run wait on a one-week cycle gives 68% and 33%; labor and compute as
+substitutes (rho 0.5, no spread) gives 73% and 27%; both give 89% and 60%, and r at 1.2 on
+top 93% and 68%. Either alone overshoots Forethought, since the model also has more AI
 copies and autopilot, which Forethought's labor already stands for.
 
 ## Evidence calibration
@@ -294,9 +296,9 @@ sum over that weight, direction 100/100/100/97.5/85/0%, used as it stands: on th
 mix today that gives direction 93%, experiments 43%, verification 76%, people at 1.76x
 their unassisted speed. No speed-up setting rescales it. The order follows Anthropic's
 level definitions and Epoch's and Anthropic's staff studies; no source gives the numbers,
-so the priors are a judgment. On the index's projection people still do ~37% of unassisted
-hours in mid-2027, capping research near 2.7x however fast AI is, and fall under 5% only as
-AL5 arrives (Feb 2028). The weights barely move
+so the priors are a judgment. On the index's projection people still do ~7% of unassisted
+hours in mid-2027, capping research near 15x however fast AI is, and fall under 5% as
+AL5 arrives (Jul 2027). The weights barely move
 dates: 25/50/25 gave the same median RSI and ultraintelligence. Stage halving times all
 take that share's past-year halving. The research-quality prior is the geometric
 mean of three readings: the next-step study's win-odds growth (a Bradley-Terry strength

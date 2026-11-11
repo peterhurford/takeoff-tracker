@@ -37,7 +37,9 @@ DEFAULTS = {
     # Autopilot: from a draw's RSI, no research stage needs people at all (the
     # hours left in other stages are dropped). 0 keeps each stage's own decline.
     "rsi_autopilot": 1.0,
-    "fast_share": 25.0, "fast_months": 1.0,
+    # `fast_share` is each draw's median: logit-normal per draw, its spread
+    # 1-sigma of the log-odds times 100 (100 is about 8-55% around 25%).
+    "fast_share": 25.0, "fast_months": 1.0, "fast_share_spread": 100.0,
     "coding_today": 70.0,
     # Steady state: the next model ships with one full cycle (training +
     # validation) of discoveries not yet deployed.
@@ -125,7 +127,7 @@ DEFAULTS = {
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
                   "drift_spread": 0, "substitution_spread": 0, "scale_dependent_spread": 0,
-                  "scale_lag_spread": 0}
+                  "scale_lag_spread": 0, "fast_share_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -170,7 +172,8 @@ def validate(params):
         if not p["human_floor"] <= p["human_" + stage] <= 100 or p["half_" + stage] <= 0:
             raise ValueError("Each workflow's starting human work must be at least its floor, "
                              "and its halving time must be positive.")
-    if not 0 <= p["fast_share"] <= 100 or p["fast_months"] <= 0:
+    if not 0 <= p["fast_share"] <= 100 or p["fast_months"] <= 0 \
+            or not 0 <= p["fast_share_spread"] <= 400:
         raise ValueError("Fast feedback needs a share in [0, 100] and a positive validation cycle.")
     if not 0 <= p["coding_today"] < 95:
         raise ValueError("Today's coding automation must be below the 95% coding milestone.")
@@ -674,7 +677,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    raw = rng.uniform(-1, 1, (21, total))[:, keep_rows]
+    raw = rng.uniform(-1, 1, (22, total))[:, keep_rows]
     z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
@@ -791,7 +794,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     row_offset = np.arange(n) * 1e7       # wider than any row's range
     seen_flat = [None]                    # compute_seen flattened, rebuilt on change
     reference_history = np.zeros_like(capability_history)
-    fast_fraction = p["fast_share"] / 100
+    # Share of gains that skip the training-run wait, logit-normal per draw
+    # (row 21); 0 and 100 stay exact.
+    with np.errstate(divide="ignore"):
+        fast_logit = (np.log(p["fast_share"]) - np.log(100 - p["fast_share"])
+                      if 0 < p["fast_share"] < 100
+                      else (np.inf if p["fast_share"] >= 100 else -np.inf))
+    fast_fraction = 1 / (1 + np.exp(-(fast_logit + p["fast_share_spread"] / 100 * z[21])))
     fast_time = p["fast_months"] / 12
     fast_next = np.full(n, fast_time)
     fast_snapshot = initial_stock.copy()
@@ -907,7 +916,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             earlier = np.where(idx >= 0, s0 + frac * (s1 - s0),
                                initial_stock[rows] + ratio * target)
             due = np.where(np.isinf(ratio), np.inf, np.maximum(
-                (1 - fast_fraction) * (earlier + ratio * lag), reference_trained))
+                (1 - fast_fraction[rows]) * (earlier + ratio * lag), reference_trained))
         return (fast_software + trained_software
                 - scale_share[rows] * np.maximum(trained_software - due, 0))
 
@@ -1299,13 +1308,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                 fast_deployed[hit], ((1 - fast_fraction) * reference_snapshot)[hit]) > now[2][hit]
         pending[done] = np.where(adopted[done], candidate[done], deployed[done])
         pending_scale[done] = np.where(adopted[done], run_start_scale[done], deployed_scale[done])
-        pending_software[done] = np.where(adopted[done], (1 - fast_fraction) * snapshot[done], deployed_software[done])
+        pending_software[done] = np.where(adopted[done], ((1 - fast_fraction) * snapshot)[done], deployed_software[done])
         reference_candidate = (1 - fast_fraction) * reference_snapshot + np.log(
             np.maximum(run_compute / reference_train_compute, 1e-12))
         reference_pending_capability[done] = np.maximum(reference_deployed[done], reference_candidate[done])
         reference_pending_software[done] = np.where(
             reference_candidate[done] > reference_deployed[done],
-            (1 - fast_fraction) * reference_snapshot[done], reference_delivered[done])
+            ((1 - fast_fraction) * reference_snapshot)[done], reference_delivered[done])
         finished |= done
         ready = active & finished & (end >= deploy_end - 1e-12)
         # Fast gains keep landing on the deployed model during validation, so
@@ -1324,8 +1333,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         deployed[ready] = pending[ready]
         deployed_scale[ready] = pending_scale[ready]
         fast_ready = active & (end >= fast_next - 1e-12)
-        fast_deployed[fast_ready] = fast_fraction * fast_snapshot[fast_ready]
-        reference_fast[fast_ready] = fast_fraction * (initial_stock[fast_ready]
+        fast_deployed[fast_ready] = (fast_fraction * fast_snapshot)[fast_ready]
+        reference_fast[fast_ready] = fast_fraction[fast_ready] * (initial_stock[fast_ready]
                                                       + reference_at_fast_start[fast_ready])
         reference_at_fast_start[fast_ready] = reference_gained[fast_ready]
         fast_snapshot[fast_ready] = software[fast_ready]
@@ -1524,6 +1533,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "draws": {"taste_slope": taste_slope, "difficulty": beta,
                   "judgment_drift": drift, "substitution": rho,
                   "ceiling_oom": ceiling / np.log(10), "scale_dependent": scale_share,
+                  "fast_share": 100 * fast_fraction,
                   "scale_lag_oom": scale_lag / np.log(10)},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
