@@ -2050,6 +2050,23 @@ class TestCcRateCalibration:
         assert k > 1.0
 
 
+class TestCcComputeVsUs:
+    """China's installed compute by channel beside the US's, year by year:
+    China's is the by-source chart's stock, the US's the Pacing tab's."""
+
+    def test_rows_are_the_mix_and_pacings_us(self):
+        today = datetime(2026, 11, 11)
+        rows = vp._cc_compute_vs_us(today)
+        data = vp.load_china_compute_sources(vp._cn_src_mtime())
+        stock = {**data["stock"], **vp._cn_src_projection(data)["stock"]}
+        assert [r[0] for r in rows] == list(stock)
+        for y, cn, us in rows:
+            assert cn == {k: stock[y][k][0] for k, _l, _c in vp._CN_SOURCES}
+            t = (datetime(int(y), 12, 31) - today).days / 365.25
+            assert us == pytest.approx(float(vp._pc_us_installed(today, np.array([t]))[0]))
+            assert us > sum(cn.values())
+
+
 class TestCcCnDrivers:
     """The China tab's breakdown of China's ECI gain by source: each period's
     parts add to its total, compute's chip split adds to compute, and the

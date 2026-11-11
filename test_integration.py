@@ -1712,6 +1712,21 @@ class TestCcComputeSourcesTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
         assert "Faded bars are projections" in caps
+        text = " ".join(str(m.value) for m in at.markdown)
+        assert "China's installed compute beside the US's" in text
+        names = [d.get("name", "") for el in at.get("plotly_chart")
+                 for d in json.loads(el.proto.spec)["data"]]
+        assert "United States" in names and "China: Smuggled" in names
+        assert "is the US's multiple" in caps
+        def vsus_axis():
+            spec = next(json.loads(el.proto.spec) for el in at.get("plotly_chart")
+                        if any(d.get("name") == "United States"
+                               for d in json.loads(el.proto.spec)["data"]))
+            return spec["layout"]["yaxis"].get("type", "linear")
+        assert vsus_axis() == "linear"
+        at.toggle(key="cc_vsus_log").set_value(True).run()
+        _assert_no_error(at, "CC / vs US log")
+        assert vsus_axis() == "log"
 
 
     def test_the_legend_keys_channels_and_bases_apart(self):

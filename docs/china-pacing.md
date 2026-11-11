@@ -105,6 +105,17 @@ remote-access setback); experiment compute takes the same ratio. The table gives
 ECI lost and its 80% range beside the split's credit. Two extra China runs, so
 `_cn_tk_simulate` keeps 8 entries.
 
+## China tab — China beside the US, absolute
+
+Under the by-source share charts and the glossary, *China's installed compute beside the
+US's* (`_render_cc_compute_vs_us`, `_cc_compute_vs_us`) puts each year-end's stock by
+channel (the installed chart's numbers, remote access included) next to the US's
+(`_pc_us_installed`, Pacing's) on one linear axis, the US multiple over each pair and
+China's total over its bar so a sliver still reads. Installed only: the US has no
+added-per-year series to match the flows chart (`TestCcComputeVsUs`). A *Log scale*
+toggle (`cc_vsus_log`, off) reads the early years; its help says stacked heights stop
+reading as shares there.
+
 ## China tab — by-source legend
 
 Each by-source bar carries its year's fade and hatch, and a legend swatch copies a trace's

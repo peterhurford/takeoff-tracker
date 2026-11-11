@@ -12907,9 +12907,9 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
 
 
 # China tab (slug `china`; was Compute/capabilities/diffusion, `computecap`)
-_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company"]
+_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company", "cc_vsus_log"]
 _CC_DEFAULTS = {"cc_run": "2-month run", "cc_end_year": 2029,
-                "cc_company": "OpenAI"}
+                "cc_company": "OpenAI", "cc_vsus_log": False}
 
 # Where this tab's time charts open, matching the Data Centers tab's default.
 _CC_X_START = datetime(2025, 1, 1)
@@ -17033,6 +17033,94 @@ def _render_cc_compute_sources():
          "every year after 2027."))
 
 
+def _cc_compute_vs_us(today):
+    """Installed AI compute at each year-end of the by-source chart, H100e:
+    China's by channel (`load_china_compute_sources` + `_cn_src_projection`,
+    remote access included) and the US's (`_pc_us_installed`, the Pacing
+    tab's), as [(year, {channel: H100e}, US H100e)] (`TestCcComputeVsUs`)."""
+    data = load_china_compute_sources(_cn_src_mtime())
+    stock = {**data["stock"], **_cn_src_projection(data)["stock"]}
+    years = list(stock)
+    t = np.array([(datetime(int(y), 12, 31) - today).days / 365.25 for y in years])
+    us = _pc_us_installed(today, t)
+    return [(y, {k: stock[y][k][0] for k, _l, _c in _CN_SOURCES}, float(u))
+            for y, u in zip(years, us)]
+
+
+_CC_US_BAR = "#33415C"
+
+
+def _render_cc_compute_vs_us(today):
+    """China's installed compute by source beside the US's, on one linear
+    axis, the US's multiple over each pair (`_cc_compute_vs_us`)."""
+    rows = _cc_compute_vs_us(today)
+    data = load_china_compute_sources(_cn_src_mtime())
+    last_actual = max(p for p in data["flow"]
+                      if data["flow"][p]["domestic"][3] == "measured")
+    xs = [int(y) for y, _c, _u in rows]
+    op = [1.0 if y <= int(last_actual) else 0.55 for y in xs]
+    fig = go.Figure()
+    w = 0.38
+    for key, label, color in _CN_SOURCES:
+        fig.add_trace(go.Bar(
+            x=[x - 0.2 for x in xs], y=[c[key] / 1e6 for _y, c, _u in rows], width=w,
+            name=f"China: {label}", marker=dict(color=color, opacity=op,
+                                                line=dict(color='white', width=0.5)),
+            customdata=xs,
+            hovertemplate="%{customdata}: %{y:,.2f}M H100e<extra>" + label + "</extra>"))
+    fig.add_trace(go.Bar(
+        x=[x + 0.2 for x in xs], y=[u / 1e6 for _y, _c, u in rows], width=w,
+        name="United States", marker=dict(color=_CC_US_BAR, opacity=op),
+        customdata=xs,
+        hovertemplate="%{customdata}: %{y:,.1f}M H100e<extra>United States</extra>"))
+    for x, (_y, c, u) in zip(xs, rows):
+        cn = sum(c.values())
+        fig.add_annotation(x=x + 0.2, y=u / 1e6, yanchor='bottom', showarrow=False,
+                           text=f"{u / cn:.0f}\u00d7" if cn else "",
+                           font=dict(size=10, color='#555555'))
+        fig.add_annotation(x=x - 0.2, y=cn / 1e6, yanchor='bottom', showarrow=False,
+                           text=_cn_src_total_label(cn), textangle=-90,
+                           font=dict(size=9, color='#B03030'))
+    split = int(last_actual) + 0.5
+    fig.add_vline(x=split, line=dict(color='#999999', width=1.5, dash='dot'))
+    fig.add_annotation(x=split, yref='paper', y=1.0, text='Projected \u2192',
+                       showarrow=False, xanchor='left', yanchor='bottom',
+                       font=dict(size=10, color='#777777'))
+    fig.update_layout(
+        barmode='stack', height=420, plot_bgcolor='white', paper_bgcolor='white',
+        font=dict(color='#222222'), margin=dict(l=60, r=20, t=30, b=40),
+        legend=dict(orientation='h', y=-0.12, font=dict(size=11, color='#222222'),
+                    traceorder='normal'),
+        yaxis=dict(title_text="Installed AI compute (M H100e)",
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
+                   title_font=dict(color='#222222')),
+        xaxis=dict(tickmode='array', tickvals=xs, ticktext=[str(x) for x in xs],
+                   tickfont=dict(color='#222222')))
+    st.markdown("**China's installed compute beside the US's**")
+    log = st.toggle("Log scale", value=_CC_DEFAULTS["cc_vsus_log"], key="cc_vsus_log",
+                    help="Shows China's early years and the US's on one readable axis. "
+                         "On a log axis a stacked segment's height no longer reads as "
+                         "its share; the share charts above give the mix.")
+    if log:
+        fig.update_yaxes(type="log", title_text="Installed AI compute (M H100e, log)")
+    st.plotly_chart(fig, width="stretch")
+    y_now = next((r for r in rows if int(r[0]) == today.year), rows[-1])
+    y_end = rows[-1]
+    _fn_caption(
+        f"End-{y_now[0]}: China {sum(y_now[1].values()) / 1e6:.1f}M H100e, remote "
+        f"access included, against the US's {y_now[2] / 1e6:.0f}M "
+        f"({y_now[2] / sum(y_now[1].values()):.0f}\u00d7); end-{y_end[0]}: "
+        f"{sum(y_end[1].values()) / 1e6:.0f}M against {y_end[2] / 1e6:.0f}M "
+        f"({y_end[2] / sum(y_end[1].values()):.0f}\u00d7). The number over each pair "
+        "is the US's multiple, China's total over its own bar.",
+        ("the US's", "The Pacing tab's US: its central share of the world's installed "
+                     "AI compute outside China, the world being Epoch's end-2025 "
+                     "chip-sales total plus every chip made since (CTS's "
+                     "US-and-allied output, China's domestic output), each year's "
+                     f"chips retired after {_CHIP_LIFE_YEARS} years. China's bars are "
+                     "the installed chart above. Faded bars are projections."))
+
+
 def _cn_src_total_label(h100e):
     """A bar's total, as 40k or 1.2M or 45M."""
     if h100e < 1e6:
@@ -17728,6 +17816,7 @@ def render_compute_capabilities():
     _render_cc_compute_sources()
     with st.expander("How to read this"):
         _units()
+    _render_cc_compute_vs_us(_today)
     _render_cc_duv_ceiling(_today)
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
