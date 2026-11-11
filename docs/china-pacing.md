@@ -92,12 +92,12 @@ the bases (`test_the_legend_keys_channels_and_bases_apart`). Pacing's
 ## China tab — smuggling range
 
 `_render_cc_smuggling_range` holds every input central but the smuggled stock, set to its
-stored 5th, central and 95th (`_wc_stocks` at `z_smug` = -1.6449, 0, +1.6449), and prints
+stored low, central and high (`_wc_stocks` at `z_smug` = ∓`_cn_src_range_z` of an IFP year), and prints
 China's share today and at end-2027 beside the stored smuggled stocks: Epoch's through
 2025 (`_CN_SRC_EPOCH_SMUGGLED_2025` as published, the file's row unrounded) and IFP's
 through 2027. Smuggled chips are in the world total either way, so only China's count
 moves. A footnote says IFP's bounds are not simulation percentiles; the file stores them as
-10th-90th and the world identity reads them as 5th-95th, as it does Epoch's
+10th-90th and the world identity reads them as that (Epoch's years as 5th-95th)
 (`TestCcSmugglingRange`).
 
 ## China tab text

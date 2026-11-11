@@ -12509,6 +12509,16 @@ _CN_SRC_BASIS = {
     "none": ("not estimated", 1.0, False),
 }
 _CN_SRC_PROJ_YEARS = (2028, 2029, 2030)
+_CN_SRC_IFP_FROM = 2026
+
+
+def _cn_src_range_z(year):
+    """The standard-normal z a year's stored low and high sit at: Epoch's
+    rows are 5th-95th, IFP's (and the projection built on them) 10th-90th
+    (`test_the_band_draws_cts_scenarios_and_the_mix_s_ranges`)."""
+    return 1.2816 if year >= _CN_SRC_IFP_FROM else 1.6449
+
+
 # SemiAnalysis's leased power of Chinese hyperscalers in APAC ex-China, GW at
 # year end; 2030 extends 2029's growth.
 _CN_SRC_OFFSHORE_GW = {2026: 1.45, 2027: 2.45, 2028: 2.8, 2029: 2.9,
@@ -16224,8 +16234,9 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     compute mix's retired domestic + legal + smuggled stock under `mix`
     (`_cn_src_with_policy` keywords). CTS's low and high output (from
     `_WC_US_WIDE_FROM`, widened to `_WC_US_LOW_RATIO` / `_WC_US_HIGH_RATIO`
-    of central where those are wider) sit at `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
-    ∓1.64; legal sales stay central, their range small beside smuggling's.
+    of central where those are wider) sit at `z_us` = ∓1.28, the mix's low
+    and high domestic and smuggled stocks at ∓`_cn_src_range_z` of their
+    year; legal sales stay central, their range small beside smuggling's.
     Past the mix's last year China and its domestic stock continue at their
     own last-year growth, and the US-and-allied cumulative past CTS's last
     year at its last; before end-2025 the world runs back at its 2026
@@ -16248,9 +16259,10 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     dom, cn = {}, {}
     for y in range(first, mix_last + 1):
         r = stock[str(y)]
-        dom[y] = _wc_skew(r["domestic"][:3], z_dom, 1.6449)
+        q = _cn_src_range_z(y)
+        dom[y] = _wc_skew(r["domestic"][:3], z_dom, q)
         cn[y] = (dom[y] + r["legal"][0]
-                 + _wc_skew(r["smuggled"][:3], z_smug, 1.6449))
+                 + _wc_skew(r["smuggled"][:3], z_smug, q))
     for y in range(mix_last + 1, last + 1):
         for s in (dom, cn):
             s[y] = s[y - 1] * s[mix_last] / s[mix_last - 1]
@@ -17158,14 +17170,16 @@ def _render_cc_crosscheck(today):
 
 def _cc_smuggling_range(today):
     """China's share of world compute today and at end-2027 with only the
-    smuggled stock moved, to its stored 5th, central and 95th (`_wc_stocks`
-    at z_smug = -1.6449, 0, +1.6449; every other input central), beside the
+    smuggled stock moved, to IFP's stored low, central and high (`_wc_stocks`
+    at z_smug = ∓`_cn_src_range_z` of an IFP year; every other input
+    central), beside the
     stored smuggled stocks at end-2025 (Epoch) and end-2027 (IFP). Smuggled
     chips are in the world total either way, so only China's count moves.
     Deterministic (`TestCcSmugglingRange`)."""
     end27 = datetime(2027, 12, 31)
     world, china = _wc_stocks(today, [0.0, (end27 - today).days / 365.25],
-                              z_smug=np.array([-1.6449, 0.0, 1.6449]))
+                              z_smug=_cn_src_range_z(2027)
+                              * np.array([-1.0, 0.0, 1.0]))
     stock = load_china_compute_sources(_cn_src_mtime())["stock"]
     return dict(
         share_today=tuple(100.0 * china[0] / world[0]),
@@ -17187,8 +17201,8 @@ def _render_cc_smuggling_range(today):
              "Through 2027 (IFP)": _k(s27[i]),
              "China's share today": f"{r['share_today'][j]:.1f}%",
              "China's share, end-2027": f"{r['share_2027'][j]:.1f}%"}
-            for lab, i, j in (("Low (stored 5th)", 1, 0), ("Central", 0, 1),
-                              ("High (stored 95th)", 2, 2))]
+            for lab, i, j in (("Low", 1, 0), ("Central", 0, 1),
+                              ("High", 2, 2))]
     st.table(pandas.DataFrame(rows).style.hide(axis="index"))
     ep_mid, ep_lo, ep_hi = _CN_SRC_EPOCH_SMUGGLED_2025
     lo_t, _, hi_t = r['share_today']
@@ -17205,9 +17219,8 @@ def _render_cc_smuggling_range(today):
                             "interval through end-2025."),
         ("IFP's", f"IFP ({_CN_SRC_SOURCE_IFP}): its low and high are bounds "
                   "on its own estimate, which the source file stores as a "
-                  "10th–90th range. They are not percentiles of a "
-                  "simulation; the world identity reads them as its 5th and "
-                  "95th, as it does Epoch's."),
+                  "10th–90th range and the world identity reads as one. "
+                  "They are not percentiles of a simulation."),
         ("range alone", "Every other input at its central: the smuggled "
                         "stock is interpolated log-linearly between its "
                         "stored year-ends, and the world total does not "

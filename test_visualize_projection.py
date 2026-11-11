@@ -5057,7 +5057,8 @@ class TestCcWorldShares:
             self, monkeypatch):
         """CTS's low and high read as 10th and 90th, from 2027 widened to
         the forecasts' ratios to its central where those are wider; the
-        mix's p5 and p95 domestic and smuggled stocks as 5th and 95th."""
+        mix's low and high domestic and smuggled stocks at their source's
+        percentiles: 5th-95th for Epoch's years, 10th-90th from IFP's."""
         t = (datetime(2027, 12, 31) - self._T).days / 365.25
         us = {y: (lo, c, hi) for y, lo, c, hi
               in vp.load_duv_production(vp._duv_mtime())["us"]}
@@ -5082,7 +5083,10 @@ class TestCcWorldShares:
         assert add(hi) - add(w0) == pytest.approx(
             sum(us[y][2] - us[y][1] for y in (2026, 2027)), rel=1e-6)
         st = vp._cn_src_with_policy(self._T)["stock"]["2027"]
-        _, c_hi = vp._wc_stocks(self._T, [t], z_dom=1.6449, z_smug=1.6449)
+        assert vp._cn_src_range_z(2025) == 1.6449
+        q = vp._cn_src_range_z(2027)
+        assert q == 1.2816
+        _, c_hi = vp._wc_stocks(self._T, [t], z_dom=q, z_smug=q)
         assert float(c_hi[0, 0]) == pytest.approx(
             st["domestic"][2] + st["legal"][0] + st["smuggled"][2])
 
@@ -5236,8 +5240,8 @@ class TestCcCrossCheck:
 
 
 class TestCcSmugglingRange:
-    """The smuggling panel moves only China's smuggled stock to its stored
-    5th and 95th, so the world total holds and the central is the headline's."""
+    """The smuggling panel moves only China's smuggled stock to IFP's stored
+    low and high, so the world total holds and the central is the headline's."""
 
     def test_only_china_moves_and_the_central_is_the_headline(self):
         today = datetime(2026, 10, 23)
@@ -5247,8 +5251,9 @@ class TestCcSmugglingRange:
         assert mid == pytest.approx(float(
             vp._wc_central_shares(today, [0.0])[vp._WC_CN][0]), rel=1e-12)
         t = [0.0, (datetime(2027, 12, 31) - today).days / 365.25]
-        w_lo, c_lo = vp._wc_stocks(today, t, z_smug=-1.6449)
-        w_hi, c_hi = vp._wc_stocks(today, t, z_smug=1.6449)
+        q = vp._cn_src_range_z(2027)
+        w_lo, c_lo = vp._wc_stocks(today, t, z_smug=-q)
+        w_hi, c_hi = vp._wc_stocks(today, t, z_smug=q)
         assert np.allclose(w_lo, w_hi)
         assert hi == pytest.approx(100 * float(c_hi[0, 0] / w_hi[0, 0]))
 

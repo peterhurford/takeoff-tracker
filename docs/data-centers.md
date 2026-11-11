@@ -408,7 +408,7 @@ not a reading of the CSVs. Six things are load-bearing:
    where those are wider (`_WC_US_LOW_RATIO` = 60/74, AI-2027;
    `_WC_US_HIGH_RATIO` = 109/74, Epoch's trend), 2026 at CTS's own range
    (`test_the_band_draws_cts_scenarios_and_the_mix_s_ranges`), the mix's
-   p5/p95 domestic and smuggled stocks (legal sales stay central: their range is small beside smuggling's), and the
+   low and high domestic and smuggled stocks, read at their source's percentiles (`_cn_src_range_z`: Epoch's years 5th-95th, IFP's and the projection 10th-90th; legal sales stay central: their range is small beside smuggling's), and the
    split's spread (`_wc_split_paths`) — the published estimates' disagreement
    on levels, then each region's growth rate. `_WC_COMMON_LOAD` loads every
    non-China region on one global shock so a low-US split is a slow world, not
