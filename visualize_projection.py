@@ -17053,6 +17053,16 @@ _CC_US_BAR = "#33415C"
 def _render_cc_compute_vs_us(today):
     """China's installed compute by source beside the US's, on one linear
     axis, the US's multiple over each pair (`_cc_compute_vs_us`)."""
+    st.markdown("**China's installed compute beside the US's**")
+    log = st.toggle("Log scale", value=_CC_DEFAULTS["cc_vsus_log"], key="cc_vsus_log",
+                    help="Shows China's early years and the US's on one readable axis. "
+                         "On a log axis a stacked segment's height no longer reads as "
+                         "its share; the share charts above give the mix.")
+
+    def at_y(m):
+        """A label's y: Plotly places annotations on a log axis in log10 units
+        (`test_the_labels_sit_on_their_bars_on_either_axis`)."""
+        return float(np.log10(m)) if log else m
     rows = _cc_compute_vs_us(today)
     data = load_china_compute_sources(_cn_src_mtime())
     last_actual = max(p for p in data["flow"]
@@ -17075,10 +17085,10 @@ def _render_cc_compute_vs_us(today):
         hovertemplate="%{customdata}: %{y:,.1f}M H100e<extra>United States</extra>"))
     for x, (_y, c, u) in zip(xs, rows):
         cn = sum(c.values())
-        fig.add_annotation(x=x + 0.2, y=u / 1e6, yanchor='bottom', showarrow=False,
+        fig.add_annotation(x=x + 0.2, y=at_y(u / 1e6), yanchor='bottom', showarrow=False,
                            text=f"{u / cn:.0f}\u00d7" if cn else "",
                            font=dict(size=10, color='#555555'))
-        fig.add_annotation(x=x - 0.2, y=cn / 1e6, yanchor='bottom', showarrow=False,
+        fig.add_annotation(x=x - 0.2, y=at_y(cn / 1e6), yanchor='bottom', showarrow=False,
                            text=_cn_src_total_label(cn), textangle=-90,
                            font=dict(size=9, color='#B03030'))
     split = int(last_actual) + 0.5
@@ -17096,11 +17106,6 @@ def _render_cc_compute_vs_us(today):
                    title_font=dict(color='#222222')),
         xaxis=dict(tickmode='array', tickvals=xs, ticktext=[str(x) for x in xs],
                    tickfont=dict(color='#222222')))
-    st.markdown("**China's installed compute beside the US's**")
-    log = st.toggle("Log scale", value=_CC_DEFAULTS["cc_vsus_log"], key="cc_vsus_log",
-                    help="Shows China's early years and the US's on one readable axis. "
-                         "On a log axis a stacked segment's height no longer reads as "
-                         "its share; the share charts above give the mix.")
     if log:
         fig.update_yaxes(type="log", title_text="Installed AI compute (M H100e, log)")
     st.plotly_chart(fig, width="stretch")

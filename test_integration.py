@@ -1718,15 +1718,27 @@ class TestCcComputeSourcesTab:
                  for d in json.loads(el.proto.spec)["data"]]
         assert "United States" in names and "China: Smuggled" in names
         assert "is the US's multiple" in caps
-        def vsus_axis():
-            spec = next(json.loads(el.proto.spec) for el in at.get("plotly_chart")
-                        if any(d.get("name") == "United States"
-                               for d in json.loads(el.proto.spec)["data"]))
-            return spec["layout"]["yaxis"].get("type", "linear")
-        assert vsus_axis() == "linear"
+        self._labels_sit_on_their_bars(at, "linear")
         at.toggle(key="cc_vsus_log").set_value(True).run()
         _assert_no_error(at, "CC / vs US log")
-        assert vsus_axis() == "log"
+        self._labels_sit_on_their_bars(at, "log")
+
+    @staticmethod
+    def _labels_sit_on_their_bars(at, axis):
+        """test_the_labels_sit_on_their_bars_on_either_axis: each US multiple
+        sits at its bar's top, in log10 units on a log axis."""
+        spec = next(json.loads(el.proto.spec) for el in at.get("plotly_chart")
+                    if any(d.get("name") == "United States"
+                           for d in json.loads(el.proto.spec)["data"]))
+        assert spec["layout"]["yaxis"].get("type", "linear") == axis
+        us = next(d for d in spec["data"] if d.get("name") == "United States")
+        tops = dict(zip(us["x"], us["y"]))
+        marks = [a for a in spec["layout"]["annotations"]
+                 if str(a.get("text", "")).endswith("\u00d7")]
+        assert len(marks) == len(tops)
+        for a in marks:
+            want = tops[a["x"]]
+            assert a["y"] == pytest.approx(np.log10(want) if axis == "log" else want)
 
 
     def test_the_legend_keys_channels_and_bases_apart(self):
