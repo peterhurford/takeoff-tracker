@@ -3358,6 +3358,12 @@ class TestPacingTab:
             "Metric", "Metric", "Metric", "Warning"]
         assert any(md.value == "##### China's compute by source"
                    for md in at.markdown)
+        # The mix links to the China tab section that sources it.
+        import visualize_projection as vp
+        link = f"(?tab=china&to={vp._heading_anchor(vp._CC_SOURCES_HEAD)})"
+        assert any(link in c.value for c in at.caption)
+        assert vp._heading_anchor(vp._CC_SOURCES_HEAD) == \
+            "where-chinas-compute-comes-from"
 
     def test_compute_ratios_show_what_the_compute_levers_cost_china(self):
         """The ratio table under the breakdown: the US is frozen, China closes

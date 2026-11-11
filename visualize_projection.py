@@ -17214,6 +17214,9 @@ def _render_cc_smuggling_range(today):
                         "move, since smuggled chips are in it either way."))
 
 
+_CC_SOURCES_HEAD = "Where China's compute comes from"
+
+
 def _render_cc_compute_sources():
     """China's AI compute by source, added each year and installed, 2022-2030.
 
@@ -17221,7 +17224,7 @@ def _render_cc_compute_sources():
     projected years are faded, our own numbers hatched, and every hover
     carries its range and basis.
     """
-    st.subheader("Where China's compute comes from")
+    st.subheader(_CC_SOURCES_HEAD)
     data = load_china_compute_sources(_cn_src_mtime())
     proj = _cn_src_projection(data)
     flow = {**data["flow"], **proj["flow"]}
@@ -17932,7 +17935,10 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
 
 
 _CC_LEAD = ("**How far behind is China, in compute and in capability, and is the "
-            "gap closing?**")
+            "gap closing?** This tab grounds the numbers other tabs use: China's "
+            "share of world AI compute and its range, how its capability lag "
+            "compares with its compute deficit, where its chips come from and how "
+            "much of that rests on US policy, and when a DUVi ban would bind.")
 
 
 def _cc_headline(today, n=None):
@@ -19928,6 +19934,8 @@ def _pc_render_compute_mix(ci):
          "further slowdown under Advanced slow its growth. Installed chips, not the largest single run the catch-up "
          "above reads; China's AI speed-up scales with this total, to the "
          "Takeoff model's parallelization exponent."))
+    st.caption(f"Sources, ranges and the check against published estimates: "
+               f"[China tab](?tab=china&to={_heading_anchor(_CC_SOURCES_HEAD)}).")
 
 
 def _pc_ratio_paths(ci):

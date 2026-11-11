@@ -102,7 +102,9 @@ moves. A footnote says IFP's bounds are not simulation percentiles; the file sto
 
 ## China tab text
 
-`_CC_LEAD` opens the tab and a glossary caption footnotes log OP, H100e, ECI and OOM. The
+`_CC_LEAD` opens the tab: its question, then the claims the tab grounds for the other tabs
+(China's share of world compute and its range, capability lag vs compute deficit, where the
+chips come from and how much rests on US policy, when a DUVi ban binds). A glossary caption footnotes log OP, H100e, ECI and OOM. The
 four ECI projection charts (three on China, Pacing's offset one) label the region past today
 `_CC_PROJECTED` rather than the buildout band's *planned / under construction*. Chart A's
 widening phrase, the smuggled-share interval and the innovation margin are computed from the
@@ -560,7 +562,9 @@ gives one row per comparison, each cell both values then the ratio, columns date
 pacing start and the crossing card's date (end of *Project through* when China does not catch up; no pacing, a bare date); no caption sits under it. Capacity is not the China
 tab's ~50× *actual-run* gap (`test_compute_ratios_show_what_the_compute_levers_cost_china`). Under it, `_pc_render_compute_mix()` stacks China's installed compute by source
 (the China tab's mix) under these levers, `_cn_src_with_policy`, against the no-lever
-total (`test_compute_mix_shows_what_the_chip_levers_remove`).
+total (`test_compute_mix_shows_what_the_chip_levers_remove`); a caption links its sources
+to the China tab's `_CC_SOURCES_HEAD` section, the anchor from `_heading_anchor`
+(`test_crossing_cards_sit_above_the_milestone_table`).
 Note for tests: this table renders *after* the race table, so address
 the race table by its columns (`TestPacingTab._entities`), never by position.
 China
