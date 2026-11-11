@@ -5163,6 +5163,45 @@ class TestCcWorldShares:
         assert float(c["China domestic"][0]) > cat["China domestic"]
 
 
+class TestCcHeadline:
+    """The China tab's headline cards (`_cc_headline`) read the functions
+    the Data Centers and Pacing tabs read, and draw without moving numpy's
+    generator."""
+
+    def test_each_value_is_the_other_tabs_function(self):
+        today = datetime(2026, 10, 23)
+        np.random.seed(7)
+        before = np.random.get_state()[1].copy()
+        h = vp._cc_headline(today, n=2000)
+        assert (np.random.get_state()[1] == before).all()
+        assert h["share"] == pytest.approx(float(
+            vp._wc_central_shares(today, [0.0])[vp._WC_CN][0]), rel=1e-12)
+        world, china = vp._wc_stocks(today, [0.0])
+        assert h["share"] == pytest.approx(
+            100 * float(china[0, 0] / world[0, 0]), rel=1e-12)
+        assert h["total"] == pytest.approx(
+            float(vp._pc_cn_installed(today, {}, [0.0])[0]), rel=1e-12)
+        assert h["ratio"] == pytest.approx(
+            float(vp._pc_us_installed(today, 0.0)) / h["total"], rel=1e-12)
+        assert h["ratio_80"] == vp._pc_lead_band_at(today, 0.0, n=2000)
+        assert h["china_80"][0] < h["china"] < h["china_80"][1]
+        assert h["total_80"][0] < h["total"] < h["total_80"][1]
+        assert h["ratio_80"][0] < h["ratio"] < h["ratio_80"][1]
+        lo, hi = np.percentile(h["share_draws"], [10, 90])
+        assert lo < h["share"] < hi
+        assert vp._cc_headline(today, n=2000)["china_80"] == h["china_80"]
+
+    def test_the_lead_band_is_the_pacing_cards_at_any_date(self, monkeypatch):
+        """`_pc_compute_lead_band` is `_pc_lead_band_at` at the lead's date,
+        so Pacing's card and China's headline share one range function."""
+        today, when = datetime(2026, 10, 23), datetime(2031, 12, 31)
+        monkeypatch.setattr(vp, "_pc_compute_lead",
+                            lambda ci: (1.0, when, False))
+        assert vp._pc_compute_lead_band({"today": today, "mix": {}}, n=500) \
+            == vp._pc_lead_band_at(today, (when - today).days / 365.25,
+                                   {}, n=500)
+
+
 class TestDcMilestoneDates:
     """Hover milestones name a training run only for the train-OP metrics,
     and then the run length that metric assumes."""

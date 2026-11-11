@@ -1622,6 +1622,34 @@ class TestCcExplains:
             assert term in caps, term
         assert "deep-ultraviolet" in " ".join(str(m.value) for m in at.markdown)
 
+    def test_headline_cards_are_the_other_tabs_numbers(self):
+        """At defaults the share card prints Data Centers' China headline,
+        median and 80% range, and the remote-access and lead cards Pacing's
+        today cell in the installed-compute row."""
+        cards = {m.label: m for m in self._app().metric}
+        share = cards["China's share of world AI compute"]
+        total = cards["With remote access abroad"]
+        lead = cards["US compute lead"]
+        dc = _fresh_app()
+        dc.query_params["tab"] = "datacenters"
+        dc.run()
+        _assert_no_error(dc, "Data Centers")
+        head = next(m.value for m in dc.markdown if "in mainland China" in m.value)
+        med, rng = re.search(r"\*\*(\d+)% \(([^)]+)\) in mainland China",
+                             head).groups()
+        assert share.value == f"{med}%"
+        assert share.proto.delta == f"{rng} (80%)"
+        pc = _fresh_app()
+        pc.query_params["tab"] = "pacing"
+        pc.run()
+        _assert_no_error(pc, "Pacing")
+        row = next(t.value.iloc[-1] for t in pc.table
+                   if t.value.iloc[-1, 0].startswith("Installed compute"))
+        cn, ratio = re.search(r"vs ([\d,]+)M H100e → US ([\d.,]+×)",
+                              row.iloc[1]).groups()
+        assert lead.value == ratio
+        assert round(float(total.value.split("M")[0])) == int(cn.replace(",", ""))
+
     def test_gap_cards_share_one_months_conversion(self):
         at = self._app()
         cards = {m.label: m for m in at.metric}

@@ -17727,6 +17727,78 @@ _CC_LEAD = ("**How far behind is China, in compute and in capability, and is the
             "gap closing?**")
 
 
+def _cc_headline(today, n=None):
+    """The China tab's headline numbers today, each from the function the
+    other tabs use: China's share of the world (`_wc_central_shares`, the
+    Data Centers headline's median) and its in-China stock, both with 80%
+    ranges from the world identity at drawn CTS output and drawn domestic and
+    smuggled stocks (`_wc_stocks`); China's total with remote access
+    (`_pc_cn_installed`); and the US-to-China ratio (`_pc_us_installed` over
+    that, range `_pc_lead_band_at`), Pacing's today reading. Seeded, the
+    generator's state put back, so no draw around it moves
+    (`TestCcHeadline`)."""
+    n = n or N_SAMPLES
+    with _seeded_rng(_APP_SEED):
+        z = np.random.normal(0.0, 1.0, (3, n))
+    world_d, cn_d = _wc_stocks(today, [0.0], z_us=z[0], z_dom=z[1],
+                               z_smug=z[2])
+    world, china = (float(a[0, 0]) for a in _wc_stocks(today, [0.0]))
+    total = float(_pc_cn_installed(today, None, [0.0])[0])
+    us = float(_pc_us_installed(today, 0.0))
+    def p10(a):     # (p10, p90)
+        return float(np.percentile(a, 10)), float(np.percentile(a, 90))
+    return dict(
+        share=float(_wc_central_shares(today, [0.0])[_WC_CN][0]),
+        share_draws=100.0 * cn_d[0] / world_d[0],
+        world=world, china=china, china_80=p10(cn_d[0]),
+        total=total, total_80=p10(cn_d[0] + (total - china)),
+        us=us, ratio=us / total, ratio_80=_pc_lead_band_at(today, 0.0, n=n))
+
+
+def _render_cc_headline(today):
+    """Four cards at the top of the China tab (`_cc_headline`)."""
+    h = _cc_headline(today)
+
+    def _fx(v):
+        return f"{v:.1f}×" if v < 10 else f"{v:,.0f}×"
+
+    def _m(v):
+        return f"{v / 1e6:.1f}M"
+    _ranges = ("80% range, drawn as Data Centers' share whiskers are: "
+               "CTS's US-and-allied output, China's domestic and smuggled "
+               "stocks.")
+    cols = st.columns(4)
+    cols[0].metric(
+        "China's share of world AI compute", f"{h['share']:.0f}%",
+        f"{_wc_range(h['share_draws'])} (80%)", delta_color="off",
+        help="China's in-China stock over the world's installed AI compute "
+             f"({_m(h['world'])} H100e), the Data Centers tab's headline "
+             "figure. " + _ranges)
+    cols[1].metric(
+        "China's compute, in China", f"{_m(h['china'])} H100e",
+        f"{_m(h['china_80'][0])} – {_m(h['china_80'][1])} (80%)",
+        delta_color="off",
+        help="Installed AI chips in mainland China: its retired domestic, "
+             "legal and smuggled stocks from the compute mix below, "
+             "log-linear between year-ends. " + _ranges)
+    cols[2].metric(
+        "With remote access abroad", f"{_m(h['total'])} H100e",
+        f"{_m(h['total_80'][0])} – {_m(h['total_80'][1])} (80%)",
+        delta_color="off",
+        help="The in-China stock plus the compute Chinese labs rent abroad "
+             f"({_m(h['total'] - h['china'])} H100e, at its central value), "
+             "the total the Pacing tab compares with the US.")
+    cols[3].metric(
+        "US compute lead", _fx(h['ratio']),
+        f"{_fx(h['ratio_80'][0])} – {_fx(h['ratio_80'][1])} (80%)",
+        delta_color="off",
+        help=f"US installed AI compute ({_m(h['us'])} H100e: its central "
+             "share of the world outside China) over China's with remote "
+             "access, the Pacing tab's today reading. The range adds the "
+             "split outside China to the draws above; remote access and "
+             "legal sales stay central.")
+
+
 def render_compute_capabilities():
     _today = datetime.now()
 
@@ -17752,6 +17824,7 @@ def render_compute_capabilities():
 
     _tab_intro("China", _CC_LEAD, through=[
         _dc_through(), ("Epoch ECI", _newest(m['date'] for m in eci_all))])
+    _render_cc_headline(_today)
 
     def _units():
         _fn_caption(
@@ -19742,9 +19815,16 @@ def _pc_compute_lead_band(ci, n=None):
     lead = _pc_compute_lead(ci)
     if lead is None:
         return None
+    return _pc_lead_band_at(ci['today'], (lead[1] - ci['today']).days / 365.25,
+                            ci.get('mix'), n)
+
+
+def _pc_lead_band_at(today, t_years, mix=None, n=None):
+    """US over China in total installed compute, its 80% range (p10, p90)
+    `t_years` from today under `mix`: `_pc_compute_lead_band`'s draws at any
+    date, which the China tab's headline reads at today."""
     n = n or N_SAMPLES
-    today, mix = ci['today'], ci.get('mix')
-    t = [(lead[1] - today).days / 365.25]
+    t = [t_years]
     with _seeded_rng(_APP_SEED):
         z = np.random.normal(0.0, 1.0, (3, n))
         world, china = _wc_stocks(today, t, mix, z_us=z[0], z_dom=z[1],

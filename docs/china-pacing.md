@@ -52,6 +52,19 @@ its cut rounds to 0%.
 Guarded by `TestDuvProduction` (unit), `TestCcDuvCeilingTab` and
 `test_duvi_levers_compound_with_the_domestic_slider` (integration).
 
+## China tab — headline row (top)
+
+Four cards (`_render_cc_headline`, values from `_cc_headline`) read the other tabs'
+functions at today: China's share of world compute (`_wc_central_shares`, Data Centers'
+headline median), its in-China stock (`_wc_stocks`), the total with remote access
+(`_pc_cn_installed`) and the US lead (`_pc_us_installed` over that, Pacing's today cell),
+each with an 80% range. The share and stock ranges draw `_wc_stocks`' z under
+`_seeded_rng(_APP_SEED)`, and the lead's is `_pc_lead_band_at`, the body of Pacing's
+`_pc_compute_lead_band`; both restore the generator, so no other number moves. Data
+Centers draws its whiskers mid-stream, so the share range matches its headline in
+distribution, not draw for draw; at defaults the strings agree
+(`test_headline_cards_are_the_other_tabs_numbers`, `TestCcHeadline`).
+
 ## China tab text
 
 `_CC_LEAD` opens the tab and a glossary caption footnotes log OP, H100e, ECI and OOM. The
