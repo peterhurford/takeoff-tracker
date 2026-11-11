@@ -361,7 +361,7 @@ less compute's share, over the US frontier's 2024–25 average algorithmic growt
 `_tk_trained_frontier`, the running best of every US lab's public models at release and
 METR's Anthropic rows on Epoch's scale at first internal use, its climb smoothed by
 `_metr_local_slope`, a Gaussian-kernel local-linear slope over ~6 months, read at the latest
-model: ~22 → 1.4×); its `on_change` re-reads the evidence at that pace
+model: ~24.5 → 1.5×); its `on_change` re-reads the evidence at that pace
 (`_tk_evidence_settings`); `_tk_run`
 divides `software_months` by it and reports it as `pace_today`, where chart 1 starts. No
 separate pace input exists to disagree with it
