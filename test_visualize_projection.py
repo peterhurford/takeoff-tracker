@@ -3327,8 +3327,8 @@ class TestRsiMilestoneCards:
             assert only in vp._PC_RSI_CARD_ONLY and only not in vp._PC_RSI_WEIGHTS
 
     def test_tasteval_prediction_card_reproduces_the_papers_dates(self):
-        """The card is the paper's own fit: its median is the printed Oct 2030,
-        its 95% interval read as an 80% band, drawn off a quantile grid so it
+        """The card is the refit's crossing (`_TASTEVAL_PREDICT_DATES`), its 95%
+        interval read as an 80% band, drawn off a quantile grid so it
         never touches the seeded stream the other cards share."""
         state = np.random.get_state()
         early, med, late = vp._pc_tasteval_predict_eta(n=2000)
@@ -3351,7 +3351,7 @@ class TestTasteVal:
         assert rows["o1"]['mult'] == 0.07
         assert {n for n, r in rows.items() if not r['fitted']} == {
             "Kimi K2.5", "Kimi K3", "GLM-5.3", "GPT-3.5 Turbo Instruct",
-            "Llama 3.1 70B"}
+            "Llama 3.1 70B", "Kimi K3.1 Pro"}
 
     def test_fit_reproduces_the_papers_doubling_times(self):
         """The calibration guard on the transcription and the frontier set:
@@ -3372,9 +3372,44 @@ class TestTasteVal:
                 missing.append(r['name'])
         assert missing == ["GPT-3.5 Turbo Instruct", "Llama 3.1 70B"]
 
-    def test_prediction_curve_crosses_where_the_paper_prints(self):
+    # Figure 7's ten fitted models, digitized: release date, MASE, 95% CI half-width.
+    _FIG7 = [("2024-04-09", .532, .055), ("2024-12-04", .476, .053),
+             ("2025-04-15", .450, .050), ("2025-08-06", .446, .050),
+             ("2025-11-23", .444, .050), ("2026-05-27", .436, .050),
+             ("2026-07-09", .427, .051), ("2026-07-25", .427, .050),
+             ("2026-09-01", .393, .050), ("2026-09-21", .374, .046)]
+
+    @staticmethod
+    def _refit(pts):
+        """1/CI-weighted least-squares logistic (midpoint, rate per year)
+        between the paper's fixed baseline and floor, on a grid."""
+        b, f = vp._TASTEVAL_PREDICT_BASELINE, vp._TASTEVAL_PREDICT_FLOOR
+        ref = datetime(2026, 1, 1)
+        yr = np.array([(datetime.strptime(d, '%Y-%m-%d') - ref).days / 365.25
+                       for d, _, _ in pts])
+        m = np.array([p[1] for p in pts]); w = 1 / np.array([p[2] for p in pts])
+        mids = np.arange(-0.5, 1.5, 1 / 365.25)
+        rates = np.arange(0.40, 0.70, 0.001)
+        pred = b - (b - f) / (1 + np.exp(-rates[None, :, None]
+                                         * (yr[None, None, :] - mids[:, None, None])))
+        sse = (((m - pred) * w) ** 2).sum(-1)
+        i, j = np.unravel_index(sse.argmin(), sse.shape)
+        return ref + timedelta(days=float(mids[i]) * 365.25), float(rates[j])
+
+    def test_refit_reproduces_the_paper_then_adds_the_later_models(self):
+        """On Figure 7's ten models alone the refit lands on the paper's path
+        (2026-07-09, 0.509); with `_TASTEVAL_PREDICT_HELDOUT` it gives the
+        midpoint and rate the app uses."""
+        mid, rate = self._refit(self._FIG7)
+        assert abs((mid - datetime(2026, 7, 9)).days) < 10 and abs(rate - 0.509) < 0.015
+        held = [(d, m, (hi - lo) / 2) for _, d, m, lo, hi in vp._TASTEVAL_PREDICT_HELDOUT]
+        mid, rate = self._refit(self._FIG7 + held)
+        want = datetime.strptime(vp._TASTEVAL_PREDICT_MID, '%Y-%m-%d')
+        assert abs((mid - want).days) < 4 and abs(rate - vp._TASTEVAL_PREDICT_RATE) < 0.003
+
+    def test_prediction_curve_crosses_where_the_card_dates(self):
         """The sigmoid closes 90% of the gap within a month of the card's
-        October 2030, and half of it before the paper went up."""
+        median, and half of it before the paper went up."""
         days = [datetime(2026, 1, 1) + timedelta(days=k) for k in range(2500)]
         mase = vp._tasteval_predict_mase(days)
         gap = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_FLOOR

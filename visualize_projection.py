@@ -1478,20 +1478,33 @@ _TASTEVAL_ECI_PER_DOUBLING = (15.7, 4.6)
 # description and the run's earlier results. A sigmoid in release date from
 # the predict-the-last-score baseline (MASE 0.608) to the replication noise
 # floor (0.211) closes 90% of that gap in October 2030, 95% CI October 2029
-# to December 2031 (mid-month below). Dated off released models.
+# to December 2031. Dated off released models. The dates below are this
+# app's refit with Fable 5.2 (next block): its 90% crossing, and the paper's
+# interval scaled by the same ratio in days from publication (the bootstrap
+# itself is not public).
 _TASTEVAL_PREDICT_TARGET = 90.0
 _TASTEVAL_PREDICT_PUBLISHED = "2026-10-06"
-_TASTEVAL_PREDICT_DATES = ("2029-10-15", "2030-10-15", "2031-12-15")
+_TASTEVAL_PREDICT_DATES = ("2029-06-30", "2030-05-26", "2031-06-15")
 
 # The paper's sigmoid itself, read from the vector path Figure 7 draws
 # (mase_release.svg): MASE falls from the last-score baseline to the noise
 # floor as a logistic in release date, half the gap closed at the midpoint.
-# A logistic through the path's 200 points leaves under 0.001 in log-odds and
-# closes 90% of the gap within a month of the printed October 2030.
+# The paper's path is midpoint 2026-07-09, rate 0.509 a year (90% in October
+# 2030). This app refits it with the models P-Zero scored after the paper:
+# the midpoint and rate below minimise the 1/CI-weighted squared error over
+# Figure 7's ten models, digitized, plus those below. The same fit on the ten
+# alone returns the paper's path (TestTasteVal holds both).
 _TASTEVAL_PREDICT_BASELINE = 0.608
 _TASTEVAL_PREDICT_FLOOR = 0.211
-_TASTEVAL_PREDICT_MID = "2026-07-09"
-_TASTEVAL_PREDICT_RATE = 0.509            # logistic rate, per year
+_TASTEVAL_PREDICT_MID = "2026-06-03"
+_TASTEVAL_PREDICT_RATE = 0.552            # logistic rate, per year
+
+# Models P-Zero scored after the paper, drawn on Figure 7's update (outside
+# its fit) and inside this app's refit: name, release date, MASE, 95% CI low,
+# high, read off the figure's PNG to about +/-0.005.
+_TASTEVAL_PREDICT_HELDOUT = [
+    ("Claude Fable 5.2", "2026-11-09", 0.360, 0.318, 0.410),
+]
 
 # Table 2 (Appendix H.3): each model's compute multiplier and 95% CI at its
 # main setting (the highest reasoning available, GPT-5.2 at "high"); Opus 5's
@@ -1499,6 +1512,8 @@ _TASTEVAL_PREDICT_RATE = 0.509            # logistic rate, per year
 # dates, except the two models Epoch does not catalogue. `fitted` is the
 # paper's frontier set, GPT-4 to Opus 5.5: the Kimis and GLM 5.3 are drawn
 # but not fitted, and the two models that predate it or trail it sit outside.
+# Kimi K3.1 Pro, scored after the paper, is read off P-Zero's updated
+# Figure 3 PNG (to about +/-0.02x), not transcribed.
 _TASTEVAL_BREAK = "2025-12-11"            # GPT-5.2, the Chow scan's break
 _TASTEVAL_RAW = [
     # name, release date, multiplier, 95% CI low, high, setting, fitted
@@ -1524,6 +1539,7 @@ _TASTEVAL_RAW = [
     ("Claude Fable 5.1",       "2026-09-01", 1.72, 0.75, 3.70, "max", True),
     ("GPT-6 Astra",            "2026-09-03", 1.60, 0.77, 3.02, "max", True),
     ("Claude Opus 5.5",        "2026-09-22", 2.30, 1.15, 4.37, "max", True),
+    ("Kimi K3.1 Pro",          "2026-10-23", 0.78, 0.46, 1.32, "", False),
 ]
 
 
@@ -8944,7 +8960,7 @@ def _render_rsi_tasteval(end_year):
         x=fan_dates + fan_dates[::-1], y=list(fan[90]) + list(fan[10][::-1]),
         fill='toself', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
         name='80% CI', hoverinfo='skip'))
-    for past, dash, name in ((True, 'solid', "The paper's fit"),
+    for past, dash, name in ((True, 'solid', "The fit"),
                              (False, 'dash', "Its extrapolation")):
         idx = [i for i, d in enumerate(grid) if (d <= last) == past]
         if past and idx and idx[-1] + 1 < len(grid):
@@ -8955,6 +8971,24 @@ def _render_rsi_tasteval(end_year):
             line=dict(color='#2c3e50', width=2.5, dash=dash),
             hovertext=[f"{grid[i].strftime('%b %Y')}<br>MASE {mase[i]:.3f}"
                        for i in idx],
+            hoverinfo='text'))
+    held = [(n, datetime.strptime(d, '%Y-%m-%d'), m, lo, hi)
+            for n, d, m, lo, hi in _TASTEVAL_PREDICT_HELDOUT]
+    if held:
+        on_curve = _tasteval_predict_mase([h[1] for h in held])
+        fig.add_trace(go.Scatter(
+            x=[h[1] for h in held], y=[h[2] for h in held],
+            mode='markers+text', name="Scored after the paper",
+            marker=dict(color='#d35400', size=10),
+            error_y=dict(type='data', symmetric=False,
+                         array=[h[4] - h[2] for h in held],
+                         arrayminus=[h[2] - h[3] for h in held],
+                         color='rgba(211,84,0,0.5)'),
+            text=[h[0].replace("Claude ", "") for h in held],
+            textposition='bottom right', textfont=dict(size=11, color='#d35400'),
+            hovertext=[f"{h[0]} ({h[1].strftime('%b %Y')})<br>MASE {h[2]:.3f} "
+                       f"(95% CI {h[3]:.3f}–{h[4]:.3f})<br>the curve: "
+                       f"{c:.3f}" for h, c in zip(held, on_curve)],
             hoverinfo='text'))
     for y, color, label in ((_TASTEVAL_PREDICT_BASELINE, '#6b7280',
                              f"{_TASTEVAL_PREDICT_BASELINE} — predict the run's last score"),
@@ -8986,19 +9020,24 @@ def _render_rsi_tasteval(end_year):
     _fn_caption(
         "Predicting an experiment's score before running it: models have "
         "closed half the gap from a naive guess to the noise floor. The curve "
-        "is the paper's own sigmoid, read off its figure.",
+        "is the paper's sigmoid, refit with the models scored since.",
         ("Predicting an experiment's score",
          "Given the task, the experiment's description and the run's earlier "
          "results, predict its validation score. 1,173 experiments from 120 "
          "runs, scored by mean absolute scaled error: lower is better, 0.608 "
          "is what guessing the last score gets, 0.211 the floor set by "
          "re-running experiments with fresh seeds."),
-        ("read off its figure",
-         "The paper prints the curve's end points (0.608, 0.211) and its "
-         f"{_TASTEVAL_PREDICT_TARGET:.0f}% date, but not its midpoint or "
-         "rate. Those are read from the line its Figure 7 draws (fit through "
-         "GPT-4 Turbo to Opus 5.5, R² 0.85): mid-2026, 0.51 a year. That "
-         "read lands within a month of the printed October 2030. Its "
+        ("refit with the models scored since",
+         "The paper's sigmoid runs from 0.608 to 0.211 and is fit through "
+         "GPT-4 Turbo to Opus 5.5 (midpoint July 2026, 0.51 a year, "
+         f"{_TASTEVAL_PREDICT_TARGET:.0f}% in October 2030). Here its ten "
+         "models, read off its figure, are refit with "
+         + ", ".join(h[0] for h in _TASTEVAL_PREDICT_HELDOUT)
+         + f", weighted by their error bars: midpoint "
+         f"{datetime.strptime(_TASTEVAL_PREDICT_MID, '%Y-%m-%d'):%B %Y}, "
+         f"{_TASTEVAL_PREDICT_RATE:.2f} a year, {_TASTEVAL_PREDICT_TARGET:.0f}% in "
+         f"{datetime.strptime(_TASTEVAL_PREDICT_DATES[1], '%Y-%m-%d'):%B %Y}. "
+         "The same fit on the ten alone lands within a week of the paper's. Its "
          f"{_TASTEVAL_PREDICT_TARGET:.0f}% crossing is the milestone card "
          "below, which, like this chart, sits outside the automated-coder "
          "projection: predicting results is research skill, not coding."))
@@ -18834,17 +18873,21 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  "selected for having room for improvement."))
     # Appended last, and drawn off a quantile grid, so the cards above keep
     # their draws.
+    def _d(i):
+        return f"{datetime.strptime(_TASTEVAL_PREDICT_DATES[i], '%Y-%m-%d'):%b %Y}"
     _cap.append((f"tasteval_predict_{_TASTEVAL_PREDICT_TARGET:.0f}",
                  f"Experiment prediction {_TASTEVAL_PREDICT_TARGET:.0f}% to noise floor",
                  _pc_tasteval_predict_eta(n=n, samples=True), True,
-                 "TasteVal's own fit (P-Zero, Oct 2026, section 3.6), not this "
-                 "app's: models predict an experiment's validation score from "
-                 "its description and the run's earlier results, and a sigmoid "
-                 "from the predict-the-last-score baseline down to the "
-                 "replication noise floor closes "
-                 f"{_TASTEVAL_PREDICT_TARGET:.0f}% of that gap in Oct 2030. Its "
-                 "95% interval (Oct 2029\u2013Dec 2031) is read here as an 80% "
-                 "one, since it holds the four tasks fixed. A model there knows "
+                 "TasteVal's fit (P-Zero, Oct 2026, section 3.6), refit here "
+                 "with the models P-Zero scored since: models predict an "
+                 "experiment's validation score from its description and the "
+                 "run's earlier results, and a sigmoid from the "
+                 "predict-the-last-score baseline down to the replication noise "
+                 f"floor closes {_TASTEVAL_PREDICT_TARGET:.0f}% of that gap in "
+                 f"{_d(1)} (the paper: Oct 2030). Its interval "
+                 f"({_d(0)}\u2013{_d(2)}, the paper's 95% one scaled to the "
+                 "refit) is read here as an 80% one, since it holds the four "
+                 "tasks fixed. A model there knows "
                  "what an experiment will return about as well as rerunning it "
                  "would. A card only, outside the projection: predicting "
                  "results is not coding, nor a definition of the threshold."))
@@ -19169,7 +19212,8 @@ def _pc_nextstep_eta(frontier, target_pct=_RSI_DIR_TARGET, n=None,
 def _pc_tasteval_predict_eta(n=None, samples=False):
     """(early, median, late) dates for TasteVal's experiment-prediction error
     to close `_TASTEVAL_PREDICT_TARGET`% of its gap to the noise floor: the
-    paper's own sigmoid and dates, not a refit. Its 95% interval is read as an
+    paper's sigmoid refit with the models scored since (`_TASTEVAL_PREDICT_DATES`).
+    Its 95% interval is read as an
     80% one, since that bootstrap holds the four tasks and the curve's form
     fixed. A quantile grid rather than random draws, so adding the card leaves
     every other card's seeded stream as it was."""

@@ -1831,10 +1831,13 @@ class TestRsiTab:
         assert any(str(t.get("text", [""])[0]).startswith("today (est.)")
                    for t in mult["data"] if t.get("mode") == "markers+text")
         pred = next(f for f in figures if any(
-            t.get("name") == "The paper's fit" for t in f["data"]))
+            t.get("name") == "The fit" for t in f["data"]))
         bar = vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_TARGET / 100 * (
             vp._TASTEVAL_PREDICT_BASELINE - vp._TASTEVAL_PREDICT_FLOOR)
         assert any(abs(s.get("y0", 0) - bar) < 1e-9 for s in pred["layout"]["shapes"])
+        held = next(t for t in pred["data"]
+                    if t.get("name") == "Scored after the paper")
+        assert len(held["y"]) == len(vp._TASTEVAL_PREDICT_HELDOUT)
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         assert not t["Milestone"].str.contains("TasteVal").any()
 
