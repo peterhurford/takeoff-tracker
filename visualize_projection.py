@@ -12153,11 +12153,14 @@ _DC_NETWORK_OPTIONS = {
 # China's share is not set from these: it is computed, the compute mix's
 # in-China stock over the world total (`_wc_stocks`), and they are its
 # check. SEA and UAE are the weakest numbers here: both regions are
-# mostly *pipeline* (Johor ~3 GW approved, Stargate UAE's first 200 MW of a
-# planned 1 GW), so today's installed share is small and poorly measured.
+# mostly *pipeline* (Johor ~3 GW approved; Stargate UAE 0 MW operational at
+# Epoch's last image), so today's installed share is small and poorly
+# measured.
 _WC_SOURCE_SUPERCOMPUTERS = "https://epoch.ai/data-insights/ai-supercomputers-performance-share-by-country"
 _WC_SOURCE_SMUGGLING = "https://epoch.ai/publications/chip-smuggling"
 _WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
+_WC_SOURCE_CHIP_IMPORTS = "https://epoch.ai/data/ai-chip-imports-documentation/methodology"
+_WC_SOURCE_STARGATE_UAE = "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-uae"
 _WC_CN = "China domestic"
 # The regions outside China as (label, central share %, 10th pct, 90th pct):
 # world shares as published, beside China's ~9%. They split whatever the
@@ -12165,7 +12168,7 @@ _WC_CN = "China domestic"
 _WC_REGIONS = (
     ("US domestic", 76.0, 68.0, 82.0),
     ("SEA", 3.0, 1.5, 6.0),
-    ("UAE", 2.0, 0.8, 4.0),
+    ("UAE", 0.6, 0.3, 1.5),
     ("Europe/UK", 6.0, 3.5, 9.0),
     ("Other", 4.0, 2.0, 7.0),
 )
@@ -12190,8 +12193,14 @@ _WC_NOTES = {
         "Chinese labs. SemiAnalysis has Chinese firms leasing about 1.45 GW "
         "in Asia outside China in 2026, flattening near 2.9 GW by 2029.",
     "UAE":
-        "Stargate UAE's first 200 MW (about 100k GB300s) lands in 2026, "
-        "against a planned 1 GW and an announced 5 GW campus.",
+        "Epoch's AI chip imports explorer does not list the UAE: it sits in "
+        "\u201cAll others\u201d, 1.0M H100e cumulative to Jun 2026 across "
+        "every unlisted country, with UAE accelerator trade about $1.2B over "
+        "2023Q3\u20132026Q2. Epoch's Stargate UAE page has 0 MW operational "
+        "at its last image, 200 MW projected for Dec 2026 and a 1 GW median "
+        "for Jan 2028, nothing sourced beyond; after Iranian strikes on Gulf "
+        "data centers (Mar 2026), Reuters reports the 5 GW campus being "
+        "redesigned as dispersed sites. Grown at Other's rate.",
     "Europe/UK":
         "The largest piece of what is left after the US and China, and much "
         "of it is US firms building abroad \u2014 Microsoft and Nscale in "
@@ -12219,11 +12228,14 @@ _WC_NOTES = {
 #     So SEA's share drifts down after 2027 instead of compounding up. The
 #     top end stays wide for the US hyperscalers' share of Johor, which that
 #     series omits.
-#   • The UAE is the fast one, from a small base and mostly announced rather
-#     than built — hence the wide band. The UAE's top end is
-#     held at 5×/yr rather than the 6× a from-near-zero lognormal wants: at 6×
-#     it compounds to a quarter of world compute by 2029, which the announced
-#     5 GW campus does not support even if every phase lands early.
+#   • UAE (2.2×, 1.5–3.5×): Other's central rate, so its share roughly holds.
+#     Epoch's AI chip imports explorer leaves it inside "All others" (1.0M
+#     H100e cumulative to Jun 2026 across every unlisted country; UAE
+#     accelerator trade ~$1.2B over 2023Q3–2026Q2), and Epoch's Stargate UAE
+#     page has 0 MW operational, 253k H100e / 200 MW projected Dec 2026 and
+#     2.02M H100e / 1 GW median Jan 2028, nothing sourced beyond. Reuters has
+#     the 5 GW campus redesigned as dispersed sites after Iranian strikes on
+#     Gulf data centers (Mar 2026). Little more chip supply given Iran.
 #   • Europe keeps pace with the US because most of its buildout *is* US firms
 #     (Microsoft/Nscale, Google, CoreWeave); the catalogue's European sites
 #     grow ~1.8×/yr to end-2028.
@@ -12248,7 +12260,7 @@ _WC_COMMON_LOAD = {
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
     ("SEA", 2.0, 1.5, 3.2),
-    ("UAE", 3.5, 2.4, 5.0),
+    ("UAE", 2.2, 1.5, 3.5),
     ("Europe/UK", 2.3, 1.7, 3.2),
     ("Other", 2.2, 1.6, 3.2),
 )
@@ -16731,7 +16743,9 @@ def _render_world_shares(today, horizon):
         f"([by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
         f"[smuggling]({_WC_SOURCE_SMUGGLING}), "
         f"[coverage]({_WC_SOURCE_COVERAGE}), "
-        f"[chip sales]({_WC_SOURCE_CHIP_SALES})), "
+        f"[chip sales]({_WC_SOURCE_CHIP_SALES}), "
+        f"[chip imports]({_WC_SOURCE_CHIP_IMPORTS}), "
+        f"[Stargate UAE]({_WC_SOURCE_STARGATE_UAE})), Reuters, "
         f"[CTS]({_DUV_SOURCE_URL}), IFP, the AI-2027 tracker, RAND.",
         ("80% ranges", "China's comes from the compute mix's ranges for "
                        "domestic chips and smuggling; the world total's from "

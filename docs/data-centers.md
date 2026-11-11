@@ -387,7 +387,9 @@ not a reading of the CSVs. Six things are load-bearing:
    as published beside China's ~9%; only their ratios are used
    (`_wc_central_split`). Retarget the constants when the estimates move
    rather than nudging them to taste. Every region's provenance is one line in
-   `_WC_NOTES`, shown on its bar's hover.
+   `_WC_NOTES`, shown on its bar's hover. The UAE sits at Other's central rate,
+   so its share holds near its level rather than compounding
+   (`CHINA_COMPUTE_JUDGMENTS.md` §3, `test_the_uae_share_holds_rather_than_compounding`).
 3. **The band has three independent sources.** CTS's low and high output
    (scenarios, not quantiles; read as 10th and 90th, `_wc_skew`), the mix's
    p5/p95 domestic and smuggled stocks (legal sales stay central: their range is small beside smuggling's), and the

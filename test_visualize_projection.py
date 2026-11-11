@@ -5026,9 +5026,18 @@ class TestCcWorldShares:
             w = np.percentile(wide[lab][0], 90) - np.percentile(wide[lab][0], 10)
             t = np.percentile(tight[lab][0], 90) - np.percentile(tight[lab][0], 10)
             assert t < w, lab
-        # The UAE's band is the one that ran away: it grows fastest from the
-        # smallest base, so a lognormal rate compounds hardest there.
+        # No region's band runs away from its small base.
         assert np.percentile(100 * tight["UAE"][0], 90) < 30
+
+    def test_the_uae_share_holds_rather_than_compounding(self):
+        """The UAE grows at Other's central rate (little more chip supply
+        given Iran), so its central share stays under 2% through 2035."""
+        rates = {lab: mid for lab, mid, _, _ in vp._WC_GROWTH}
+        assert rates["UAE"] == rates["Other"]
+        years = [(datetime(y, 12, 31) - self._T).days / 365.25
+                 for y in range(2026, 2036)]
+        uae = vp._wc_central_shares(self._T, years)["UAE"]
+        assert float(np.max(uae)) < 2.0
 
     def test_a_low_us_split_is_a_slow_world_not_a_handover(self):
         """Most non-US capacity outside China is US firms on US-supplied
