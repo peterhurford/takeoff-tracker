@@ -322,9 +322,7 @@ Four contracts, each guarded:
 **Build-up rates are calibrated.** Each country's ECI rate (algorithmic term +
 exchange rate × compute growth) is multiplied by `_cc_rate_calibration`: its
 observed frontier slope since `_CC_CALIB_SINCE` over that build-up rate (US ×1.31,
-China ×1.37 live), so projected lines fit their history. The distillation scenario's
-China rows are the calibrated rate less the channels the decomposition measures
-(distillation, then diffusion). The Pacing tab's pause panel scales its US climb by the same
+China ×1.37 live), so projected lines fit their history. The Pacing tab's pause panel scales its US climb by the same
 US factor. `TestCcRateCalibration`.
 
 *Compute ⟷ ECI* (exchange rate, iso-ECI/iso-compute charts, the two engines) and

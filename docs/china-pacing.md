@@ -65,21 +65,30 @@ Centers draws its whiskers mid-stream, so the share range matches its headline i
 distribution, not draw for draw; at defaults the strings agree
 (`test_headline_cards_are_the_other_tabs_numbers`, `TestCcHeadline`).
 
-## China tab — section order and the cross-check
+## China tab — section order
 
-The tab runs headline cards, *How this compares with published estimates*
-(`_render_cc_crosscheck`), *Where China's compute comes from*, the glossary expander, the
-smuggling range, the lithography ceiling, then *US vs. China*: the evidence on China's compute before the
-run-and-capability comparison that reads it (`TestCcComputeSourcesTab`). None of the moved
-sections draw, so the reorder moves no number.
+The tab runs headline cards, *Where China's compute comes from*, the glossary expander, the
+lithography ceiling, then *US vs. China*: the evidence on China's compute before the
+run-and-capability comparison that reads it (`TestCcComputeSourcesTab`).
 
-The cross-check reads the world identity at Epoch's chip imports explorer's date
-(`_WC_WORLD_ARRIVED_MID2026`) against Epoch's China, world, share and US (`_WC_EPOCH_*`),
-with 5th-95th ranges from the headline's seeded draws. Its sentence splits log(our share /
-Epoch's) exactly into the China-count term and minus the world-total term and names the
-larger. Epoch's cluster share (`_WC_EPOCH_CLUSTER_SHARE`) sits beside our back-run share at
-its date, flagged as a share of tracked clusters holding an estimated 10-20% of world
-compute (`TestCcCrossCheck`, `test_cross_check_sets_the_app_beside_epoch`).
+## China tab — the frontiers under the takeoff, and what drives China's
+
+*US vs. China* ends on the Takeoff tab's model, not a straight-line trend: the frontier
+chart is `_cn_tk_fig` over `_cn_tk_run` (China as a follower of each US scenario, Takeoff's
+section 5), so its settings move it, and the end-year gap card is the paired per-draw gap
+in points (median, 80%), not months, since a takeoff breaks today's months-per-point
+(`test_gap_cards_today_in_months_end_year_from_the_takeoff`).
+
+*What drives China's frontier* (`_cc_cn_drivers`, `_cc_cn_drivers_fig`) is one 100% bar
+per period: since `_CC_CALIB_SINCE` measured (each `_cc_cn_channels` rate × the years),
+then today to end-2027 and to the horizon under the takeoff, each source averaged over the
+scenarios whose total gain sits in `_CC_DRIVER_MID_Q`, so the parts add to a typical total
+(per-source medians would not). Compute's ECI is split across domestic, legal, smuggled and
+remote access by each channel's share of the chips added over the period
+(`_cc_cn_chips_added`). That is an attribution, said so in the caption: the takeoff grows
+China's training runs at one rate, so "without smuggling" would need a counterfactual run
+(Pacing's levers) and would also move experiment compute (`TestCcCnDrivers`,
+`test_frontier_chart_runs_the_takeoff_and_the_breakdown_its_sources`).
 
 ## China tab — by-source legend
 
@@ -89,26 +98,14 @@ channel) and a zero-height plain bar per channel stands in for them, with two gr
 the bases (`test_the_legend_keys_channels_and_bases_apart`). Pacing's
 `_pc_render_compute_mix` draws plain bars with no fade or hatch, so it needs none.
 
-## China tab — smuggling range
-
-`_render_cc_smuggling_range` holds every input central but the smuggled stock, set to its
-stored low, central and high (`_wc_stocks` at `z_smug` = ∓`_cn_src_range_z` of an IFP year), and prints
-China's share today and at end-2027 beside the stored smuggled stocks: Epoch's through
-2025 (`_CN_SRC_EPOCH_SMUGGLED_2025` as published, the file's row unrounded) and IFP's
-through 2027. Smuggled chips are in the world total either way, so only China's count
-moves. A footnote says IFP's bounds are not simulation percentiles; the file stores them as
-10th-90th and the world identity reads them as that (Epoch's years as 5th-95th)
-(`TestCcSmugglingRange`).
-
 ## China tab text
 
 `_CC_LEAD` opens the tab: its question, then the claims the tab grounds for the other tabs
 (China's share of world compute and its range, capability lag vs compute deficit, where the
-chips come from and how much rests on US policy, when a DUVi ban binds). A glossary caption footnotes log OP, H100e, ECI and OOM. The
-four ECI projection charts (three on China, Pacing's offset one) label the region past today
-`_CC_PROJECTED` rather than the buildout band's *planned / under construction*. Chart A's
-widening phrase, the smuggled-share interval and the innovation margin are computed from the
-live fits, and IFP's 2026 point is called an estimate (`TestCcExplains`).
+chips come from and how much rests on US policy, when a DUVi ban binds). A glossary caption footnotes log OP, H100e, ECI and OOM. ECI
+projection charts drawn with the buildout band (Pacing's offset one) label the region past
+today `_CC_PROJECTED` rather than *planned / under construction*. Chart A's widening phrase
+and the smuggled-share interval are computed from the live fits, and IFP's 2026 point is called an estimate (`TestCcExplains`).
 
 ## China's crossing simulation (Pacing tab's pause panel)
 
@@ -134,16 +131,14 @@ is its consumer. Load-bearing:
    of levels and dates inside the 80% band (`TestCcCrossingBacktest`); a rate spread
    alone covered ~16%, and a release wait on top skewed dates late. With `channels` the
    offset is its own `level` entry, left out of Pacing's breakdown rows.
-4. **Both gap cards convert points to months one way**: the gap ÷ the US frontier's
-   projected ECI a year (`_gap_months`), said in each card's hover, so today's and the
-   end-year months compare. The end-year hover adds the fit-window range
-   (`_cc_gap_end_range` over `_CC_CALIB_SENS_STARTS`): China's slope swings on
-   DeepSeek-R1's Jan 2025 jump (`test_gap_cards_share_one_months_conversion`).
+4. **Today's gap card converts points to months** at the US frontier's projected ECI a
+   year (`_gap_months`), said in its hover; the end-year card is the takeoff's, in points
+   (see *the frontiers under the takeoff* above).
 5. **One channel split, shared.** `_cc_cn_channels` splits China's observed slope into
    compute (at China's compute growth over the window, `_CC_CN_HIST_COMPUTE`, ×2.12, above
    the forward band's ×1.68 mid, so China decelerates; `compute_fwd` is the forward term),
-   innovation (residual), diffusion and distillation; the China tab's breakdown
-   chart and scenario chart and the Pacing sim's bands all read it, so the tabs size
+   innovation (residual), diffusion and distillation; the China tab's drivers
+   breakdown, Takeoff's China run and the Pacing sim's bands all read it, so the tabs size
    distillation alike (`TestCcCnChannels`).
 6. **Three-channel algorithmic engine.** `_cc_cn_crossing_sim` splits the measured
    rate into innovation (`_cc_pure_innovation_band`, never decays) + diffusion
@@ -172,7 +167,7 @@ is its consumer. Load-bearing:
    drop, the screen's bite and the coverage guard. Its n counts models (~12 at margin 5),
    and margin 3 may be too thin to fit, so `_cc_tight_fg` gives the innovation bands
    (`_cc_innovation_algo_band`, `_cc_pure_innovation_band`) margin 3 when it fits, else
-   margin 5, before pooled, and the breakdown's innovation row prints the margin used — pooled there
+   margin 5, before pooled — pooled there
    collapses the pure-innovation band to a point. Measured by country, distillation is
    a *level*, not a rate: `_cc_cn_level_offset` (the country dummy at matched compute
    and date, quoted live in the control caption and the Pacing distillation checkbox)

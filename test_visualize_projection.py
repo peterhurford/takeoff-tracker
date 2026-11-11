@@ -2050,26 +2050,50 @@ class TestCcRateCalibration:
         assert k > 1.0
 
 
-class TestCcGapEndRange:
-    def test_range_spans_the_window_choices(self):
-        """The end-year gap's hover range covers every alternative fit start,
-        and on live data the since-2024 central sits inside it."""
-        eci_all = vp.load_eci_frontier(mtime=vp._eci_mtime())
-        us_fr = vp._cc_country_frontier(eci_all, 'United States of America')
-        cn_fr = vp._cc_country_frontier(eci_all, 'China')
-        horizon = datetime(2029, 12, 31)
-        (lo, hi), us_r, cn_r = vp._cc_gap_end_range(us_fr, cn_fr, horizon)
-        us_d, us_v = max(((d, s) for d, s, n in us_fr), key=lambda p: p[1])
-        cn_d, cn_v = max(((d, s) for d, s, n in cn_fr), key=lambda p: p[1])
-        central = (
-            us_v + vp._cc_frontier_eci_slope(us_fr, vp._CC_CALIB_SINCE)
-            * (horizon - us_d).days / 365.25
-            - cn_v - vp._cc_frontier_eci_slope(cn_fr, vp._CC_CALIB_SINCE)
-            * (horizon - cn_d).days / 365.25)
-        # The central is itself one of the window fits, so it can tie an end.
-        assert lo - 1e-9 <= central <= hi + 1e-9
-        assert hi - lo > 2.0
-        assert us_r[1] - us_r[0] < cn_r[1] - cn_r[0]
+class TestCcCnDrivers:
+    """The China tab's breakdown of China's ECI gain by source: each period's
+    parts add to its total, compute's chip split adds to compute, and the
+    projected bars average the middle of the run."""
+
+    @staticmethod
+    def _cn():
+        years = np.linspace(0.0, 5.0, 61)
+        n = 50
+        scale = np.linspace(0.5, 1.5, n)[:, None] * years[None, :]
+        src = {"Compute": 1.0 * scale, "Own research": 3.0 * scale,
+               "Distillation": 2.0 * scale, "US software leaked": 1.5 * scale,
+               "US software stolen": 0 * scale, "Weights stolen": 0 * scale,
+               "Early trend floor": 0 * scale}
+        level = np.full(n, 150.0)
+        return {"years": years, "level": level, "sources": src,
+                "paths": level[:, None] + sum(src.values()),
+                "cal": {"ch": {"obs": 15.0, "compute": 3.0, "innovation": 4.0,
+                               "diffusion": 4.0, "distillation": 4.0}}}
+
+    def test_parts_add_up_and_compute_splits_by_channel(self):
+        today = datetime(2026, 11, 11)
+        rows = vp._cc_cn_drivers(self._cn(), today, [datetime(2027, 12, 31),
+                                                     datetime(2035, 12, 31)])
+        assert [r[0] for r in rows][1:] == ["Today–end-2027 (takeoff)"]
+        chans = [k for k, _l, _c in vp._CN_SOURCES]
+        t = (today - vp._CC_CALIB_SINCE).days / 365.25
+        for i, (_lab, d, tot) in enumerate(rows):
+            assert sum(d.values()) == pytest.approx(tot, rel=1e-9)
+            assert all(d[k] > 0 for k in chans)
+            if i == 0:
+                assert tot == pytest.approx(15.0 * t)
+                assert sum(d[k] for k in chans) == pytest.approx(3.0 * t)
+        # The middle of the run: the scenarios around the median, scale ~1.
+        u = rows[1][1]
+        assert u["own"] / sum(u[k] for k in chans) == pytest.approx(3.0, rel=1e-9)
+
+    def test_chips_added_spread_each_years_flow_over_it(self):
+        a = vp._cc_cn_chips_added(datetime(2025, 1, 1), datetime(2026, 1, 1))
+        flow = vp.load_china_compute_sources(vp._cn_src_mtime())["flow"]["2025"]
+        for k, v in a.items():
+            assert v == pytest.approx(flow[k][0], rel=1e-9)
+        half = vp._cc_cn_chips_added(datetime(2025, 1, 1), datetime(2025, 7, 2))
+        assert half["domestic"] == pytest.approx(0.5 * flow["domestic"][0], rel=0.01)
 
 
 class TestCcCnChannels:
@@ -5204,64 +5228,6 @@ class TestCcHeadline:
         assert vp._pc_compute_lead_band({"today": today, "mix": {}}, n=500) \
             == vp._pc_lead_band_at(today, (when - today).days / 365.25,
                                    {}, n=500)
-
-
-class TestCcCrossCheck:
-    """The China tab's cross-check (`_cc_crosscheck`) reads the world
-    identity at Epoch's explorer date, draws without moving the generator,
-    and Epoch's own figures agree with each other."""
-
-    def test_centrals_are_the_world_identity_at_the_explorers_date(self):
-        today = datetime(2026, 10, 23)
-        np.random.seed(7)
-        before = np.random.get_state()[1].copy()
-        x = vp._cc_crosscheck(today, n=2000)
-        assert (np.random.get_state()[1] == before).all()
-        t = [(vp._WC_WORLD_ARRIVED_MID2026[0] - today).days / 365.25]
-        world, china = vp._wc_stocks(today, t)
-        assert x["world"][0] == pytest.approx(float(world[0, 0]), rel=1e-12)
-        assert x["china"][0] == pytest.approx(float(china[0, 0]), rel=1e-12)
-        assert x["share"][0] == pytest.approx(
-            100 * x["china"][0] / x["world"][0], rel=1e-12)
-        assert x["us"][0] == pytest.approx(
-            float(vp._pc_us_installed(today, t[0])), rel=1e-12)
-        for k in ("china", "world", "share", "us"):
-            assert x[k][1] < x[k][0] < x[k][2], k
-        assert vp._cc_crosscheck(today, n=2000) == x
-
-    def test_epochs_share_is_its_china_over_its_world(self):
-        cn = vp._WC_EPOCH_CN_MID2026[0]
-        world = vp._WC_WORLD_ARRIVED_MID2026[1]
-        assert 100 * cn / world == pytest.approx(vp._WC_EPOCH_CN_SHARE_PCT,
-                                                 abs=0.01)
-        lo, hi = vp._WC_EPOCH_CN_ENVELOPE
-        assert lo < vp._WC_EPOCH_CN_MID2026[1] < cn \
-            < vp._WC_EPOCH_CN_MID2026[2] < hi
-
-
-class TestCcSmugglingRange:
-    """The smuggling panel moves only China's smuggled stock to IFP's stored
-    low and high, so the world total holds and the central is the headline's."""
-
-    def test_only_china_moves_and_the_central_is_the_headline(self):
-        today = datetime(2026, 10, 23)
-        r = vp._cc_smuggling_range(today)
-        lo, mid, hi = r["share_today"]
-        assert lo < mid < hi and r["share_2027"][0] < r["share_2027"][2]
-        assert mid == pytest.approx(float(
-            vp._wc_central_shares(today, [0.0])[vp._WC_CN][0]), rel=1e-12)
-        t = [0.0, (datetime(2027, 12, 31) - today).days / 365.25]
-        q = vp._cn_src_range_z(2027)
-        w_lo, c_lo = vp._wc_stocks(today, t, z_smug=-q)
-        w_hi, c_hi = vp._wc_stocks(today, t, z_smug=q)
-        assert np.allclose(w_lo, w_hi)
-        assert hi == pytest.approx(100 * float(c_hi[0, 0] / w_hi[0, 0]))
-
-    def test_stored_rows_are_epochs_published_range(self):
-        r = vp._cc_smuggling_range(datetime(2026, 10, 23))
-        assert r["smug_2027"][3] == "ifp"
-        for got, pub in zip(r["smug_2025"][:3], vp._CN_SRC_EPOCH_SMUGGLED_2025):
-            assert got == pytest.approx(pub, rel=0.02)
 
 
 class TestDcMilestoneDates:

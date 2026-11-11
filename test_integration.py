@@ -1512,46 +1512,35 @@ class TestComputeVsCapabilities:
         assert all(len(years) == 1 for years in seen.values())
 
     def test_renders_every_section(self):
-        """US vs. China with the four-row distillation table and the
-        three-channel decomposition with its consistency check render."""
+        """US vs. China ends with the takeoff chart and the breakdown of
+        China's gain by source, measured then projected."""
         at = self._cc_app()
         text = (" ".join(str(m.value) for m in at.markdown) +
-                " ".join(str(h.value) for h in at.subheader) +
-                " ".join(str(w.value) for w in at.warning)).lower()
-        for s in ("us vs. china", "distillation scenario", "no external distillation",
-                  "indigenous only", "where frontier growth comes from",
-                  "diffusion", "distillation"):
+                " ".join(str(h.value) for h in at.subheader)).lower()
+        for s in ("us vs. china", "the frontiers under the takeoff",
+                  "what drives china's frontier"):
             assert s in text, s
         caps = " ".join(str(c.value) for c in at.caption)
-        assert "consistency check" in caps
+        assert "Copying US work" in caps and "an attribution" in caps
 
-    def test_distillation_chart_draws_two_china_scenarios(self):
-        """The scenario chart draws China's trend with and without
-        distillation, the difference shaded; the US-measured and
-        indigenous-only rates are table rows only."""
+    def test_frontier_chart_runs_the_takeoff_and_the_breakdown_its_sources(self):
+        """The frontier chart is Takeoff's section-5 chart, and the breakdown
+        draws a measured bar and projected ones, with copying and every chip
+        channel among its segments."""
         at = self._cc_app()
-        names = [d.get("name", "") for el in at.get("plotly_chart")
-                 for d in json.loads(el.proto.spec)["data"]]
-        china = [n for n in names if n.startswith("China · ")]
-        assert len(china) == 2
-        assert any("with distillation" in n for n in china)
-        assert any("no ext. distillation" in n for n in china)
-        assert "What distillation adds" in names
-        assert "US (actual)" in names
-        md = " ".join(str(m.value) for m in at.markdown)
-        assert "China's own algo growth" not in md
-        assert "Indigenous only" in md and "US-measured algo rate" in md
-
-    def test_distillation_anchor_dropdown(self):
-        """The scenario-lines anchor toggles between today and the Jan-2025
-        backtest, and the caption follows."""
-        at = self._cc_app()
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "From today's frontiers" in caps
-        at.selectbox(key="cc_bd_anchor").set_value("Jan 2025 (backtest)").run()
-        _assert_no_error(at, "Compute vs Capabilities / backdated scenario")
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert "Backdated to" in caps
+        figs = [json.loads(el.proto.spec) for el in at.get("plotly_chart")]
+        names = [d.get("name", "") for f in figs for d in f["data"]]
+        assert "China: projected (median)" in names
+        assert "US: projected (median)" in names
+        drv = next(f for f in figs
+                   if any(d.get("name") == "Own research" for d in f["data"]))
+        bars = {d["name"]: d["y"] for d in drv["data"]}
+        for n in ("Compute: smuggled", "Compute: remote access abroad",
+                  "Distillation of US models", "US methods diffusing"):
+            assert n in bars, n
+        periods = bars["Own research"]
+        assert any("measured" in p for p in periods)
+        assert any("takeoff" in p for p in periods)
 
     def test_dc_derivation_is_stated(self):
         """The tab says where its compute inputs come from: the
@@ -1650,62 +1639,34 @@ class TestCcExplains:
         assert lead.value == ratio
         assert round(float(total.value.split("M")[0])) == int(cn.replace(",", ""))
 
-    def test_cross_check_sets_the_app_beside_epoch(self):
-        """The cross-check table carries Epoch's published figures and its
-        sentence the app's own share, naming where the gap sits."""
-        import visualize_projection as vp
-        at = self._app()
-        i = [str(h.value) for h in at.subheader].index(
-            "How this compares with published estimates")
-        tab = at.table[0].value
-        assert list(tab["Measure"])[0].startswith("China, in China, end-Jun 2026")
-        epoch = " ".join(tab["Epoch (90%)"])
-        for v in ("2.64M (2.26M\u20132.96M)", "1.90M\u20134.19M",
-                  "27.39M (24.64M\u201330.21M)", "9.6%", "19.80M", "~15%"):
-            assert v in epoch, v
-        x = vp._cc_crosscheck(datetime.now())
-        caps = " ".join(str(c.value) for c in at.caption)
-        assert f"China's share here is {x['share'][0]:.1f}% against" in caps
-        assert re.search(r"gap is in the (China count|world total)|"
-                         r"makes the gap", caps)
-        assert "10\u201320% of the world" in caps
-        assert i == 0
-
-    def test_gap_cards_share_one_months_conversion(self):
+    def test_gap_cards_today_in_months_end_year_from_the_takeoff(self):
+        """Today's gap converts points to months at the US's climb; the
+        end-year gap is the takeoff's, in points with its 80% range."""
         at = self._app()
         cards = {m.label: m for m in at.metric}
         today = cards["ECI gap today"]
+        rate = float(re.search(r"climb, ([\d.]+) ECI a year", today.proto.help).group(1))
+        pts = float(re.search(r"([\d.]+) pts", today.value).group(1))
+        months = float(re.search(r"~(-?\d+) mo", today.proto.delta).group(1))
+        assert abs(months - pts / rate * 12) <= 0.6 + 12 / rate
         end = next(m for k, m in cards.items() if k.startswith("ECI gap end-"))
-        rate = re.search(r"climb, ([\d.]+) ECI a year", today.proto.help).group(1)
-        assert f"climb, {rate} ECI a year" in end.proto.help
-        for m in (today, end):
-            pts = float(re.search(r"([\d.]+) pts", m.value).group(1))
-            months = float(re.search(r"~(-?\d+) mo", m.proto.delta).group(1))
-            assert abs(months - pts / float(rate) * 12) <= 0.6 + 12 / float(rate)
+        assert end.label.endswith("(takeoff)")
+        assert "(80%)" in end.proto.delta and "Takeoff tab" in end.proto.help
 
     def test_prose_reads_the_live_fits(self):
         import visualize_projection as vp
         at = self._app()
         text = " ".join(str(m.value) for m in at.markdown)
         caps = " ".join(str(c.value) for c in at.caption)
-        margin = vp._cc_tight_fg(vp.load_eci_compute(mtime=vp._eci_mtime()))[1]
-        assert f"up to the ±{margin:g} near-frontier refit" in text
         assert "Chart-A" not in caps and "widens only slowly" not in caps
         assert re.search(r"the gap (keeps widening|narrows|holds roughly steady)", caps)
         assert "about half or about twice" not in text
         assert "the share could be anywhere from about" in text
 
-    def test_eci_projections_say_projected(self):
+    def test_ifp_2026_point_is_an_estimate(self):
         at = self._app()
-        names, ann = [], []
-        for c in at.get("plotly_chart"):
-            spec = json.loads(c.proto.spec)
-            names += [t.get("name") for t in spec["data"]]
-            texts = [a.get("text", "") for a in spec["layout"].get("annotations", [])]
-            if spec["layout"].get("yaxis", {}).get("title", {}).get("text") == "Frontier ECI score":
-                ann.append(texts)
-        assert ann and all("projected →" in t and
-                           "planned / under construction →" not in t for t in ann)
+        names = [t.get("name") for c in at.get("plotly_chart")
+                 for t in json.loads(c.proto.spec)["data"]]
         assert "China estimate, 2026 (IFP)" in names
         assert "China actual, 2026 (IFP)" not in names
 
@@ -1730,12 +1691,10 @@ class TestCcDuvCeilingTab:
 
 
 class TestCcComputeSourcesTab:
-    """The China tab's sections in order: the published cross-check, China's
-    compute by source, the lithography ceiling, then US vs. China."""
+    """The China tab's sections in order: China's compute by source, the
+    lithography ceiling, then US vs. China."""
 
-    _ORDER = ["How this compares with published estimates",
-              "Where China's compute comes from",
-              "How much smuggling moves China's share",
+    _ORDER = ["Where China's compute comes from",
               TestCcDuvCeilingTab._HEAD, "US vs. China"]
 
     def test_renders_in_order_and_cites_epoch(self):
@@ -1746,8 +1705,6 @@ class TestCcComputeSourcesTab:
         heads = [str(h.value) for h in at.subheader]
         assert [h for h in heads if h in self._ORDER] == self._ORDER
         assert heads[0] == self._ORDER[0]
-        assert "not percentiles of a simulation" in " ".join(
-            str(c.value) for c in at.caption)
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
         assert "Faded bars are projections" in caps

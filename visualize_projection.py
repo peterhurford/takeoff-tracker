@@ -12398,20 +12398,10 @@ _WC_US_WIDE_FROM = 2027
 _WC_US_LOW_RATIO = 60 / 74
 _WC_US_HIGH_RATIO = 109 / 74
 _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
-# The same explorer's China and US at that date (methodology at
-# `_WC_SOURCE_CHIP_IMPORTS`): China, domestic production included, 2.637M
-# H100e (conditional 90% 2.26-2.96M; 1.90-4.19M across its structural
-# assumptions on what the trade contains), 9.63% of the world; the US 19.8M.
-# The China tab's cross-check sets them beside `_wc_stocks` (`TestCcCrossCheck`).
-_WC_EPOCH_CN_MID2026 = (2.637e6, 2.26e6, 2.96e6)
-_WC_EPOCH_CN_ENVELOPE = (1.90e6, 4.19e6)
-_WC_EPOCH_CN_SHARE_PCT = 9.63
-_WC_EPOCH_US_MID2026 = 19.8e6
 # Epoch's "Trends in AI supercomputers" (`_WC_SOURCE_SUPERCOMPUTERS`): China
 # ~15% of the performance of the GPU clusters it tracks in May 2025, clusters
 # estimated to hold 10-20% of the world's AI compute, so a share of a sample.
 _WC_EPOCH_CLUSTER_SHARE = (datetime(2025, 5, 1), 15.0)
-_WC_EPOCH_CLUSTER_COVERAGE_PCT = (10, 20)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
@@ -12483,11 +12473,6 @@ _CN_SRC_FILE = 'china_compute_sources.csv'
 _CN_SRC_SOURCE_SMUGGLING = _WC_SOURCE_SMUGGLING
 _CN_SRC_SOURCE_OWNERS = "https://epoch.ai/data/ai-chip-owners"
 _CN_SRC_SOURCE_IFP = "https://ifp.org/how-to-increase-americas-ai-lead-over-china/"
-# Epoch's smuggling study (`_CN_SRC_SOURCE_SMUGGLING`) as published: 660k
-# H100e smuggled through 2025, 90% 290k-1.6M; the file's 2025 stock row is its
-# unrounded cumulative. The China tab's smuggling panel quotes it
-# (`TestCcSmugglingRange`).
-_CN_SRC_EPOCH_SMUGGLED_2025 = (660e3, 290e3, 1.6e6)
 # (key, label, colour), bottom of the stack first. Validated as adjacent
 # pairs for colour-vision deficiency; amber is under 3:1 on white, so the
 # legend and hovers carry it.
@@ -12922,15 +12907,12 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
 
 
 # China tab (slug `china`; was Compute/capabilities/diffusion, `computecap`)
-_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_bd_anchor",
-                  "cc_company"]
-_CC_DEFAULTS = {"cc_run": "2-month run",
-                "cc_end_year": 2029, "cc_bd_anchor": "Today",
+_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company"]
+_CC_DEFAULTS = {"cc_run": "2-month run", "cc_end_year": 2029,
                 "cc_company": "OpenAI"}
 
 # Where this tab's time charts open, matching the Data Centers tab's default.
 _CC_X_START = datetime(2025, 1, 1)
-_CC_BD_OPTIONS = ("Today", "Jan 2025 (backtest)")
 _CC_END_YEARS = [2027, 2028, 2029, 2030, 2031]
 
 # Fixed segment boundaries for the frontier-compute growth breakdown. Each entry
@@ -14587,7 +14569,7 @@ def _cc_cn_channels(cc_rows, cn_fr, a_partial, g_lo=None, g_hi=None,
     `_CC_CN_HIST_COMPUTE` by default) + `diffusion` (no-external-teacher band mid minus
     the pure-innovation band mid) + `distillation` (all-band iso-compute rate
     minus the top band's) + `innovation` (the residual). The China tab's
-    breakdown and scenario chart and the Pacing tab's crossing sim all read
+    drivers breakdown, Takeoff's China run and the Pacing tab's crossing sim read
     these, so the tabs size distillation alike. `pure`, `inno` and `algo` are
     the sim's bands re-centred on them, keeping the source bands' widths.
     `compute_fwd` is the same term at the forward band's mid (`g_lo`, `g_hi`):
@@ -15052,34 +15034,6 @@ def _cc_frontier_eci_slope(fr, cutoff):
 # scaled to each country's observed frontier slope over this window, so every
 # projected line fits its own history (`_cc_rate_calibration`).
 _CC_CALIB_SINCE = _CC_GAP_WINDOWS[1][1]
-# Alternative fit starts for the end-year gap's sensitivity range: any
-# half-year from 2024 to mid-2025. DeepSeek-R1's Jan 2025 jump lifts China's
-# slope when it sits mid-window and lowers it when it opens the window.
-_CC_CALIB_SENS_STARTS = (datetime(2024, 1, 1), datetime(2024, 7, 1),
-                         datetime(2025, 1, 1), datetime(2025, 7, 1))
-
-
-def _cc_gap_end_range(us_fr, cn_fr, horizon):
-    """(lo, hi) projected ECI gap at `horizon`, each side climbing from its
-    own best frontier model at its slope, over `_CC_CALIB_SENS_STARTS`; also
-    the (lo, hi) US and China slopes. None when no start has both slopes."""
-    us_d, us_v = max(((d, s) for d, s, n in us_fr), key=lambda p: p[1])
-    cn_d, cn_v = max(((d, s) for d, s, n in cn_fr), key=lambda p: p[1])
-    gaps, us_r, cn_r = [], [], []
-    for cut in _CC_CALIB_SENS_STARTS:
-        u = _cc_frontier_eci_slope(us_fr, cut)
-        c = _cc_frontier_eci_slope(cn_fr, cut)
-        if u is not None and c is not None:
-            gaps.append((us_v + u * (horizon - us_d).days / 365.25)
-                        - (cn_v + c * (horizon - cn_d).days / 365.25))
-            us_r.append(u)
-            cn_r.append(c)
-    if not gaps:
-        return None
-    return ((min(gaps), max(gaps)), (min(us_r), max(us_r)),
-            (min(cn_r), max(cn_r)))
-
-
 def _cc_rate_calibration(fr, bottom_up):
     """Observed frontier ECI/yr since `_CC_CALIB_SINCE` / a build-up rate; 1.0
     when either is unavailable."""
@@ -15215,8 +15169,6 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
         cc_rows, load_eci_frontier(mtime=_eci_mtime(), full_window=True))
     if fgm:
         a_partial, b_algo = fgm['a_partial'], fgm['b_time']
-    inno_band = _cc_innovation_algo_band(cc_rows)
-    pure_band = _cc_pure_innovation_band(cc_rows)
     # Build-up rates, then each scaled to its own country's observed slope.
     k_us = _cc_rate_calibration(
         us_fr, b_algo + a_partial * 0.5 * (g_us_lo + g_us_hi))
@@ -15249,19 +15201,28 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                    "train, sites abroad included), a much smaller gap.")
     c2.metric("ECI gap today", f"{gap_now:.0f} pts",
               f"~{_pc_span(mo_now, 0)} behind", delta_color="off", help=_mo_help)
-    _rng = _cc_gap_end_range(us_fr, cn_fr, horizon)
-    c3.metric(f"ECI gap end-{horizon.year} (compute + algo)",
-              f"~{gap_end:.0f} pts",
-              f"~{_pc_span(mo_end, 0)} behind", delta_color="off",
-              help=_mo_help + " " + (f"Each country's rate fits its frontier since "
-                    f"{_CC_CALIB_SINCE.year}. Starting the fit at any half-year "
-                    f"from 2024 to mid-2025 instead gives {_rng[0][0]:.0f}"
-                    f"\u2013{_rng[0][1]:.0f} pts (US {_rng[1][0]:.1f}\u2013"
-                    f"{_rng[1][1]:.1f}, China {_rng[2][0]:.1f}\u2013"
-                    f"{_rng[2][1]:.1f} ECI/yr). The US rate barely moves; "
-                    "China's swings on DeepSeek-R1's Jan 2025 jump, which "
-                    "lifts the slope mid-window and lowers it at the "
-                    "window's start." if _rng else ""))
+    # The end-year gap is the takeoff's, the model the frontier chart below runs.
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    run = _tk_run_seeded(day)
+    cn = (_cn_tk_run(today, run)
+          if isinstance(run, dict) and "error" not in run else None)
+    if cn is not None:
+        yrs = cn["years"]
+        # The last month on or before the horizon, so the label keeps its year.
+        k = max(int(np.searchsorted(yrs, (horizon - day).days / 365.25, side="right")) - 1, 0)
+        g = cn["us_paths"][:, k] - cn["paths"][:, k]
+        g_lo, g_mid, g_hi = np.quantile(g, [.1, .5, .9])
+        at = day + timedelta(days=float(yrs[k]) * 365.25)
+        c3.metric(f"ECI gap end-{at.year} (takeoff)", f"~{g_mid:.0f} pts",
+                  f"{g_lo:.0f} to {g_hi:.0f} pts (80%)", delta_color="off",
+                  help="Each US scenario's trained frontier less its Chinese twin's at "
+                       "the year's end, under the Takeoff tab's model (the chart "
+                       "below): median and middle 80%. In points, not months: once "
+                       "AI automates research the US's pace is no longer today's, "
+                       "so today's months-per-point no longer converts them.")
+    else:
+        c3.metric(f"ECI gap end-{horizon.year} (trend)", f"~{gap_end:.0f} pts",
+                  f"~{_pc_span(mo_end, 0)} behind", delta_color="off", help=_mo_help)
 
     # ── Chart A: actual training runs (grounded) vs cluster capacity (est.) ────
     figc = go.Figure()
@@ -15391,398 +15352,179 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
                       "chips is the export-controlled step \u2014 kept at or below "
                       "those paces; a refresh that undercuts it forces a retarget."))
 
-    # ── Chart B: ECI derived from compute (Chart A) + shared algorithmic
-    # progress — ECI(t) = ECI_now + (a_partial·g_compute + b_algo)·t. The band is
-    # each country's compute-growth range; algo is shared, so the divergence is
-    # purely the compute gap. ──
-    figf = go.Figure()
-    _dc_add_projection_band(figf, today, horizon, label=_CC_PROJECTED)
-    for fr, best, slo, shi, smid, kc, col, rgb, label in (
-            (us_fr, us_anc, us_eci_slo, us_eci_shi, us_eci_smid, k_us,
-             '#1F77B4', (31, 119, 180), 'United States'),
-            (cn_fr, cn_anc, cn_eci_slo, cn_eci_shi, cn_eci_smid, k_cn,
-             '#D62728', (214, 39, 40), 'China')):
-        # From the country's own last frontier model, not from today; the
-        # band opens by the anchor's own spread.
-        x_dates = [best[0]] + _cc_quarter_ends(best[0], horizon)
-        dt = np.array([(d - best[0]).days / 365.25 for d in x_dates])
-        lo, hi = best[1] - best[2] + slo * dt, best[1] + best[2] + shi * dt
-        mid = best[1] + smid * dt
-        r, gg, bb = rgb
-        figf.add_trace(go.Scatter(
-            x=x_dates + x_dates[::-1], y=list(hi) + list(lo[::-1]),
-            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.10)',
-            line=dict(width=0), hoverinfo='skip', showlegend=False))
-        figf.add_trace(go.Scatter(
-            x=[d for d, s, n in fr], y=[s for d, s, n in fr],
-            mode='lines+markers', line=dict(color=col, width=1.5),
-            marker=dict(size=5, color=col, line=dict(color='white', width=0.5)),
-            text=[f"{pretty(n)}<br>ECI {s:.0f}" for d, s, n in fr],
-            hoverinfo='text', name=f"{label} (actual)"))
-        # Algorithmic-only reference: the same anchor climbing at the *shared*
-        # algo rate, with no compute added. The vertical gap up to the full
-        # (compute + algo) line is that country's physical-compute contribution —
-        # wide for the US, narrow for China, so the gap itself is the compute gap.
-        algo_only = best[1] + kc * b_algo * dt
-        figf.add_trace(go.Scatter(
-            x=x_dates + x_dates[::-1], y=list(mid) + list(algo_only[::-1]),
-            fill='toself', fillcolor=f'rgba({r},{gg},{bb},0.16)',
-            line=dict(width=0), hoverinfo='skip', showlegend=False))
-        figf.add_trace(go.Scatter(
-            x=x_dates, y=list(algo_only), mode='lines',
-            line=dict(color=col, width=1.3, dash='dot'),
-            name=f"{label} (algo only)", hoverinfo='skip'))
-        figf.add_trace(go.Scatter(
-            x=x_dates, y=list(mid), mode='lines',
-            line=dict(color=col, width=2.5, dash='dash'),
-            name=f"{label} (compute + algo)", hoverinfo='skip'))
-    figf.update_layout(
-        height=440, plot_bgcolor='white', paper_bgcolor='white',
-        margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
-        legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
-                    bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
-                    borderwidth=1),
-        xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
-                   range=[datetime(2024, 1, 1), horizon],
-                   tickfont=dict(color='#222'), title_font=dict(color='#222')),
-        yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
-                   tickfont=dict(color='#222'), title_font=dict(color='#222')))
-    st.plotly_chart(figf, width="stretch")
+    _cc_render_takeoff(cn, run, today, horizon)
+
+
+# ── China's frontier under the takeoff, and what drives it ──────────────────
+
+# The breakdown's sources, in stack order: (key, label, colour). Compute's
+# four take `_CN_SOURCES`' channel colours; copying is magentas, China's own
+# research green, the first-year trend floor grey.
+_CC_DRIVERS = (
+    ("domestic", "Compute: domestic chips", "#E34948"),
+    ("legal", "Compute: legal US sales", "#2A78D6"),
+    ("smuggled", "Compute: smuggled", "#EDA100"),
+    ("remote", "Compute: remote access abroad", "#6250D6"),
+    ("own", "Own research", "#2E9E5B"),
+    ("diffusion", "US methods diffusing", "#E58FB5"),
+    ("distillation", "Distillation of US models", "#B4306E"),
+    ("stolen", "US software stolen", "#7A1846"),
+    ("weights", "US weights stolen", "#4A0E2B"),
+    ("floor", "Today's trend held (first year)", "#B0B0B0"),
+)
+_CC_DRIVER_COPYING = ("diffusion", "distillation", "stolen", "weights")
+_CC_DRIVER_GREY = ("smuggled", "remote")
+# The projected bars average the scenarios whose total gain sits in this
+# middle band of the run, so their sources add up to a typical total.
+_CC_DRIVER_MID_Q = (0.4, 0.6)
+
+
+def _cc_cn_chips_added(start, end):
+    """H100e each channel (`_CN_SOURCES` keys) adds to China's compute between
+    two dates: the stored and projected yearly flows
+    (`load_china_compute_sources` + `_cn_src_projection`), each year's flow
+    spread evenly over it, the last projected year's held past it."""
+    data = load_china_compute_sources(_cn_src_mtime())
+    flows = {**data["flow"], **_cn_src_projection(data)["flow"]}
+    last = max(int(y) for y in flows)
+    out = {k: 0.0 for k, _l, _c in _CN_SOURCES}
+    for y in range(start.year, end.year + 1):
+        y0, y1 = datetime(y, 1, 1), datetime(y + 1, 1, 1)
+        frac = max((min(end, y1) - max(start, y0)).days, 0) / (y1 - y0).days
+        row = flows.get(str(min(y, last)), {})
+        for k in out:
+            out[k] += frac * row.get(k, (0.0,))[0]
+    return out
+
+
+def _cc_cn_drivers(cn, today, ends):
+    """China's ECI gain by source over each period (`TestCcCnDrivers`): first
+    *measured*, `_CC_CALIB_SINCE` to today, each `_cc_cn_channels` rate times
+    the years; then today to each date in `ends` under the takeoff (`cn`,
+    `_cn_tk_run`), averaged over the scenarios whose total gain is in
+    `_CC_DRIVER_MID_Q`, so the sources add to a typical total. Compute's ECI is
+    split across the chip channels by each one's share of the chips added
+    over the period (`_cc_cn_chips_added`), remote access included.
+
+    Returns [(label, {driver key: ECI}, total)]; ends past the run are
+    dropped."""
+    ch = cn["cal"]["ch"]
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def split(compute, start, end):
+        added = _cc_cn_chips_added(start, end)
+        tot = sum(added.values()) or 1.0
+        return {k: compute * v / tot for k, v in added.items()}
+    t = (day - _CC_CALIB_SINCE).days / 365.25
+    hist = {**split(ch["compute"] * t, _CC_CALIB_SINCE, day),
+            "own": ch["innovation"] * t, "diffusion": ch["diffusion"] * t,
+            "distillation": ch["distillation"] * t}
+    out = [(f"{_CC_CALIB_SINCE:%b %Y}–today (measured)", hist, ch["obs"] * t)]
+    years, src = cn["years"], cn["sources"]
+    for end in ends:
+        u = (end - day).days / 365.25
+        if not 0 < u <= years[-1] + 1e-9:
+            continue
+        k = max(int(np.searchsorted(years, u, side="right")) - 1, 0)
+        gain = cn["paths"][:, k] - cn["level"]
+        lo, hi = np.quantile(gain, _CC_DRIVER_MID_Q)
+        sel = (gain >= lo) & (gain <= hi)
+        if not sel.any():
+            sel = np.abs(gain - np.median(gain)) <= np.min(np.abs(gain - np.median(gain)))
+
+        def m(name):
+            return float(np.mean(src[name][sel, k])) if name in src else 0.0
+        d = {**split(m("Compute"), day, end), "own": m("Own research"),
+             "diffusion": m("US software leaked"), "distillation": m("Distillation"),
+             "stolen": m("US software stolen"), "weights": m("Weights stolen"),
+             "floor": m("Early trend floor")}
+        out.append((f"Today–end-{end.year} (takeoff)", d, float(np.mean(gain[sel]))))
+    return out
+
+
+def _cc_cn_drivers_fig(rows):
+    """The breakdown as 100% bars, one per period, each segment's ECI and share
+    on hover and the period's total gain at its end."""
+    fig = go.Figure()
+    labels = [r[0] for r in rows][::-1]
+    for key, name, col in _CC_DRIVERS:
+        vals = [r[1].get(key, 0.0) for r in rows][::-1]
+        if not any(abs(v) > 0.05 for v in vals):
+            continue
+        tots = [r[2] for r in rows][::-1]
+        fig.add_trace(go.Bar(
+            y=labels, x=[100 * v / t if t else 0.0 for v, t in zip(vals, tots)],
+            orientation="h", name=name, marker_color=col,
+            customdata=np.column_stack([vals, tots]),
+            hovertemplate=name + ": %{customdata[0]:+.1f} ECI of %{customdata[1]:+.1f} "
+                          "(%{x:.0f}%)<extra></extra>"))
+    for lab, _d, tot in rows:
+        fig.add_annotation(x=100, y=lab, xanchor="left", showarrow=False,
+                           text=f" {tot:+.0f} ECI", font=dict(size=12, color="#222"))
+    fig.update_layout(
+        barmode="relative", height=110 + 55 * len(rows), plot_bgcolor="white",
+        paper_bgcolor="white", font=dict(color="#222222"),
+        margin=dict(l=10, r=70, t=10, b=30),
+        legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center",
+                    font=dict(size=11, color="#222"), traceorder="normal"),
+        xaxis=dict(title_text="Share of China's ECI gain (%)", range=[0, 100],
+                   gridcolor="rgba(0,0,0,0.12)", tickfont=dict(color="#222"),
+                   title_font=dict(color="#222")),
+        yaxis=dict(automargin=True, tickfont=dict(color="#222")))
+    return fig
+
+
+def _cc_render_takeoff(cn, run, today, horizon):
+    """The US and China frontiers under the Takeoff tab's model (`_cn_tk_fig`,
+    China as a follower of each US scenario), then what drives China's gain
+    (`_cc_cn_drivers`): chips by channel, its own research, and copying."""
+    st.markdown("**The frontiers under the takeoff**")
+    if cn is None:
+        st.info("The Takeoff tab's model cannot run with these settings, so there is "
+                "no projection here.")
+        return
+    end = min(horizon, today + timedelta(days=float(cn["years"][-1]) * 365.25))
+    st.plotly_chart(_tf(_cn_tk_fig(cn, today, end, run["eci"]["ultra_level"], run["eci"])),
+                    width="stretch")
     _fn_caption(
-        f"ECI = <b>~{a_partial:.0f} pts per \u00d710 compute</b> on each "
-        f"country's compute growth in the chart above, plus a shared algorithmic term of "
-        f"<b>~{b_algo:.0f} pts/yr</b>, each country's sum scaled to its own "
-        f"observed slope: a gap of ~{gap_end:.0f} pts (~{mo_end:.0f} mo) by "
-        f"end-{horizon.year}. Dotted = algorithmic-only.",
-        ("a shared algorithmic term", "Shared because methods diffuse."),
-        ("scaled to its own observed slope",
-         f"The build-up rate under-runs each frontier's since-"
-         f"{_CC_CALIB_SINCE.year} slope, so it is multiplied by observed / "
-         f"build-up: \u00d7{k_us:.2f} for the US "
-         f"({us_eci_smid:.1f} ECI/yr), \u00d7{k_cn:.2f} for China "
-         f"({cn_eci_smid:.1f}). China's includes the distillation the "
-         "build-up leaves out."),
-        ("Dotted = algorithmic-only", "Bands are compute-growth ranges; the "
-                                      "shaded gap to the dashed line is "
-                                      "compute's contribution, wider for the "
-                                      "US."))
+        "Both sides run the [Takeoff tab](?tab=takeoff)'s model, scenario by scenario, "
+        "so the projections bend upward when AI automates research; its settings "
+        "move them.",
+        ("Takeoff tab", "China runs as a follower of each US scenario (Takeoff's section "
+                        "5): its own compute and research, plus distillation of released "
+                        "US models and US methods diffusing to it. Median and middle 80% "
+                        "of the scenarios; both lines are trained frontiers, the US's with "
+                        "Anthropic's internal models in."))
+    ends = sorted({datetime(2027, 12, 31), horizon})
+    rows = _cc_cn_drivers(cn, today, ends)
+    st.markdown("**What drives China's frontier**")
+    st.plotly_chart(_cc_cn_drivers_fig(rows), width="stretch")
 
+    def share(r, keys):
+        return 100 * sum(r[1].get(k, 0.0) for k in keys) / r[2] if r[2] else 0.0
+    hist, last = rows[0], rows[-1]
     _fn_caption(
-        "Order-of-magnitude, not forecasts.",
-        ("Order-of-magnitude", "The pooled OLS splits collinear compute and time "
-                               "only approximately; US labs under-disclose "
-                               "training compute (understating the gap if "
-                               "anything); US/China are Epoch's tags, and "
-                               "multi-country and untagged models are "
-                               "excluded."))
-
-    # ── Where frontier growth comes from: three algorithmic channels ──────────
-    # Each channel is measured (or bounded) independently; innovation is the
-    # per-country residual against the observed frontier slope, and landing
-    # inside the independently derived pure band is the consistency check.
-    st.markdown("**Where frontier growth comes from — three algorithmic "
-                "channels + compute**")
-    isoc_all = _cc_iso_compute(cc_rows)
-    _cut = _CC_GAP_WINDOWS[1][1]
-    obs_us_fr = _cc_frontier_eci_slope(us_fr, _cut)
-    obs_cn_fr = _cc_frontier_eci_slope(cn_fr, _cut)
-    if (inno_band and pure_band and isoc_all and isoc_all.get('bands')
-            and obs_us_fr and obs_cn_fr):
-        top_b = max(isoc_all['bands'], key=lambda b: b['center'])
-        ch = _cc_cn_channels(cc_rows, cn_fr, a_partial, g_cn_lo, g_cn_hi)
-        dist_prem, diff_mid = ch['distillation'], ch['diffusion']
-        comp_us_t = a_partial * 0.5 * (g_us_lo + g_us_hi)
-        comp_cn_t, inno_cn_r = ch['compute'], ch['innovation']
-        inno_us_r = max(obs_us_fr - comp_us_t - diff_mid, 0.0)
-        st.markdown(
-            "| Channel | ECI/yr | How it's measured |\n"
-            "|---|---|---|\n"
-            f"| **Innovation** (never decays) | {pure_band[0]:.1f}–"
-            f"{pure_band[1]:.1f} | pretraining-efficiency prior "
-            f"({_CC_PRETRAIN_ALGO_OOM:.1f} OOM/yr × {a_partial:.0f} pts/×10) "
-            f"up to the ±{_cc_tight_fg(cc_rows)[1]:g} near-frontier refit |\n"
-            "| **Diffusion** (methods; dries up ~"
-            f"{_CC_DIFF_ABSORB_YRS:.0f} yr after a pause) | ~{diff_mid:.1f} | "
-            f"residual: the no-external-teacher level ({inno_band[0]:.1f}–"
-            f"{inno_band[1]:.1f}, two convergent near-frontier fits) minus "
-            "innovation |\n"
-            f"| **Distillation** (decays as the gap closes) | ~{dist_prem:.1f} "
-            f"| all-band iso-compute (+{isoc_all['eci_per_yr']:.1f}) minus "
-            f"the top band (+{top_b['slope']:.1f}) — only sub-frontier "
-            "models have external teachers |")
-        figw = go.Figure()
-        for name, col, u, c in (
-                ('Physical compute', '#D62728', comp_us_t, comp_cn_t),
-                ('Innovation', '#1F77B4', inno_us_r, inno_cn_r),
-                ('Diffusion', '#6BAED6', diff_mid, diff_mid),
-                ('Distillation', '#FF7F0E', 0.0, dist_prem)):
-            figw.add_trace(go.Bar(
-                y=['China', 'United States'], x=[c, u], orientation='h',
-                name=name, marker_color=col,
-                hovertemplate=name + ': %{x:.1f} ECI/yr<extra></extra>'))
-        for cty, obs in (('United States', obs_us_fr), ('China', obs_cn_fr)):
-            figw.add_annotation(x=obs, y=cty, xanchor='left',
-                                text=f' = {obs:.1f} observed', showarrow=False,
-                                font=dict(size=11, color='#222222'))
-        figw.update_layout(
-            barmode='stack', height=200, plot_bgcolor='white',
-            paper_bgcolor='white', font=dict(color='#222222'),
-            margin=dict(l=90, r=90, t=10, b=30),
-            legend=dict(orientation='h', y=-0.4, x=0.5, xanchor='center',
-                        font=dict(size=11, color='#222')),
-            xaxis=dict(title_text="Frontier ECI growth since 2024 (ECI/yr)",
-                       gridcolor='rgba(0,0,0,0.12)',
-                       tickfont=dict(color='#222'),
-                       title_font=dict(color='#222')),
-            yaxis=dict(tickfont=dict(color='#222')))
-        st.plotly_chart(figw, width="stretch")
-        _in_band = (pure_band[0] - 0.5 <= inno_us_r <= pure_band[1] + 0.5
-                    and pure_band[0] - 0.5 <= inno_cn_r <= pure_band[1] + 0.5)
-        _fn_caption(
-            "Each bar sums to the country's observed frontier slope since 2024, and "
-            "innovation \u2014 the residual \u2014 lands "
-            + ("<b>inside</b>" if _in_band else "<b>outside</b>")
-            + f" the independently derived {pure_band[0]:.1f}\u2013"
-            f"{pure_band[1]:.1f} band for both countries.",
-            ("Each bar", "Compute = the exchange rate \u00d7 each side's capacity "
-                         "growth. Distillation applies only to the follower (the "
-                         "frontier has no stronger teacher); diffusion flows to both "
-                         "(methods travel both ways \u2014 MLA/GRPO went "
-                         "east-to-west); innovation is the residual."),
-            ("the independently derived", "That the residual lands inside a band "
-                                          "derived without it is the "
-                                          "decomposition's main consistency check."))
-
-    # ── The distillation scenario ──────────────────────────────────────────────
-    # China's lines at the US-measured iso-compute rate and with external
-    # distillation removed (`_cc_innovation_algo_band` midpoint, diffusion kept); the table
-    # adds indigenous-only. China's own measured rate (`cn_algo`, distillation
-    # included) is not drawn.
-    st.markdown("**China's algorithmic rate — the distillation scenario**")
-    us_algo, n_us_iso, _ = _cc_iso_compute_rate(cc_rows, 'United States of America')
-    cn_algo, n_cn_iso, cn_med = _cc_iso_compute_rate(cc_rows, 'China')
-    if us_algo is None or cn_algo is None:
-        st.caption("Not enough same-compute-budget models to estimate per-country "
-                   "algorithmic rates.")
-    else:
-        # Each scenario is China's observed (calibrated) rate with one
-        # algorithmic channel swapped or removed, the channels as measured in
-        # the decomposition above: the US-measured algo rate in place of
-        # China's, then no external distillation, then no diffusion either.
-        ch_sc = _cc_cn_channels(cc_rows, cn_fr, a_partial, g_cn_lo, g_cn_hi)
-        cn_obs = ch_sc['obs'] if ch_sc else cn_eci_smid
-        slope_usalgo = cn_obs + (us_algo - cn_algo)
-        dist_sc = ch_sc['distillation'] if ch_sc else None
-        diff_sc = ch_sc['diffusion'] if ch_sc else None
-        slope_inno = cn_obs - dist_sc if ch_sc else None
-        slope_pure = slope_inno - diff_sc if ch_sc else None
-
-        # Anchor selector: project forward from today, or backdate to Jan
-        # 2025 so the lines double as a backtest against China's actual points.
-        if st.session_state.get("cc_bd_anchor") not in _CC_BD_OPTIONS:
-            st.session_state.pop("cc_bd_anchor", None)
-        bd_label = st.selectbox(
-            "Scenario lines start from", list(_CC_BD_OPTIONS),
-            index=_CC_BD_OPTIONS.index(_CC_DEFAULTS["cc_bd_anchor"]),
-            key="cc_bd_anchor",
-            help="Today projects forward; Jan 2025 backdates the lines so "
-                 "they can be checked against China's actual frontier since "
-                 "then.")
-        # Each country projects from its own last frontier model on or before
-        # the cutoff, so the months since that release accrue at the trend
-        # rather than sitting flat until the cutoff.
-        cutoff = today if bd_label == "Today" else datetime(2025, 1, 1)
-
-        def _last_at(fr, d):
-            pts = [(dd, s) for dd, s, n in fr if dd <= d]
-            return max(pts, key=lambda p: p[1]) if pts else (fr[0][0], fr[0][1])
-
-        cn_anchor_d, cn_anchor = _last_at(cn_fr, cutoff)
-        us_anchor_d, us_anchor = _last_at(us_fr, cutoff)
-        anchor_date = min(cn_anchor_d, us_anchor_d)
-        bd_dates = sorted({cn_anchor_d, us_anchor_d}
-                          | set(_cc_quarter_ends(anchor_date, horizon)))
-        i_cn, i_us = bd_dates.index(cn_anchor_d), bd_dates.index(us_anchor_d)
-        dt_cn = np.array([(d - cn_anchor_d).days / 365.25 for d in bd_dates])
-        dt_us = np.array([(d - us_anchor_d).days / 365.25 for d in bd_dates])
-
-        # The US trend over the whole grid (behind its anchor too), so China's
-        # gap is read against it at every date; drawn only from its anchor.
-        us_ceiling = us_anchor + us_eci_smid * dt_us
-        cn_traj_us = cn_anchor + slope_usalgo * dt_cn
-        cn_traj_inno = (cn_anchor + slope_inno * dt_cn
-                        if slope_inno is not None else None)
-        cn_traj_pure = (cn_anchor + slope_pure * dt_cn
-                        if slope_pure is not None else None)
-        # China's observed trend, distillation included: the distillation term
-        # fades with the gap to the US line (the catch-up panel's law), and the
-        # line never passes its teacher.
-        cn_traj_dist = None
-        if slope_inno is not None:
-            gap0 = max(float(us_ceiling[i_cn]) - cn_anchor, 1e-6)
-            e = float(cn_anchor)
-            cn_traj_dist = np.full(len(bd_dates), np.nan)
-            cn_traj_dist[i_cn] = e
-            for i in range(i_cn + 1, len(bd_dates)):
-                fade = min(1.0, max(float(us_ceiling[i - 1]) - e, 0.0) / gap0)
-                e = min(e + (slope_inno + dist_sc * fade)
-                        * (dt_cn[i] - dt_cn[i - 1]), float(us_ceiling[i]))
-                cn_traj_dist[i] = e
-
-        us_end = float(us_ceiling[-1])
-        cn_end_us = float(cn_traj_us[-1])
-        mo_us = (us_end - cn_end_us) / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
-
-        rows_md = [
-            "| Scenario | Change from China's observed rate | China ECI/yr | "
-            f"China ECI end-{horizon.year} | Behind US |",
-            "|---|---|---|---|---|",
-            f"| **US-measured algo rate** (mid-compute, itself teacher-fed) | "
-            f"{us_algo - cn_algo:+.1f} pts/yr | "
-            f"{slope_usalgo:.1f} pts/yr | ~{cn_end_us:.0f} | ~{_pc_span(mo_us, 0)} |"]
-        if cn_traj_inno is not None:
-            cn_end_inno = float(cn_traj_inno[-1])
-            mo_inno = ((us_end - cn_end_inno) / us_eci_smid * 12
-                       if us_eci_smid > 0 else float('nan'))
-            rows_md.append(
-                f"| **No external distillation** (diffusion intact — model "
-                f"access cut, papers still flowing) | {-dist_sc:+.1f} pts/yr | "
-                f"{slope_inno:.1f} pts/yr | ~{cn_end_inno:.0f} "
-                f"| ~{_pc_span(mo_inno, 0)} |")
-        if cn_traj_pure is not None:
-            cn_end_pure = float(cn_traj_pure[-1])
-            mo_pure = ((us_end - cn_end_pure) / us_eci_smid * 12
-                       if us_eci_smid > 0 else float('nan'))
-            rows_md.append(
-                f"| **Indigenous only** (no distillation, no diffusion) | "
-                f"{-(dist_sc + diff_sc):+.1f} pts/yr | "
-                f"{slope_pure:.1f} pts/yr | ~{cn_end_pure:.0f} "
-                f"| ~{_pc_span(mo_pure, 0)} |")
-        st.markdown("\n".join(rows_md))
-
-        # Chart: China's trend with and without distillation against the US
-        # frontier, distillation's share shaded, every gap on hover. The
-        # US-measured and indigenous-only rates stay table rows.
-        figd = go.Figure()
-        _dc_add_projection_band(figd, today, horizon, label=_CC_PROJECTED)
-
-        def _fr_max(fr, d):
-            """A frontier's best score on or before `d`, None before its start."""
-            vals = [s for dd, s, n in fr if dd <= d]
-            return max(vals) if vals else None
-
-        def _gap_txt(g, side):
-            """'Xmo (Y ECI) <side>': months at the US line's own pace."""
-            mo = g / us_eci_smid * 12 if us_eci_smid > 0 else float('nan')
-            return f"{mo:.0f}mo ({g:.0f} ECI) {side}"
-
-        gap_bd = us_ceiling - cn_traj_inno if cn_traj_inno is not None else None
-        gap_dist = (us_ceiling - cn_traj_dist
-                    if cn_traj_dist is not None else None)
-        # Before China's anchor there is no projected China line to compare.
-        _i0 = max(i_us, i_cn)
-        figd.add_trace(go.Scatter(
-            x=bd_dates[i_us:], y=list(us_ceiling[i_us:]), mode='lines',
-            line=dict(color='#1F77B4', width=1.5, dash='dot'),
-            name=f'US frontier ({us_eci_smid:.1f}/yr)',
-            **(dict(customdata=([["", ""]] * (_i0 - i_us)
-                                + [[_gap_txt(gd, "ahead of China with "
-                                                 "distillation"),
-                                    _gap_txt(gn, "without")]
-                                   for gd, gn in zip(gap_dist[_i0:],
-                                                     gap_bd[_i0:])]),
-                    hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                                  '<br>%{customdata[0]}<br>%{customdata[1]}'
-                                  '<extra>US frontier</extra>')
-               if gap_bd is not None else dict(hoverinfo='skip'))))
-        figd.add_trace(go.Scatter(
-            x=[d for d, s, n in us_fr], y=[s for d, s, n in us_fr],
-            mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
-            marker=dict(size=5, color='#1F77B4', line=dict(color='white', width=0.5)),
-            text=[f"{pretty(n)}<br>ECI {s:.0f}"
-                  + ("<br>" + _gap_txt(s - _fr_max(cn_fr, d), "ahead of China")
-                     if _fr_max(cn_fr, d) is not None else "")
-                  for d, s, n in us_fr],
-            hoverinfo='text', name='US (actual)'))
-        figd.add_trace(go.Scatter(
-            x=[d for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
-            mode='lines+markers', line=dict(color='#D62728', width=1.5),
-            marker=dict(size=5, color='#D62728', line=dict(color='white', width=0.5)),
-            text=[f"{pretty(n)}<br>ECI {s:.0f}"
-                  + ("<br>" + _gap_txt(_fr_max(us_fr, d) - s, "behind the US")
-                     if _fr_max(us_fr, d) is not None else "")
-                  for d, s, n in cn_fr],
-            hoverinfo='text', name='China (actual)'))
-        if cn_traj_inno is not None:
-            figd.add_trace(go.Scatter(
-                x=bd_dates[i_cn:] + bd_dates[i_cn:][::-1],
-                y=list(cn_traj_dist[i_cn:]) + list(cn_traj_inno[i_cn:][::-1]),
-                fill='toself', fillcolor='rgba(214,39,40,0.12)',
-                line=dict(width=0), hoverinfo='skip',
-                name='What distillation adds'))
-            figd.add_trace(go.Scatter(
-                x=bd_dates[i_cn:], y=list(cn_traj_dist[i_cn:]), mode='lines',
-                line=dict(color='#D62728', width=2.5),
-                name=f"China · with distillation ({cn_obs:.1f}/yr)",
-                customdata=[_gap_txt(g, "behind the US")
-                            for g in gap_dist[i_cn:]],
-                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                              '<br>%{customdata}'
-                              '<extra>with distillation</extra>'))
-            figd.add_trace(go.Scatter(
-                x=bd_dates[i_cn:], y=list(cn_traj_inno[i_cn:]), mode='lines',
-                line=dict(color='#7F1010', width=2.5, dash='dash'),
-                name=f"China · no ext. distillation ({slope_inno:.1f}/yr)",
-                customdata=[_gap_txt(g, "behind the US")
-                            for g in gap_bd[i_cn:]],
-                hovertemplate='%{x|%b %Y}<br>ECI %{y:.0f}'
-                              '<br>%{customdata}'
-                              '<extra>no ext. distillation</extra>'))
-        figd.update_layout(
-            height=420, plot_bgcolor='white', paper_bgcolor='white',
-            margin=dict(l=55, r=20, t=20, b=40), font=dict(color='#222222'),
-            legend=dict(font=dict(size=11, color='#222'), x=0.01, y=0.99,
-                        bgcolor='rgba(255,255,255,0.75)', bordercolor='#DDD',
-                        borderwidth=1),
-            xaxis=dict(gridcolor='rgba(0,0,0,0.12)',
-                       range=[datetime(2024, 1, 1), horizon],
-                       tickfont=dict(color='#222'), title_font=dict(color='#222')),
-            yaxis=dict(title_text="Frontier ECI score", gridcolor='rgba(0,0,0,0.12)',
-                       tickfont=dict(color='#222'), title_font=dict(color='#222')))
-        st.plotly_chart(figd, width="stretch")
-        _fn_caption(
-            (f"From today's frontiers (US {us_anchor:.0f}, China {cn_anchor:.0f}; "
-             "actual points are history)."
-             if bd_label == "Today" else
-             f"Backdated to <b>Jan 2025</b> (China \u2248{cn_anchor:.0f} then) so "
-             "the lines can be read against China's actual points.")
-            + (" The solid red line is China's observed trend, distillation "
-               "included; the dashed line cuts model access, keeping method "
-               "diffusion. The shading between them is what distillation adds. "
-               "Hover any point for its gap."
-               if cn_traj_inno is not None else "")
-            + " The rates rest on thin fits.",
-            *([("observed trend", f"{cn_obs:.1f} ECI/yr, China's frontier "
-                                  f"slope since {_CC_CALIB_SINCE.year}. Its "
-                                  f"{dist_sc:.1f} of distillation fades as the "
-                                  "gap to the US line closes, so it never "
-                                  "passes the US.")]
-              if cn_traj_inno is not None else []),
-            *([("the dashed line", "No external distillation: model access cut, "
-                                  "papers still flowing. China's observed "
-                                  f"{cn_obs:.1f} ECI/yr since "
-                                  f"{_CC_CALIB_SINCE.year} less the "
-                                  f"{dist_sc:.1f} the decomposition above "
-                                  "credits to distillation = "
-                                  f"{slope_inno:.1f}, constant. The US line is "
-                                  f"its own observed {us_eci_smid:.1f}.")]
-              if cn_traj_inno is not None else []),
-            *([("its gap", "In ECI and in months: the time the US takes to "
-                           f"climb that gap at its {us_eci_smid:.1f} ECI/yr.")]
-              if cn_traj_inno is not None else []),
-            ("thin fits", f"n={n_us_iso} US / n={n_cn_iso} China within \u00b10.4 "
-                          "dex of median compute \u2014 so few same-budget US models "
-                          "that the rates are indicative, not measured."))
+        f"Copying US work (distillation, diffusing methods, theft) carries "
+        f"<b>{share(hist, _CC_DRIVER_COPYING):.0f}%</b> of China's gain since "
+        f"{_CC_CALIB_SINCE.year} and {share(last, _CC_DRIVER_COPYING):.0f}% to "
+        f"end-{ends[-1].year}; chips that export controls aim to stop (smuggled, "
+        f"rented abroad) carry {share(hist, _CC_DRIVER_GREY):.0f}% and "
+        f"{share(last, _CC_DRIVER_GREY):.0f}%.",
+        ("since", f"Measured: China's frontier slope since {_CC_CALIB_SINCE:%b %Y}, "
+                  f"{cn['cal']['ch']['obs']:.1f} ECI/yr, split as the Pacing tab and "
+                  "Takeoff split it: compute at the payoff per 10× times China's compute "
+                  "growth, distillation from same-budget models' faster climb below the "
+                  "frontier, diffusion from the near-frontier fits, own research the "
+                  "residual."),
+        (f"end-{ends[-1].year}", "Projected: each source's ECI averaged over the "
+                                 "scenarios whose total gain sits in the middle 20% of "
+                                 "the run, so the parts add to a typical total. Theft "
+                                 "is set on the Takeoff tab (off by default)."),
+        ("chips", "Compute's ECI is split across the channels by each one's share of "
+                  "the chips added to China's compute over the period (the mix "
+                  "charted above, remote access included). That is an attribution, "
+                  "not a counterfactual: the model grows China's training runs at one "
+                  "rate, not channel by channel."))
 
 
 # ── China's crossing simulation (used by the Pacing tab's pause panel) ─────────
@@ -17058,175 +16800,6 @@ def _render_world_shares(today, horizon):
                           "cluster-share reading then."))
 
 
-def _cc_crosscheck(today, n=None):
-    """This app's China, world and US stocks at Epoch's chip imports
-    explorer's date (`_WC_WORLD_ARRIVED_MID2026`), each (central, p5, p95):
-    the world identity at central inputs (`_wc_stocks`, `_pc_us_installed`)
-    and at drawn ones, seeded with the generator's state put back, so no
-    draw around it moves (`TestCcCrossCheck`). Plus China's central share
-    at Epoch's cluster-share date (`_WC_EPOCH_CLUSTER_SHARE`)."""
-    n = n or N_SAMPLES
-    when = _WC_WORLD_ARRIVED_MID2026[0]
-    t = [(when - today).days / 365.25]
-    with _seeded_rng(_APP_SEED):
-        z = np.random.normal(0.0, 1.0, (3, n))
-        split = _wc_split_paths(t, n)[_WC_LABELS[0]][0]
-    wd, cd = (a[0] for a in _wc_stocks(today, t, z_us=z[0], z_dom=z[1],
-                                       z_smug=z[2]))
-    world, china = (float(a[0, 0]) for a in _wc_stocks(today, t))
-
-    def _r(mid, draws):
-        return (mid, float(np.percentile(draws, 5)),
-                float(np.percentile(draws, 95)))
-    return dict(
-        when=when, china=_r(china, cd), world=_r(world, wd),
-        share=_r(100.0 * china / world, 100.0 * cd / wd),
-        us=_r(float(_pc_us_installed(today, t[0])), (wd - cd) * split),
-        cluster_share=float(_wc_central_shares(today, [
-            (_WC_EPOCH_CLUSTER_SHARE[0] - today).days / 365.25])[_WC_CN][0]))
-
-
-def _render_cc_crosscheck(today):
-    """This app's China, world and US beside Epoch's published estimates at
-    the explorer's date (`_cc_crosscheck`), and the sentence saying whether
-    the share's gap sits in the China count or the world total."""
-    st.subheader("How this compares with published estimates")
-    x = _cc_crosscheck(today)
-    when = x['when']
-
-    def _m(v):
-        return f"{v / 1e6:.2f}M"
-
-    def _rng(r, f):
-        return f"{f(r[0])} ({f(r[1])}–{f(r[2])})"
-    _pct = (lambda v: f"{v:.1f}%")
-    ep_cn, (env_lo, env_hi) = _WC_EPOCH_CN_MID2026, _WC_EPOCH_CN_ENVELOPE
-    _, ep_w, ep_wlo, ep_whi = _WC_WORLD_ARRIVED_MID2026
-    cl_when, cl_share = _WC_EPOCH_CLUSTER_SHARE
-    cov_lo, cov_hi = _WC_EPOCH_CLUSTER_COVERAGE_PCT
-    rows = [
-        {"Measure": f"China, in China, end-{when:%b %Y} (H100e)",
-         "This app (90%)": _rng(x['china'], _m),
-         "Epoch (90%)": f"{_rng(ep_cn, _m)}; {_m(env_lo)}–{_m(env_hi)} "
-                        "across trade assumptions",
-         "Ratio": f"{x['china'][0] / ep_cn[0]:.2f}×"},
-        {"Measure": f"World, arrived, end-{when:%b %Y} (H100e)",
-         "This app (90%)": _rng(x['world'], _m),
-         "Epoch (90%)": _rng((ep_w, ep_wlo, ep_whi), _m),
-         "Ratio": f"{x['world'][0] / ep_w:.2f}×"},
-        {"Measure": f"China's share, end-{when:%b %Y}",
-         "This app (90%)": _rng(x['share'], _pct),
-         "Epoch (90%)": _pct(_WC_EPOCH_CN_SHARE_PCT),
-         "Ratio": f"{x['share'][0] / _WC_EPOCH_CN_SHARE_PCT:.2f}×"},
-        {"Measure": f"US, end-{when:%b %Y} (H100e)",
-         "This app (90%)": _rng(x['us'], _m),
-         "Epoch (90%)": _m(_WC_EPOCH_US_MID2026),
-         "Ratio": f"{x['us'][0] / _WC_EPOCH_US_MID2026:.2f}×"},
-        {"Measure": f"China's share of tracked GPU clusters, {cl_when:%b %Y}",
-         "This app (90%)": f"{_pct(x['cluster_share'])} of all compute",
-         "Epoch (90%)": f"~{cl_share:.0f}% of tracked clusters",
-         "Ratio": "—"},
-    ]
-    st.table(pandas.DataFrame(rows).style.hide(axis="index"))
-    # The share's ratio is China's ratio over the world's, so its log splits
-    # exactly into the China term and minus the world term.
-    c_cn = float(np.log(x['china'][0] / ep_cn[0]))
-    c_w = -float(np.log(x['world'][0] / ep_w))
-    big, small = ((("China count", c_cn), ("world total", c_w))
-                  if abs(c_cn) >= abs(c_w)
-                  else (("world total", c_w), ("China count", c_cn)))
-    if big[1] * small[1] >= 0 and abs(big[1]) + abs(small[1]) > 0:
-        where = (f"{abs(big[1]) / (abs(big[1]) + abs(small[1])):.0%} of the "
-                 f"gap is in the {big[0]}, the rest in the {small[0]}")
-    else:
-        where = (f"the {big[0]} makes the gap and the {small[0]} offsets "
-                 "part of it")
-    _fn_caption(
-        f"China's share here is {x['share'][0]:.1f}% against Epoch's "
-        f"{_WC_EPOCH_CN_SHARE_PCT:.1f}%: our China count is "
-        f"{x['china'][0] / ep_cn[0] - 1:+.0%} on Epoch's and our world total "
-        f"{x['world'][0] / ep_w - 1:+.0%}, so {where}.",
-        ("Epoch's", f"Epoch's AI chip imports explorer ({_WC_SOURCE_CHIP_IMPORTS}"
-                    "): customs data plus China's domestic production, each "
-                    "chip counted about two months after it is sold. Its 90% "
-                    "range is conditional on its model of what the trade "
-                    "contains; the wider span varies that model."),
-        ("world total", "Ours is Epoch's end-2025 chip-sales total plus every "
-                        "chip made since (CTS's US-and-allied output, lagged "
-                        "to arrival, and China's domestic output), retired "
-                        f"after {_CHIP_LIFE_YEARS} years; the US is its "
-                        "central share of the rest. Ranges are 5th to 95th "
-                        "percentiles of the same draws as the cards above."))
-    _fn_caption(
-        f"Epoch's cluster share is not a share of the world: the GPU clusters "
-        f"it tracks hold an estimated {cov_lo}–{cov_hi}% of the world's "
-        "AI compute.",
-        ("cluster share", f"Epoch, Trends in AI supercomputers "
-                          f"({_WC_SOURCE_SUPERCOMPUTERS}): China's share of "
-                          "the aggregate performance of the clusters it "
-                          f"tracks, {cl_when:%B %Y}. Our figure is the back-run "
-                          "of the world identity to that date."))
-
-
-def _cc_smuggling_range(today):
-    """China's share of world compute today and at end-2027 with only the
-    smuggled stock moved, to IFP's stored low, central and high (`_wc_stocks`
-    at z_smug = ∓`_cn_src_range_z` of an IFP year; every other input
-    central), beside the
-    stored smuggled stocks at end-2025 (Epoch) and end-2027 (IFP). Smuggled
-    chips are in the world total either way, so only China's count moves.
-    Deterministic (`TestCcSmugglingRange`)."""
-    end27 = datetime(2027, 12, 31)
-    world, china = _wc_stocks(today, [0.0, (end27 - today).days / 365.25],
-                              z_smug=_cn_src_range_z(2027)
-                              * np.array([-1.0, 0.0, 1.0]))
-    stock = load_china_compute_sources(_cn_src_mtime())["stock"]
-    return dict(
-        share_today=tuple(100.0 * china[0] / world[0]),
-        share_2027=tuple(100.0 * china[1] / world[1]),
-        smug_2025=stock["2025"]["smuggled"], smug_2027=stock["2027"]["smuggled"])
-
-
-def _render_cc_smuggling_range(today):
-    """How far smuggling alone moves China's share (`_cc_smuggling_range`),
-    beside Epoch's and IFP's published smuggling ranges."""
-    st.subheader("How much smuggling moves China's share")
-    r = _cc_smuggling_range(today)
-
-    def _k(v):
-        return f"{v / 1e6:.2f}M" if v >= 1e6 else f"{v / 1e3:.0f}k"
-    s25, s27 = r['smug_2025'], r['smug_2027']
-    rows = [{"Smuggled stock at": lab,
-             "Through 2025 (Epoch)": _k(s25[i]),
-             "Through 2027 (IFP)": _k(s27[i]),
-             "China's share today": f"{r['share_today'][j]:.1f}%",
-             "China's share, end-2027": f"{r['share_2027'][j]:.1f}%"}
-            for lab, i, j in (("Low", 1, 0), ("Central", 0, 1),
-                              ("High", 2, 2))]
-    st.table(pandas.DataFrame(rows).style.hide(axis="index"))
-    ep_mid, ep_lo, ep_hi = _CN_SRC_EPOCH_SMUGGLED_2025
-    lo_t, _, hi_t = r['share_today']
-    lo_e, _, hi_e = r['share_2027']
-    _fn_caption(
-        f"Epoch's smuggling study puts chips smuggled through 2025 at "
-        f"{_k(ep_mid)} H100e ({_k(ep_lo)}–{_k(ep_hi)}); IFP's end-2027 "
-        f"stock runs {_k(s27[1])}–{_k(s27[2])} around {_k(s27[0])}. "
-        f"Across that range alone China's share runs {lo_t:.1f}–"
-        f"{hi_t:.1f}% today and {lo_e:.1f}–{hi_e:.1f}% at end-2027.",
-        ("smuggling study", f"Epoch, Diversion and resale: estimating "
-                            f"compute smuggling to China "
-                            f"({_CN_SRC_SOURCE_SMUGGLING}): median and 90% "
-                            "interval through end-2025."),
-        ("IFP's", f"IFP ({_CN_SRC_SOURCE_IFP}): its low and high are bounds "
-                  "on its own estimate, which the source file stores as a "
-                  "10th–90th range and the world identity reads as one. "
-                  "They are not percentiles of a simulation."),
-        ("range alone", "Every other input at its central: the smuggled "
-                        "stock is interpolated log-linearly between its "
-                        "stored year-ends, and the world total does not "
-                        "move, since smuggled chips are in it either way."))
-
-
 _CC_SOURCES_HEAD = "Where China's compute comes from"
 
 
@@ -18068,15 +17641,12 @@ def render_compute_capabilities():
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
     cc_rows = load_eci_compute(mtime=_eci_mtime())
 
-    # Evidence first: how much compute China has, checked against published
-    # estimates, then where it comes from and what bounds it; the US-vs-China
-    # comparison of largest runs and capability last. The glossary sits under
+    # Evidence first: where China's compute comes from and what bounds it;
+    # the US-vs-China comparison of largest runs and capability last. The glossary sits under
     # the first chart (`TestTabTopOrder`).
-    _render_cc_crosscheck(_today)
     _render_cc_compute_sources()
     with st.expander("How to read this"):
         _units()
-    _render_cc_smuggling_range(_today)
     _render_cc_duv_ceiling(_today)
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
