@@ -1521,7 +1521,11 @@ class TestComputeVsCapabilities:
                   "what drives china's frontier"):
             assert s in text, s
         caps = " ".join(str(c.value) for c in at.caption)
-        assert "Copying US work" in caps and "an attribution" in caps
+        assert "distilling US models carries" in caps and "an attribution" in caps
+        assert "papers and open code" in caps and "with theft off" in caps
+        assert "if the chips from abroad stopped today" in text
+        tab = next(t.value for t in at.table if "If China loses" in t.value.columns)
+        assert len(tab) == 2 and any(c.startswith("ECI lost by end-") for c in tab.columns)
 
     def test_frontier_chart_runs_the_takeoff_and_the_breakdown_its_sources(self):
         """The frontier chart is Takeoff's section-5 chart, and the breakdown

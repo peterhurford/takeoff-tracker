@@ -2087,6 +2087,16 @@ class TestCcCnDrivers:
         u = rows[1][1]
         assert u["own"] / sum(u[k] for k in chans) == pytest.approx(3.0, rel=1e-9)
 
+    def test_a_lost_stock_stalls_training_growth_until_made_up(self):
+        years = np.linspace(0.0, 4.0, 49)
+        log_r = np.where(years >= 0.5, np.log(0.1), 0.0)     # lose 1 OOM at 6 months
+        g = vp._cc_cn_setback_rate(years, log_r)(years, np.array([0.5, 0.25]))
+        assert g[0, 2] == pytest.approx(0.5) and g[1, 2] == pytest.approx(0.25)
+        stalled = (years > 0.6) & (years < 2.4)     # 0.5 OOM/yr takes 2 years
+        assert np.all(g[0, stalled] < 1e-9) and g[0, -1] == pytest.approx(0.5)
+        assert np.all(g[1, (years > 0.6) & (years < 3.9)] < 1e-9)   # 4 years at 0.25
+        assert np.all(g >= 0)
+
     def test_chips_added_spread_each_years_flow_over_it(self):
         a = vp._cc_cn_chips_added(datetime(2025, 1, 1), datetime(2026, 1, 1))
         flow = vp.load_china_compute_sources(vp._cn_src_mtime())["flow"]["2025"]

@@ -15372,7 +15372,6 @@ _CC_DRIVERS = (
     ("weights", "US weights stolen", "#4A0E2B"),
     ("floor", "Today's trend held (first year)", "#B0B0B0"),
 )
-_CC_DRIVER_COPYING = ("diffusion", "distillation", "stolen", "weights")
 _CC_DRIVER_GREY = ("smuggled", "remote")
 # The projected bars average the scenarios whose total gain sits in this
 # middle band of the run, so their sources add up to a typical total.
@@ -15474,6 +15473,66 @@ def _cc_cn_drivers_fig(rows):
     return fig
 
 
+# The counterfactuals: each chip channel China gets from abroad, stopped
+# today (`_cc_cn_chip_counterfactual`).
+_CC_CHIP_CUTS = (("smuggled", "No more smuggled chips from today", {"smug_cut": 1.0}),
+                 ("remote", "No remote access abroad from today", "remote_cut"))
+
+
+def _cc_cn_chip_counterfactual(today, run, mix):
+    """China's takeoff (`_cn_tk_run`) with `mix`'s chip levers set today, on
+    the same draws as the free run. Training compute's level takes the log of
+    China's total compute (in China and rented abroad) with the levers over
+    without (`_cn_src_compute_ratio`), held from falling, so a lost stock
+    stalls growth until the trend makes it up, as Pacing's remote-access
+    setback does; experiment compute takes the same ratio."""
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    years = run["result"]["workflow_progress"]["years"]
+    ratio = _cn_src_compute_ratio(today, day, mix, 1.0)
+    log_r = np.log(np.maximum([ratio(t) for t in years], 1e-12))
+    return _cn_tk_run(today, run, pacing={"compute_rate": _cc_cn_setback_rate(years, log_r),
+                                          "experiment_offset": log_r})
+
+
+def _cc_cn_setback_rate(years, log_r):
+    """(yrs, OOM/yr per draw) -> OOM/yr per draw x yrs: each draw's training
+    level, its constant rate plus `log_r` (natural log, on `years`), held from
+    falling, so a drop stalls growth until the trend makes it up
+    (`TestCcCnDrivers`)."""
+    def rate(yrs, oom):
+        lvl = np.asarray(oom, dtype=float)[:, None] * years[None, :] + log_r[None, :] / np.log(10)
+        g = np.maximum(np.gradient(np.maximum.accumulate(lvl, axis=1), years, axis=1), 0.0)
+        return np.array([np.interp(yrs, years, row) for row in g])
+    return rate
+
+
+def _cc_cn_chip_cut_rows(cn, run, today, ends, drivers):
+    """Per chip channel stopped today: China's ECI lost against the free run
+    at each of `ends` (median of the paired draws, and the 80% range), beside
+    what the breakdown's split attributes to that channel."""
+    day = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    out = []
+    for key, label, mix in _CC_CHIP_CUTS:
+        cf = _cc_cn_chip_counterfactual(
+            today, run, {"remote_cut": day} if mix == "remote_cut" else mix)
+        if cf is None:
+            continue
+        row = {"If China loses": label}
+        for end in ends:
+            u = (end - day).days / 365.25
+            k = max(int(np.searchsorted(cn["years"], u, side="right")) - 1, 0)
+            k = min(k, len(cf["years"]) - 1, len(cn["years"]) - 1)
+            lost = cn["paths"][:, k] - cf["paths"][:, k]
+            lo, mid, hi = np.quantile(lost, [.1, .5, .9])
+            split = next((d.get(key, 0.0) for lab, d, _t in drivers
+                          if lab.endswith(f"end-{end.year} (takeoff)")), None)
+            row[f"ECI lost by end-{end.year}"] = f"{mid:.1f} ({lo:.1f} to {hi:.1f})"
+            if split is not None:
+                row[f"Split credits it, end-{end.year}"] = f"{split:.1f}"
+        out.append(row)
+    return out
+
+
 def _cc_render_takeoff(cn, run, today, horizon):
     """The US and China frontiers under the Takeoff tab's model (`_cn_tk_fig`,
     China as a follower of each US scenario), then what drives China's gain
@@ -15503,13 +15562,16 @@ def _cc_render_takeoff(cn, run, today, horizon):
     def share(r, keys):
         return 100 * sum(r[1].get(k, 0.0) for k in keys) / r[2] if r[2] else 0.0
     hist, last = rows[0], rows[-1]
+    theft = share(last, ("stolen", "weights"))
     _fn_caption(
-        f"Copying US work (distillation, diffusing methods, theft) carries "
-        f"<b>{share(hist, _CC_DRIVER_COPYING):.0f}%</b> of China's gain since "
-        f"{_CC_CALIB_SINCE.year} and {share(last, _CC_DRIVER_COPYING):.0f}% to "
-        f"end-{ends[-1].year}; chips that export controls aim to stop (smuggled, "
-        f"rented abroad) carry {share(hist, _CC_DRIVER_GREY):.0f}% and "
-        f"{share(last, _CC_DRIVER_GREY):.0f}%.",
+        f"Measured since {_CC_CALIB_SINCE.year}, distilling US models carries "
+        f"<b>{share(hist, ('distillation',)):.0f}%</b> of China's gain and US methods "
+        f"diffusing through papers and open code {share(hist, ('diffusion',)):.0f}%; "
+        f"to end-{ends[-1].year}, {share(last, ('distillation',)):.0f}% and "
+        f"{share(last, ('diffusion',)):.0f}%"
+        + (f", theft {theft:.0f}%" if theft >= 0.5 else ", with theft off") + ". "
+        f"Smuggled and rented-abroad chips carry {share(hist, _CC_DRIVER_GREY):.0f}% "
+        f"and {share(last, _CC_DRIVER_GREY):.0f}%.",
         ("since", f"Measured: China's frontier slope since {_CC_CALIB_SINCE:%b %Y}, "
                   f"{cn['cal']['ch']['obs']:.1f} ECI/yr, split as the Pacing tab and "
                   "Takeoff split it: compute at the payoff per 10× times China's compute "
@@ -15518,13 +15580,32 @@ def _cc_render_takeoff(cn, run, today, horizon):
                   "residual."),
         (f"end-{ends[-1].year}", "Projected: each source's ECI averaged over the "
                                  "scenarios whose total gain sits in the middle 20% of "
-                                 "the run, so the parts add to a typical total. Theft "
-                                 "is set on the Takeoff tab (off by default)."),
+                                 "the run, so the parts add to a typical total."),
+        ("papers and open code", "Open research, not theft, and it flows both ways "
+                                 "(MLA and GRPO went from China to the US); only the "
+                                 "US-to-China flow is counted here. Theft is set on the "
+                                 "Takeoff tab and is off by default."),
         ("chips", "Compute's ECI is split across the channels by each one's share of "
                   "the chips added to China's compute over the period (the mix "
                   "charted above, remote access included). That is an attribution, "
                   "not a counterfactual: the model grows China's training runs at one "
-                  "rate, not channel by channel."))
+                  "rate, not channel by channel. Compute's projected share is small "
+                  "partly because faster progress shortens each training run "
+                  "(Takeoff's serial speed-up), so each model uses less compute."))
+    st.markdown("**If the chips from abroad stopped today**")
+    st.table(pandas.DataFrame(_cc_cn_chip_cut_rows(cn, run, today, ends, rows))
+             .style.hide(axis="index"))
+    _fn_caption(
+        "China's takeoff rerun with one channel stopped today, scenario by scenario "
+        "against the run above.",
+        ("rerun", "China's training compute falls by the share of its total compute "
+                  "(in China and rented abroad) the cut removes, and a lost stock stalls "
+                  "its growth until the trend makes it up; experiment compute, which "
+                  "feeds China's own research, shrinks with the total. Median ECI lost and its 80% range. The "
+                  "Pacing tab's levers do the same with policy dates and partial cuts."),
+        ("against the run above", "The split column is what the bar above credits to "
+                                  "that channel; the rerun differs because it also "
+                                  "slows experiments and compounds through research."))
 
 
 # ── China's crossing simulation (used by the Pacing tab's pause panel) ─────────
@@ -25588,7 +25669,7 @@ def _cn_tk_shift(paths, years, lead, back):
     return np.where(u[None, :] < 0, paths[:, :1] + back * u[None, :], inside)
 
 
-@st.cache_data(show_spinner=False, max_entries=6)
+@st.cache_data(show_spinner=False, max_entries=8)
 def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, hist_compute,
                     experiment_rates, experiment_hist, coding_capability, coding_weights,
                     human_curve, follower, compute_path=None, experiment_path=None,

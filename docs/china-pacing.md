@@ -90,6 +90,21 @@ China's training runs at one rate, so "without smuggling" would need a counterfa
 (Pacing's levers) and would also move experiment compute (`TestCcCnDrivers`,
 `test_frontier_chart_runs_the_takeoff_and_the_breakdown_its_sources`).
 
+The caption quotes distillation and US methods diffusing (papers, open code) apart, never
+summed as "copying": diffusion is open research and flows both ways, and theft is off by
+default. Compute's projected share is small partly by design: Takeoff's serial speed-up
+shortens runs as progress quickens, so each model trains on less compute (switching it off
+lifted China's compute ECI at year 3 from 3.1 to 6.6 and its negative draws from 27% to 0%).
+
+*If the chips from abroad stopped today* is the counterfactual the split is not: China's
+takeoff rerun on the same draws with smuggling or remote access cut today
+(`_cc_cn_chip_counterfactual`). Training compute's level takes log(total compute with the
+cut / without) (`_cn_src_compute_ratio`, remote access included) held from falling, so a lost
+stock stalls growth until the trend makes it up (`_cc_cn_setback_rate`, as Pacing's
+remote-access setback); experiment compute takes the same ratio. The table gives the median
+ECI lost and its 80% range beside the split's credit. Two extra China runs, so
+`_cn_tk_simulate` keeps 8 entries.
+
 ## China tab — by-source legend
 
 Each by-source bar carries its year's fade and hatch, and a legend swatch copies a trace's
