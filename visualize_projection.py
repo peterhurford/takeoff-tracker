@@ -42,10 +42,10 @@ PROJ_DISCLAIMER = " These are projections assuming current progress continues, t
 # sampling is most of what a render costs — so the test suite turns it down via
 # _VP_SAMPLES. Nothing the tests assert on depends on the count (the CI defaults
 # they check come from the OLS fits, which are deterministic), so a smaller
-# seeded sample is only a noisier version of the same picture. Don't lower the
-# default: the band edges are percentiles and get
-# visibly ragged well before 5000.
-N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "5000"))
+# seeded sample is only a noisier version of the same picture. The default
+# trades load time for smooth band edges, which are percentiles: look at a fan
+# chart before lowering it further.
+N_SAMPLES = int(os.environ.get("_VP_SAMPLES", "2000"))
 
 # Tighten default Streamlit padding, and style the inline hover footnotes
 # `_fn()` emits (see "Caveats belong on the thing they qualify" in docs/conventions.md).

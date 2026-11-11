@@ -23,7 +23,7 @@ pytest test_visualize_projection.py -v       # unit tests (fake Streamlit)
 pytest test_integration.py -v                # integration tests (AppTest)
 pytest test_visualize_projection.py::TestPacing::test_defaults_cover_reset_keys_and_url_tracking -v  # single test
 pytest -v -n0                                # serial — needed for --pdb / live output
-_VP_SAMPLES=5000 pytest -v                   # production sample count (see below)
+_VP_SAMPLES=2000 pytest -v                   # production sample count (see below)
 ```
 
 Run only the tests that cover what you changed (`-k` on the tab's test class or the test
@@ -116,7 +116,7 @@ dispatch at end of file (skipped when `_VP_TESTING=1`).
 
 ## Projection Engine (repeated per tab)
 
-Three bases: **Linear** (single OLS), **Piecewise linear** (multi-segment OLS, last segment extrapolated), **Superexponential** (doubling time decays via `superexp_trajectory()` with a floor). All sample 5,000 trajectories into Plotly fan charts with 50%/80%/90% CI bands.
+Three bases: **Linear** (single OLS), **Piecewise linear** (multi-segment OLS, last segment extrapolated), **Superexponential** (doubling time decays via `superexp_trajectory()` with a floor). All sample `N_SAMPLES` (2,000) trajectories into Plotly fan charts with 50%/80%/90% CI bands.
 
 ## Session State and Reset
 
@@ -161,9 +161,9 @@ two live in `conftest.py`.
    bytecode is still exec'd into a fresh module each run.
 2. **A smaller Monte Carlo.** `N_SAMPLES` reads `_VP_SAMPLES`; `conftest.py` sets it to 400.
    Nothing asserted depends on the count — the CI defaults the tests check come from the
-   deterministic OLS fits, and every rerun is seeded (*Random seed* above). `_VP_SAMPLES=5000 pytest` runs
-   at production fidelity as a check. Don't lower the *default*: the band edges are
-   percentiles and go visibly ragged well before 5000.
+   deterministic OLS fits, and every rerun is seeded (*Random seed* above). `_VP_SAMPLES=2000 pytest` runs
+   at production fidelity as a check. The *default* (2,000) trades load time for smooth
+   band edges, which are percentiles: look at a fan chart before lowering it further.
 3. **Parallelism.** `pytest.ini` passes `-n auto`; the cases are independent, so a straight
    multiple. It costs the unit-test-only run a little worker startup, hence `-n0`.
 

@@ -4389,7 +4389,7 @@ class TestPacingTab:
         Within a month (three at the 80% ends), not to it: Pacing's samples cycle through the
         scenarios China's takeoff is twinned with (`_cn_tk_rows`), a subset
         of Takeoff's at production samples."""
-        monkeypatch.setenv("_VP_SAMPLES", "5000")
+        monkeypatch.setenv("_VP_SAMPLES", "2000")
         at = AppTest.from_file(SCRIPT, default_timeout=180).run()
         cards = {m.label.split(":")[0]: m.value for m in at.metric}
         ci80 = [c.value for c in at.caption if c.value.startswith("80% CI: ")][:3]

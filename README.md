@@ -79,7 +79,7 @@ Three bases, offered per tab where they make sense:
 - **Piecewise linear** — multi-segment OLS at user-chosen breakpoints; the last segment is extrapolated.
 - **Superexponential** — doubling time itself decays (`superexp_trajectory()`), with a floor.
 
-All of them sample `N_SAMPLES` (5,000) trajectories into a Plotly fan chart with 50/80/90%
+All of them sample `N_SAMPLES` (2,000) trajectories into a Plotly fan chart with 50/80/90%
 bands. Bounded metrics (RLI, UK Cyber, CoBench) are fitted in **logit** space so the
 trend can't run through 100%; unbounded ones (METR horizon, revenue, survey speedup) are
 fitted in log space.

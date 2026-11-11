@@ -9,7 +9,7 @@ Three things keep it down:
    for each of the ~300 runs the suite does. That was ~0.5s of the ~0.7s a run
    cost. One process-wide cache fixes it; the bytecode is still exec'd into a
    fresh module every run, so per-run isolation is unchanged.
-2. Sampling 5000 fan-chart trajectories per render was most of what remained.
+2. Sampling the production count of fan-chart trajectories per render was most of what remained.
    ``_VP_SAMPLES`` turns that down for tests only — see ``N_SAMPLES`` in
    visualize_projection.py for why nothing asserted on depends on it.
 3. The cases are independent, so they parallelize — pytest.ini runs them under
