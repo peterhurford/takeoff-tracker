@@ -9820,8 +9820,7 @@ _ANTHROPIC_REVENUE = [
     # Admitted because the figure is company-originated and is the right unit (annualized
     # run rate), so it is a much smaller basis shift than a tracker estimate would be.
     # Note it is still a steep bend -- 47 -> 65 in 2.5 months -- so treat any projection
-    # anchored on it with care. If Anthropic states a run rate publicly (the S-1 announced
-    # 2026-06-01 is still a confidential draft, nothing filed on EDGAR), prefer that.
+    # anchored on it with care.
     ("2026-07-31", 65.0),
     # Every OTHER point in this series is company-disclosed, deliberately. Third-party tracker
     # estimates exist for mid-2026 (YipitData $69B at 2026-07-10; TickerTrends $69.6B
@@ -9895,19 +9894,14 @@ _ANTHROPIC_REVENUE = [
     # third-party estimate.
     # Rechecked daily 2026-10-21 to 10-25: no run rate on anthropic.com/news or EDGAR; Epoch's newest row
     # unchanged. Excluded: Crunchbase News's ~$67B (10-22), Q3 revenue x4.
-    # Rechecked 2026-10-26: the public S-1 is filed (EDGAR CIK 0002130357, accession 0001628280-26-067168).
-    # It defines Run-Rate Revenue (trailing 28-day consumption fees x13 + monthly subscription fees x12) but
-    # leaves the figure blank: "our Run-Rate Revenue was $ as of October 31, 2026". An S-1/A should fill it
-    # in; that is a company-disclosed point and belongs here, dated 2026-10-31. Excluded: H1 2026 revenue
-    # of $16.3B (period revenue); Q3 revenue is also still blank.
-    # Rechecked 2026-10-27 to 11-01: no S-1/A or 424B on EDGAR yet, so the figure is still blank;
-    # anthropic.com/news (10-27 drug development, GSA; 10-28 AI for Science) states no run rate.
-    # Rechecked 2026-11-02: S-1/A filed (accession 0001628280-26-068676); Run-Rate Revenue as of 10-31 still
-    # blank, no 424B yet. Excluded: Q3 2026 revenue of $17.0B, now filled in (period revenue).
-    # Rechecked 2026-11-09: no filing after the 11-02 S-1/A, so the 10-31 figure is still blank; the Fable 5.2
-    # launch post states no run rate. Excluded, none a company disclosure: the FT's $81B (11-06, Epoch's
-    # newest row, dated 10-31), the WSJ's "topped $80 billion at the end of October" (person familiar), and
-    # TickerTrends' $82.33B as of 10-30 (alt-data).
+    # S-1/A No. 2 (EDGAR CIK 0002130357, accession 0001628280-26-072484, filed 2026-11-10): "our Run-Rate
+    # Revenue was approximately $81 billion as of October 31, 2026, up $10 billion from September 30, 2026".
+    # Run-Rate Revenue = trailing 28-day consumption fees x13 + monthly subscription fees x12. The 09-30
+    # point is that sentence's 81 - 10 (added with user sign-off 2026-11-10). Excluded: H1 2026 revenue of
+    # $16.3B and Q3 revenue of $17.0B (period revenue); the FT's, WSJ's and TickerTrends' earlier ~$80-82B
+    # (press and alt-data), which this disclosure supersedes.
+    ("2026-09-30", 71.0),
+    ("2026-10-31", 81.0),
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
