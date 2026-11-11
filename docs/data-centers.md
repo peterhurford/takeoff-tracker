@@ -361,7 +361,8 @@ not a reading of the CSVs. Six things are load-bearing:
    domestic output from its compute mix, nothing retired. China is the mix's
    in-China stock (domestic + legal + smuggled); remote access stays abroad.
    CTS counts dense FP16 H100e and Epoch dense 8-bit; they are taken as one
-   unit, an assumption stated in the comment and the caption. Stocks are
+   unit, which holds chip by chip for Nvidia and AMD and is unverifiable for
+   TPUs and Trainium (`CHINA_COMPUTE_JUDGMENTS.md` §5, basis check). Stocks are
    log-linear between year-ends (Dec 31); past the mix's last year China and
    its domestic stock keep their last-year growth, past CTS's last year the
    world keeps its, and before end-2025 the world runs back at its 2026
