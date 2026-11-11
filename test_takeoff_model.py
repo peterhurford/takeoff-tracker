@@ -1056,6 +1056,42 @@ def test_a_compute_cut_run_stopped_early_is_the_longer_run_so_far():
         np.testing.assert_array_equal(long[key][:, :k], short[key])
 
 
+def test_a_compute_cut_by_use_moves_only_that_use():
+    """`compute_cut` by use: three equal paths are the single cut exactly; a
+    training-only cut lowers the reported (training) compute and leaves the
+    research pace alone until a smaller model ships, an experiments-only cut
+    the reverse; and compute moved from training to experiments (a negative
+    entry) lifts the pace above the training cut alone."""
+    params = dict(tk.POINT_ESTIMATE, years=4)
+    n, grid = 6, np.linspace(0, 4, 385)
+    kw = dict(n=n, onset_years=np.full(n, 3.0), compute_rates=np.full(n, np.log(2.5)))
+    step = np.log(4.0) * np.clip((grid - 1.0) * 12, 0, 1)
+
+    def run(training=0.0, experiments=0.0, agents=0.0):
+        logs = {"training": training * step, "experiments": experiments * step,
+                "agents": agents * step}
+        return tk.simulate(params, compute_cut=(grid, logs), **kw)["workflow_progress"]
+    plain = tk.simulate(params, **kw)["workflow_progress"]
+    whole = tk.simulate(params, compute_cut=(grid, step), **kw)["workflow_progress"]
+    same = run(1, 1, 1)
+    for key in ("capability_log", "compute_log", "pace"):
+        np.testing.assert_array_equal(same[key], whole[key])
+    k = int(np.searchsorted(plain["years"], 1.2))
+    train, exps, moved = run(training=1), run(experiments=1), run(1, -0.5)
+    np.testing.assert_allclose((plain["compute_log"] - train["compute_log"])[:, k], np.log(4.0))
+    # Before the next model ships, smaller training runs have not reached research.
+    early = int(np.searchsorted(plain["years"], 1.05))
+    np.testing.assert_allclose(train["pace"][:, early], plain["pace"][:, early], rtol=1e-6)
+    np.testing.assert_allclose(exps["compute_log"][:, k], plain["compute_log"][:, k])
+    assert np.all(whole["pace"][:, k] < exps["pace"][:, k])
+    assert np.all(exps["pace"][:, k] < plain["pace"][:, k])
+    assert np.all(moved["pace"][:, early] > plain["pace"][:, early])
+    assert np.all(moved["pace"][:, k] > train["pace"][:, k])
+    assert np.all(train["capability_log"][:, -1] < plain["capability_log"][:, -1])
+    with pytest.raises(ValueError, match="by use"):
+        tk.simulate(params, compute_cut=(grid, {"training": step}), **kw)
+
+
 def test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost():
     """`compute_cut` takes its log off training, agent and experiment compute
     (the reported compute falls by it, the research pace by the cut to the

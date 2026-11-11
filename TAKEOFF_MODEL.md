@@ -414,6 +414,13 @@ post-RSI boost multiplies only the uncut frontier's rise, so a cut that ends ret
 uncut level, not a boosted one
 (`test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost`).
 
+Given as a dict of one log path per use (`COMPUTE_USES`: training, experiments, agents), the
+cut differs by use, and a negative entry is compute moved to that use. Training's cut sets
+the run budget and a model's scale; the agents' and experiments' enter labor and experiments
+inside the CES, after the labs' own agent/experiment re-split (a cap by use binds; the
+re-split responds only to AI); the trend proxy takes their mean. Three equal paths are the
+single-path cut exactly (`test_a_compute_cut_by_use_moves_only_that_use`).
+
 Because distillation is proportional to the gap, the lag is held near the gap's time
 constant: a racing leader pulls the follower along, a paused one dries it up. At the app's
 defaults China's three milestones trail the US's by about a year; without distillation by

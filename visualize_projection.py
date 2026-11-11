@@ -18193,7 +18193,12 @@ def _pc_blend_parts(components):
 _PC_CARDS_PER_ROW = 4
 
 
-_PC_WIN_MAX = 3   # extra pacing windows the Advanced expander offers
+_PC_WIN_MAX = 5   # phases the plan builder offers
+# What R&D compute is used for, in `takeoff.COMPUTE_USES` order: the key
+# suffix of each use's kept-share setting and its name on the page.
+_PC_USES = {"train": "training", "exp": "experiments", "agents": "AI researchers"}
+# Percent of its baseline compute a use keeps; over 100 is compute moved in.
+_PC_USE_OPTIONS = [10, 25, 33, 50, 67, 75, 100, 125, 150, 200, 300]
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_pause_mo", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
@@ -18207,6 +18212,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_cn_run",
                   "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
                   "pc_pace", "pc_cut", "pc_cut_mo", "pc_ban", "pc_ban_review",
+                  *(f"pc_cut_{u}" for u in _PC_USES),
                   "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
                   "pc_sec_halve", "pc_sec_on",
                   "pc_theft_when", "pc_theft_share",
@@ -18214,7 +18220,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_wt_mode",
                   "pc_win_n"] + \
                  [f"pc_win{i}_{f}" for i in range(1, _PC_WIN_MAX + 1)
-                  for f in ("pace", "start", "end")] + \
+                  for f in ("pace", "start", "end", *_PC_USES)] + \
                  [_PC_RSI_W_KEY + s for s in _PC_RSI_WEIGHTS]
 _PC_WHEN_NOW = "Now"          # first option of the pause-scenario date sliders
 _PC_CN_RUN_MAX = 12           # months: longest Chinese catch-up training run
@@ -18352,34 +18358,349 @@ def _pc_cut_equivalent(base, cut, start):
 
 
 def _pc_cut_plan_note(today, pause_d, cut, eq, pace):
-    """Under the cut and ban levers: the pacing plan they are nearest, and
-    for a cut or ban that lasts, alone, a button that swaps it for that plan.
-    `cut` as `render_pacing` builds it, None with only the ban on."""
+    """Under the cut and ban levers: the pacing plan the compute changes and
+    the ban are nearest, and for a ban or a cut of every use alike that
+    lasts, alone, a button that swaps it for that plan. `cut` as
+    `render_pacing` builds it, None with only the ban on."""
     pct, months = eq
-    what = ("the cut and the ban" if cut and st.session_state.get("pc_ban")
-            else "the cut" if cut else "the ban")
+    moved = bool(_pc_cut_spans(today, pause_d, cut))
+    what = ("the compute changes and the ban" if moved and st.session_state.get("pc_ban")
+            else "the compute changes" if moved else "the ban")
     start = ((pause_d.year - today.year) * 12 + pause_d.month - today.month)
     end = min(start + months, _PC_PAUSE_MO_MAX)
     _fn_caption(
         f"About the same as pacing at {pct}% for {months} months, then no pacing.",
         ("About the same", f"The pacing plan whose US path best tracks the "
-         f"median ECI under {what}, whatever the pace lever says. A "
+         f"median ECI under {what}, on those alone whatever the pace says. A "
          "plan cannot run faster than no pacing, so it misses the rebound "
          "when a cut ends."))
-    if ((not cut or not cut[1]) and pace >= 1 and not _pc_pace_windows(today)
-            and end > start):
+    if ((cut[0] > 1 and not cut[1] if cut else st.session_state.get("pc_ban"))
+            and pace >= 1 and _pc_main_uses() == (1.0, 1.0, 1.0)
+            and not _pc_plan_phases(today) and end > start):
         st.button("Use as a pacing plan", key="pc_cut_use",
                   on_click=_pc_cut_to_windows, args=(pct, start, end),
-                  help="Turns the cut and the ban off and sets pacing window 1 (under "
-                       "Advanced) to this plan, for the levers that read a "
+                  help="Turns the cut and the ban off and sets phase 1 of the "
+                       "pacing plan to this plan, for the levers that read a "
                        "pacing plan.")
 
 
 def _pc_cut_to_windows(pace, start, end):
     """The *Use as a pacing plan* button: the cut off, its equivalent in
-    pacing window 1."""
+    phase 1."""
     st.session_state.update(pc_cut=1, pc_ban=False, pc_win_n=1, pc_win1_pace=pace,
-                            pc_win1_start=start, pc_win1_end=end)
+                            pc_win1_start=start, pc_win1_end=end,
+                            **{f"pc_win1_{u}": 100 for u in _PC_USES})
+
+
+def _pc_main_uses():
+    """The share of its compute each use keeps under the base rows'
+    *Reallocate compute* sliders, in `_PC_USES` order."""
+    return tuple(st.session_state.get(f"pc_cut_{u}", 100) / 100.0 for u in _PC_USES)
+
+
+def _pc_uses_label(kept):
+    """A compute change's label on the chart: "R&D compute ÷2" for every use
+    alike, else each use that changes ("training 50%, experiments 150%")."""
+    if len(set(kept)) == 1:
+        return (f"R&D compute ÷{round(1 / kept[0], 1):g}" if kept[0] < 1
+                else f"R&D compute ×{kept[0]:g}")
+    return ", ".join(f"{name} {k:.0%}" for name, k in zip(_PC_USES.values(), kept)
+                     if k != 1)
+
+
+def _pc_cut_spans(today, pause_d, cut):
+    """Every span the plan changes US R&D compute over, [(start date, end
+    date or None, kept share per use)]: the base rows' cut (`cut` = (factor,
+    months or 0 for good), its reallocation sliders multiplying in) from
+    `pause_d`, then each phase that moves compute."""
+    k, months = cut or (1, 0)
+    kept = tuple(u / k for u in _pc_main_uses())
+    out = []
+    if any(u != 1 for u in kept):
+        out.append((pause_d, _pc_add_months(pause_d, months) if months else None, kept))
+    return out + [(a, b, uses) for a, b, _, uses in _pc_plan_phases(today)
+                  if any(u != 1 for u in uses)]
+
+
+def _pc_cut_schedule(today, pause_d, day, cut):
+    """`_pc_cut_spans` as `_tk_cut_path` takes them, in years from `day`:
+    the plain (factor, start, end) cut when the base rows' cut stands alone,
+    else a schedule by use; None when the plan leaves compute alone."""
+    spans = _pc_cut_spans(today, pause_d, cut)
+
+    def yrs(d):
+        return max((d - day).days, 0) / 365.25
+    if not spans:
+        return None
+    if len(spans) == 1 and cut and _pc_main_uses() == (1.0, 1.0, 1.0) \
+            and spans[0][0] == pause_d:
+        c0 = yrs(pause_d)
+        return float(cut[0]), c0, c0 + cut[1] / 12 if cut[1] else None
+    return tuple((yrs(a), None if b is None else yrs(b), kept) for a, b, kept in spans)
+
+
+def _pc_plan_presets(today):
+    """The plan builder's presets, {name: the phases it adds}, each phase a
+    {field: value} over `_PC_PHASE_FIELDS`; *Clear plan* adds none. Dates
+    count from the pacing date, and a phase with no end runs to the last
+    month on offer, the end of the longest projection."""
+    t0 = st.session_state.get("pc_pause_mo", _PC_DEFAULTS["pc_pause_mo"])
+
+    def phase(pace, start, end=None, **uses):
+        return {"pace": pace, "start": min(t0 + start, _PC_PAUSE_MO_MAX),
+                "end": _PC_PAUSE_MO_MAX if end is None else min(t0 + end, _PC_PAUSE_MO_MAX),
+                **{u: uses.get(u, 100) for u in _PC_USES}}
+    return {
+        "Clear plan": (),
+        "Pause": (phase(0, 0),),
+        "Half speed": (phase(50, 0),),
+        "Pause a year, then half speed": (phase(0, 0, 12), phase(50, 12)),
+        "Step down: 75%, 50%, 25%": (phase(75, 0, 12), phase(50, 12, 24), phase(25, 24)),
+        "Down-and-up: 75%->50%->25%->50%->75%": tuple(
+            phase(p, 12 * k, 12 * (k + 1)) for k, p in enumerate((75, 50, 25, 50, 75))),
+        "Halve R&D compute": (phase(100, 0, train=50, exp=50, agents=50),),
+        "Training compute to experiments": (phase(100, 0, train=50, exp=150),),
+        "Two years of half training compute": (phase(100, 0, 24, train=50),),
+    }
+
+
+def _pc_apply_preset(phases):
+    """A preset button: its phases join the end of the list, each with its
+    own X; *Clear plan* (no phases) resets the whole plan, base rows too."""
+    if not phases:
+        for k in ("pc_pace", "pc_cut", "pc_cut_mo", "pc_win_n", "pc_ban",
+                  "pc_ban_review", *(f"pc_cut_{u}" for u in _PC_USES)):
+            st.session_state[k] = _PC_DEFAULTS[k]
+        return
+    n = st.session_state.get("pc_win_n", 0)
+    for i, ph in enumerate(phases[:_PC_WIN_MAX - n], n + 1):
+        st.session_state.update({f"pc_win{i}_{f}": v for f, v in ph.items()})
+        st.session_state["pc_win_n"] = i
+
+
+def _pc_compute_total(kept):
+    """US R&D compute in use under `kept` (share each use keeps, `_PC_USES`
+    order) against no plan, at the Takeoff tab's split between the uses."""
+    train, exp = (st.session_state.get(f"tk_{k}", takeoff.DEFAULTS[k]) / 100.0
+                  for k in ("training_share", "experiment_share"))
+    return kept[0] * train + kept[1] * exp + kept[2] * (1 - train - exp)
+
+
+def _pc_compute_total_note(kept):
+    """Caption: what `kept` does to total US R&D compute."""
+    total = _pc_compute_total(kept)
+    if all(k == 1 for k in kept):
+        return
+    st.caption(
+        "Compute moves between uses; the total is unchanged." if abs(total - 1) < 0.005
+        else f"Uses {total:.0%} of the R&D compute the US would have; the "
+             f"other {1 - total:.0%} leaves AI research." if total < 1
+        else f"Needs {total:.0%} of the R&D compute the US would have, "
+             f"{total - 1:.0%} more than it has.")
+
+
+def _pc_render_plan_builder(today):
+    """The plan builder at the top of the tab: presets, then up to
+    `_PC_WIN_MAX` phases, each with its own dates, US pace and share of
+    compute per use. Phases write the `pc_win*` settings `_pc_plan_phases`
+    reads; a phase's pace under 100% overrides the base rows' while it runs, and its
+    compute shares multiply with the base rows' cut. The base rows (pacing
+    date, pace, cut, compute per use, RSI ban) sit above the phases, each
+    phase has an X (`_pc_remove_phase`), and the whole plan is one open
+    expander. Returns (pace %, cut or None, pacing month, the ban's review
+    months or None, the slot for the cut's nearest-plan note, the slot for
+    the plan's chart)."""
+    months = list(range(_PC_PAUSE_MO_MAX + 1))
+
+    def month(m):
+        return f"{_pc_add_months(today, m):%b %Y}"
+    for k, ok in (("pc_pause_mo", months), ("pc_pace", _PC_PACE_OPTIONS),
+                  ("pc_cut", _PC_CUT_OPTIONS), ("pc_cut_mo", _PC_CUT_MONTHS),
+                  ("pc_ban_review", _PC_BAN_REVIEW_MONTHS),
+                  ("pc_win_n", range(_PC_WIN_MAX + 1)),
+                  *((f"pc_cut_{u}", _PC_USE_OPTIONS) for u in _PC_USES)):
+        if st.session_state.get(k) not in ok:
+            st.session_state.pop(k, None)
+    # Not a widget, so it is written here to outlive a rerun.
+    win_n = st.session_state.setdefault("pc_win_n", _PC_DEFAULTS["pc_win_n"])
+    with st.expander("Pacing plan", expanded=True, key="pc_ex_plan",
+                     icon=":material/timeline:"):
+        st.caption("Each button adds its phases to the list below, where "
+                   "each can be adjusted or removed. A phase runs the US at "
+                   "its own pace and compute split between two dates; the "
+                   "first rows set what holds from the pacing date on.")
+        with st.container(horizontal=True):
+            for j, (name, phases) in enumerate(_pc_plan_presets(today).items()):
+                st.button(name, key=f"pc_preset_{j}",
+                          disabled=win_n + len(phases) > _PC_WIN_MAX,
+                          on_click=_pc_apply_preset, args=(phases,))
+        st.markdown("**From the pacing date on**")
+        date_col, pace_col, cut_col, lasts_col = st.columns(4)
+        pace_pct = pace_col.select_slider(
+            "Pace the US", options=_PC_PACE_OPTIONS,
+            value=_PC_DEFAULTS["pc_pace"], key="pc_pace",
+            format_func=_pc_pace_label,
+            help="The share of its ECI growth the US keeps from the pacing "
+                 "date: 100% is no pacing (the Takeoff tab's path), 0% is a "
+                 "pause (frozen there for good), and 50% runs the US along "
+                 "that same path at half speed, so automated coding and RSI "
+                 "arrive later too.")
+        cut_k = cut_col.select_slider(
+            "Cut US R&D compute", options=_PC_CUT_OPTIONS,
+            value=_PC_DEFAULTS["pc_cut"], key="pc_cut",
+            format_func=lambda k: "off" if k == 1 else f"÷{k}",
+            help="From the pacing date, US labs put this many times less "
+                 "compute into AI research: training runs, experiments and "
+                 "the AI agents doing research all shrink by it, the rest "
+                 "going to other uses. Unlike the pace, which slows "
+                 "the Takeoff tab's path by a set share, this reruns the "
+                 "Takeoff model with less compute: research slows by less "
+                 "than the cut, since researchers and algorithms carry on, "
+                 "and China's takeoff follows the slower US. The two levers "
+                 "stack.")
+        for col, (u, name) in zip(st.columns(4)[1:], _PC_USES.items()):
+            col.select_slider(
+                f"Compute for {name}", options=_PC_USE_OPTIONS,
+                value=_PC_DEFAULTS[f"pc_cut_{u}"], key=f"pc_cut_{u}",
+                format_func=lambda p: f"{p}%",
+                help="The share of its compute this use keeps from the "
+                     "pacing date, on top of any cut: under 100% "
+                     "takes compute away from it, over 100% moves compute "
+                     "into it. Training sets how large each new model is; "
+                     "experiments and AI researchers are the two inputs "
+                     "to research, so compute moved from training to them "
+                     "speeds research up while each model trains smaller.")
+        _moved = cut_k != 1 or _pc_main_uses() != (1.0, 1.0, 1.0)
+        cut_mo = lasts_col.select_slider(
+            "Compute change lasts", options=_PC_CUT_MONTHS,
+            value=_PC_DEFAULTS["pc_cut_mo"], key="pc_cut_mo",
+            disabled=not _moved,
+            format_func=lambda m: "for good" if m == 0 else f"{m} months",
+            help="How long the cut and the compute shares in these rows "
+                 "last. When they end the compute comes back at once at the "
+                 "level it would have had, so research rebounds and part of "
+                 "the delay is made up.")
+        cut = (cut_k, cut_mo) if _moved else None
+        _pc_compute_total_note(tuple(u / cut_k for u in _pc_main_uses()))
+        ban_col, review_col = st.columns(4, vertical_alignment="center")[:2]
+        ban = ban_col.checkbox(
+            "Ban runaway RSI", value=_PC_DEFAULTS["pc_ban"], key="pc_ban",
+            help="From the pacing date, US labs may automate AI research but "
+                 "not let it run on its own: people must review each gain in "
+                 "capability before research builds on it, as in the Humans "
+                 "in Control Act's ban on runaway recursive self-improvement. "
+                 "This reruns the Takeoff model with no autopilot at RSI "
+                 "and with every new model and every batch of fast "
+                 "improvements waiting at least the review time beside it. It "
+                 "stacks with the pace and the compute changes.")
+        review_mo = review_col.select_slider(
+            "Human review per capability gain", options=_PC_BAN_REVIEW_MONTHS,
+            value=_PC_DEFAULTS["pc_ban_review"], key="pc_ban_review",
+            disabled=not ban,
+            format_func=lambda m: f"{m} month" + ("s" if m > 1 else ""),
+            help="The least time people take to review a new model, or a "
+                 "batch of smaller improvements, before research builds on "
+                 "it. One month is today's validation; without the ban, AI "
+                 "doing the checking shrinks it toward a day.")
+        review = review_mo if ban else None
+        # With no pacing nothing starts on the date, so the snapshot and the
+        # race read today, shown on a greyed stand-in; the chosen date stays
+        # in state (and the URL) for when pacing returns.
+        _help = ("From this date the US grows at the pace beside it, and any "
+                 "R&D compute cut or RSI ban begins. It also "
+                 "sets the compute and capability each side has then, the "
+                 "date the model-access lever bites, and the bar "
+                 "the *Compute Thresholds* race runs to. With no pacing it is "
+                 "greyed out at today, and those read today.")
+        if (pace_pct == 100 and not _pc_pace_windows(today) and cut is None
+                and review is None):
+            st.session_state["pc_pause_mo"] = st.session_state.get(
+                "pc_pause_mo", _PC_DEFAULTS["pc_pause_mo"])
+            date_col.select_slider(
+                "Pacing starts on", options=[0], value=0, disabled=True,
+                format_func=lambda m: f"{today:%b %Y}", help=_help)
+            pause_mo = 0
+        else:
+            pause_mo = date_col.select_slider(
+                "US pauses on" if not pace_pct else "Pacing starts on"
+                if pace_pct < 100 or _pc_pace_windows(today)
+                else "Cut starts on" if cut else "Ban starts on",
+                options=months, value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
+                format_func=month, help=_help)
+        cut_box = st.container()
+
+        st.markdown("**Phases**", help=(
+            "Each phase runs the US at its own pace between its dates, "
+            "whatever *Pace the US* says, then hands it back, so a pause can "
+            "resume at a slower pace. A phase left at the plan's pace sets "
+            "none of its own. Where phases overlap, the slowest pace applies. "
+            "A phase can also change the compute each use gets while it runs; "
+            "those shares multiply with the rows above and with each other "
+            "where phases overlap."))
+        fields = (("pace", "US pace", _PC_PACE_OPTIONS,
+                   lambda p: "Plan's pace" if p == 100 else _pc_pace_label(p)),
+                  ("start", "Starts", months, month), ("end", "Ends", months, month),
+                  *((u, f"Compute for {name}", _PC_USE_OPTIONS, lambda p: f"{p}%")
+                    for u, name in _PC_USES.items()))
+        for i in range(1, win_n + 1):
+            cols = st.columns([1.3, 1, 1, 1, 1, 1, 0.4], vertical_alignment="bottom")
+            for col, (f, label, options, fmt) in zip(cols, fields):
+                key = f"pc_win{i}_{f}"
+                if st.session_state.get(key) not in options:
+                    st.session_state.pop(key, None)
+                col.selectbox(label, options, index=options.index(_PC_DEFAULTS[key]),
+                              key=key, format_func=fmt,
+                              label_visibility="visible" if i == 1 else "collapsed")
+            cols[-1].button(":material/close:", key=f"pc_win{i}_x",
+                            type="tertiary", help=f"Remove phase {i}",
+                            on_click=_pc_remove_phase, args=(i,))
+            a, b, *uses = (st.session_state.get(f"pc_win{i}_{f}", _PC_DEFAULTS[f"pc_win{i}_{f}"])
+                           for f in ("start", "end", *_PC_USES))
+            if b <= a:
+                st.caption(f"Phase {i} ends before it starts, so it is ignored.")
+            else:
+                _pc_compute_total_note(tuple(u / 100.0 for u in uses))
+        st.button("Add a phase", icon=":material/add:", key="pc_win_add",
+                  disabled=win_n >= _PC_WIN_MAX, on_click=_pc_add_phase)
+        return pace_pct, cut, pause_mo, review, cut_box, st.container()
+
+
+_PC_PHASE_FIELDS = ("pace", "start", "end", *_PC_USES)
+
+
+def _pc_add_phase():
+    """*Add a phase*: one more row, at its defaults."""
+    n = min(st.session_state.get("pc_win_n", 0) + 1, _PC_WIN_MAX)
+    st.session_state["pc_win_n"] = n
+    for f in _PC_PHASE_FIELDS:
+        st.session_state[f"pc_win{n}_{f}"] = _PC_DEFAULTS[f"pc_win{n}_{f}"]
+
+
+def _pc_remove_phase(i):
+    """A phase row's X: the phases after `i` move up one, the last goes."""
+    n = st.session_state.get("pc_win_n", 0)
+    for j in range(i, n):
+        for f in _PC_PHASE_FIELDS:
+            st.session_state[f"pc_win{j}_{f}"] = st.session_state.get(
+                f"pc_win{j + 1}_{f}", _PC_DEFAULTS[f"pc_win{j + 1}_{f}"])
+    for f in _PC_PHASE_FIELDS:
+        st.session_state.pop(f"pc_win{n}_{f}", None)
+    st.session_state["pc_win_n"] = max(n - 1, 0)
+
+
+def _pc_render_plan_chart(box, today, pause_d, pace, cut, horizon):
+    """The plan's chart, into the builder's `box`, once the plan does anything."""
+    if pace >= 1 and not _pc_plan_phases(today) and cut is None:
+        return
+    with box:
+        st.plotly_chart(_pc_plan_fig(today, pause_d, pace, cut, horizon), width="stretch")
+        _fn_caption(
+            "The plan: the pace the US runs at, and each use's R&D compute "
+            "against no plan.",
+            ("R&D compute", "Compute changes rerun the Takeoff model, so the US "
+             "slows by less than a cut (researchers and algorithms carry on) "
+             "and speeds up when compute moves into research. The pace then "
+             "applies on top of that path."))
 
 
 def _pc_pace_label(p):
@@ -18404,6 +18725,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pace": 100,
                 "pc_cut": 1, "pc_cut_mo": 0,
                 "pc_ban": False, "pc_ban_review": 1,
+                **{f"pc_cut_{u}": 100 for u in _PC_USES},
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
                 "pc_internal": True,
@@ -18431,11 +18753,14 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_theft_weights": False, "pc_wt_when": _PC_WHEN_NOW,
                 "pc_wt_mode": "Once",
                 "pc_win_n": 0,
+                # Each phase opens on the year after the one before it.
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
                     (f"pc_win{i}_pace", 50),
-                    (f"pc_win{i}_start", _pc_pause_default_mo()),
-                    (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12,
-                                           _PC_PAUSE_MO_MAX)))},
+                    (f"pc_win{i}_start", min(_pc_pause_default_mo() + 12 * (i - 1),
+                                             _PC_PAUSE_MO_MAX)),
+                    (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12 * i,
+                                           _PC_PAUSE_MO_MAX)),
+                    *((f"pc_win{i}_{u}", 100) for u in _PC_USES))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = list(range(2027, 2036))
 
@@ -20278,19 +20603,72 @@ def _pc_pace_changes(start, pace, windows):
     return out
 
 
-def _pc_pace_windows(today):
-    """The *Pacing windows* the Advanced expander has set, as
-    [(start date, end date, pace 0–1)]; a window ending on or before its
-    start is left out."""
+def _pc_plan_phases(today):
+    """The phases the plan builder has set, as [(start date, end date, pace
+    0–1, kept share of compute per use in `_PC_USES` order)]; a phase ending
+    on or before its start is left out."""
     out = []
     for i in range(1, int(st.session_state.get("pc_win_n", 0) or 0) + 1):
-        a = st.session_state.get(f"pc_win{i}_start", _PC_DEFAULTS[f"pc_win{i}_start"])
-        b = st.session_state.get(f"pc_win{i}_end", _PC_DEFAULTS[f"pc_win{i}_end"])
-        p = st.session_state.get(f"pc_win{i}_pace", _PC_DEFAULTS[f"pc_win{i}_pace"])
+        a, b, p, *uses = (st.session_state.get(f"pc_win{i}_{f}", _PC_DEFAULTS[f"pc_win{i}_{f}"])
+                          for f in ("start", "end", "pace", *_PC_USES))
         if b > a:
             out.append((_pc_add_months(today, a), _pc_add_months(today, b),
-                        p / 100.0))
+                        p / 100.0, tuple(u / 100.0 for u in uses)))
     return out
+
+
+def _pc_pace_windows(today):
+    """The plan's phases as pacing windows, [(start date, end date, pace 0–1)].
+    A phase at 100% sets no pace of its own, so the plan's own pace carries through
+    a phase that only moves compute."""
+    return [(a, b, p) for a, b, p, _ in _pc_plan_phases(today) if p < 1]
+
+
+_PC_PLAN_USE_COLORS = ('#1450A3', '#E8871E', '#3A9D5D')   # training, experiments, AI researchers
+
+
+def _pc_plan_fig(today, pause_d, pace, cut, horizon):
+    """The plan as two step panels on one time axis: the pace the US runs at
+    (`_pc_pace_changes`) and each use's R&D compute against no plan
+    (`_pc_cut_spans`, overlapping spans multiplying)."""
+    from plotly.subplots import make_subplots
+    chg =_pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
+    spans = _pc_cut_spans(today, pause_d, cut)
+    dates = sorted({today, horizon, *(d for d, _ in chg),
+                    *(d for a, b, _ in spans for d in (a, b) if d is not None)})
+    dates = [d for d in dates if today <= d <= horizon]
+
+    def pace_at(d):
+        return next((p for when, p in reversed(chg) if when <= d), 1.0)
+
+    def kept_at(d, i):
+        return float(np.prod([k[i] for a, b, k in spans
+                              if a <= d and (b is None or d < b)]))
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.12,
+                        row_heights=[0.45, 0.55])
+    fig.add_trace(go.Scatter(
+        x=dates, y=[100 * pace_at(d) for d in dates], mode='lines',
+        line=dict(color=_PC_PACE_COLOR, width=2.5, shape='hv'), name='US pace',
+        fill='tozeroy', fillcolor='rgba(123,63,160,0.12)',
+        hovertemplate='%{x|%b %Y}<br>%{y:.0f}% of its own speed<extra>US pace</extra>'),
+        row=1, col=1)
+    for i, name in enumerate(_PC_USES.values()):
+        fig.add_trace(go.Scatter(
+            x=dates, y=[100 * kept_at(d, i) for d in dates], mode='lines',
+            line=dict(color=_PC_PLAN_USE_COLORS[i], width=2, shape='hv',
+                      dash=('solid', 'dash', 'dot')[i]),
+            name=name.capitalize() if i < 2 else name,
+            hovertemplate='%{x|%b %Y}<br>%{y:.0f}% of no-plan compute'
+                          f'<extra>{name}</extra>'), row=2, col=1)
+    top = max(110.0, *(100 * kept_at(d, i) for d in dates for i in range(3)))
+    fig.update_yaxes(title_text="US pace", ticksuffix="%", range=[0, 105], row=1, col=1)
+    fig.update_yaxes(title_text="R&D compute", ticksuffix="%", range=[0, top * 1.05],
+                     row=2, col=1)
+    fig.update_xaxes(range=[today, horizon])
+    fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10),
+                      legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0),
+                      hovermode='x unified')
+    return fig
 
 
 # The breakdown's leftover row: the gap the per-source medians don't cover.
@@ -20883,10 +21261,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         levers_box = st.sidebar.container()
     _no_pace = (pace >= 1 and not _pc_pace_windows(today) and cut is None
                 and review is None)
+    # Every compute change in the plan, [(date, label)], for the chart's rules.
+    _cut_rules = [r for a, b, kept in _pc_cut_spans(today, pause_d, cut) for r in (
+        [(a, _pc_uses_label(kept))] + ([(b, "R&D compute restored")] if b else []))]
     # What the Takeoff rerun is under, for the labels: "compute cut", "RSI
     # ban", both, or None.
-    _lever = (" and ".join(n for n, on in (("compute cut", cut), ("RSI ban", review)) if on)
-              or None)
+    _lever = (" and ".join(n for n, on in (("compute cut", _cut_rules), ("RSI ban", review))
+                           if on) or None)
     with levers_box:
         withhold = st.checkbox(
             "US does not give access to strongest models from pacing start",
@@ -21092,41 +21473,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                  "protected against the most capable state attackers).")
         with (advanced_box if advanced_box is not None
               else st.expander("Advanced")):
-            st.markdown("**Pacing windows**")
-            _wmo = list(range(_PC_PAUSE_MO_MAX + 1))
-            if st.session_state.get("pc_win_n") not in range(_PC_WIN_MAX + 1):
-                st.session_state.pop("pc_win_n", None)
-            win_n = st.selectbox(
-                "Extra pacing windows", list(range(_PC_WIN_MAX + 1)),
-                index=_PC_DEFAULTS["pc_win_n"], key="pc_win_n",
-                help="Each window runs the US at its own pace from its start "
-                     "date, whatever the *Pace the US* lever says, then hands "
-                     "it back to the lever at its end, so a pause can resume "
-                     "at a slower pace. Where windows overlap, the slowest "
-                     "applies.")
-            for _i in range(1, win_n + 1):
-                for _f, _ok in (("pace", _PC_PACE_OPTIONS), ("start", _wmo),
-                                ("end", _wmo)):
-                    if st.session_state.get(f"pc_win{_i}_{_f}") not in _ok:
-                        st.session_state.pop(f"pc_win{_i}_{_f}", None)
-                st.select_slider(
-                    f"Window {_i}: pace", options=_PC_PACE_OPTIONS,
-                    value=_PC_DEFAULTS[f"pc_win{_i}_pace"],
-                    key=f"pc_win{_i}_pace", format_func=_pc_pace_label)
-                _ws = st.select_slider(
-                    f"Window {_i}: starts", options=_wmo,
-                    value=_PC_DEFAULTS[f"pc_win{_i}_start"],
-                    key=f"pc_win{_i}_start",
-                    format_func=lambda m: f"{_pc_add_months(today, m):%b %Y}")
-                _we = st.select_slider(
-                    f"Window {_i}: back to normal", options=_wmo,
-                    value=_PC_DEFAULTS[f"pc_win{_i}_end"],
-                    key=f"pc_win{_i}_end",
-                    format_func=lambda m: f"{_pc_add_months(today, m):%b %Y}")
-                if _we <= _ws:
-                    st.caption(f"Window {_i} ends before it starts, so it "
-                               "is ignored.")
-            st.divider()
             st.markdown("**When the controls bite**")
             _opts = _pc_when_options(today)
             for _k in ("pc_dist_when", "pc_leak_when", "pc_remote_when",
@@ -21493,22 +21839,30 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # Under an R&D compute cut or a ban on runaway RSI, `tk` is that run and
     # `tk_free` the one with neither, which the no-lever lines read.
     tk = tk_free = _pc_takeoff_us(today)
-    if tk is not None and (cut is not None or review is not None):
-        _c0 = max((pause_d - tk['day']).days, 0) / 365.25
+    _sched = (_pc_cut_schedule(today, pause_d, tk['day'], cut)
+              if tk is not None else None)
+    if _sched is not None or (tk is not None and review is not None):
+        _p0 = max((pause_d - tk['day']).days, 0) / 365.25
+        _c0 = min(([_tk_cut_start(_sched)] if _sched else [])
+                  + ([_p0] if review else []))
         # Nothing here reads the slowed run past the chart's end: stop it
         # there plus `_PC_CUT_RUN_PAST` (China's run, the run-length shift).
         _c_end = (None if horizon is None else float(np.ceil(
             max((horizon - tk['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
-        tk = _pc_takeoff_us(
-            today, cut and (float(cut[0]), _c0, _c0 + cut[1] / 12 if cut[1] else None),
-            _c_end, review and (_c0, float(review)))
+        tk = _pc_takeoff_us(today, _sched, _c_end, review and (_p0, float(review)))
         _eq = _pc_cut_equivalent(tk_free, tk, _c0)
+        _m1 = np.median(tk['paths'], axis=0)
         with cut_box if cut_box is not None else st.container():
-            if _eq is None:
+            if float(np.sum(_m1 - np.median(tk_free['paths'], axis=0)[:len(_m1)])) >= 0:
+                st.caption("These changes do not slow the US, so no "
+                           "pacing plan matches them.")
+            elif _eq is None:
                 st.caption("Too little of the run is left after the date to "
                            "fit a pacing plan to it.")
             else:
-                _pc_cut_plan_note(today, pause_d, cut, _eq, pace)
+                _pc_cut_plan_note(today, min(
+                    [a for a, _, _ in _pc_cut_spans(today, pause_d, cut)]
+                    + ([pause_d] if review else [])), cut, _eq, pace)
     _t_day = ((tk['day'] if tk else today) - anchor_d).days / 365.25
     # Each sample follows one Takeoff scenario, cycling through those China's
     # takeoff pairs with (`_cn_tk_rows`), so every sample has a Chinese twin.
@@ -22303,7 +22657,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                           + ('<extra>US paced on a schedule' if pace_wins else
                              f'<extra>US paced at {pace:.0%}' if pace < 1
                              else '<extra>US, no pacing')
-                          + (f', R&D compute ÷{cut[0]}' if cut else '')
+                          + (f', {_cut_rules[0][1]}' if len(_cut_rules) == 1
+                             or (len(_cut_rules) == 2 and cut and cut[1])
+                             else ', R&D compute on a schedule' if _cut_rules else '')
                           + (f', RSI banned ({review} mo reviews)' if review else '')
                           + f', avg {_prate:.1f} ECI/yr</extra>'))
     # Where the US would be with no pacing, dotted like China's no-levers
@@ -22315,7 +22671,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _free_name = ('US, no pacing' if _lever is None else f'US, no {_lever_or}'
                   if not _chg else f'US, no pacing or {_lever_or}')
     if _chg or _lever:
-        _d0 = min([d for d, _ in _chg[:1]] + ([pause_d] if _lever else [])) + off_us
+        _d0 = min([d for d, _ in _chg[:1]] + [d for d, _ in _cut_rules]
+                  + ([pause_d] if review else [])) + off_us
         _uk = [i for i, t in enumerate(grid_yrs)
                if _d0 <= _date_of(t) <= x_end]
         if len(_uk) > 1:
@@ -22339,10 +22696,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _span = max((x_end - datetime(2024, 1, 1)).days, 1)
     _row_end = []
     _rules = [(_d, _pc_pace_rule_label(_p)) for _d, _p in _chg]
-    if cut:
-        _rules.append((pause_d, f"R&D compute ÷{cut[0]}"))
-        if cut[1]:
-            _rules.append((_pc_add_months(pause_d, cut[1]), "R&D compute restored"))
+    _rules += _cut_rules
     for _d, _txt in sorted(_rules, key=lambda r: r[0]):
         _d = _d + off_us
         if not today + off_cn <= _d <= x_end:
@@ -22885,6 +23239,12 @@ def render_pacing():
         _dc_through(), ("Epoch ECI", _newest(m['date'] for m in eci_all))])
     st.badge("Under construction, not final", icon=":material/construction:",
              color="orange")
+    # The pacing date drives the whole tab: the capacity the US has reached
+    # by then is also the bar the threshold race below runs to. Months from
+    # today under the hood, so it round-trips through the URL and never goes
+    # stale.
+    (pace_pct, pc_cut, pause_mo, pc_review, cut_box,
+     plan_box) = _pc_render_plan_builder(_today)
 
     # ── Series shared by both halves of the tab ──
     run_days = _DAYS_6MO if key == 'train_flop_6mo' else _DAYS_2MO
@@ -22903,105 +23263,10 @@ def render_pacing():
     _us_steps_raw = _dc_country_steps(series_unshifted, _us_names, _mode,
                                       cluster_of)
 
-    # ── The pause date drives the whole tab, so it is drawn here rather
-    # than inside the panel: the capacity the US has reached by then is
-    # also the bar the threshold race below runs to. Months from today
-    # under the hood — an int round-trips through the URL and can never go
-    # stale — with every position labelled by the date it means. ──
-    _months = list(range(_PC_PAUSE_MO_MAX + 1))
-    if st.session_state.get("pc_pause_mo") not in _months:
-        st.session_state.pop("pc_pause_mo", None)
-    if st.session_state.get("pc_pace") not in _PC_PACE_OPTIONS:
-        st.session_state.pop("pc_pace", None)
     with levers_top:
         st.markdown("##### Policy levers")
-        pace_pct = st.select_slider(
-            "Pace the US", options=_PC_PACE_OPTIONS,
-            value=_PC_DEFAULTS["pc_pace"], key="pc_pace",
-            format_func=_pc_pace_label,
-            help="The share of its ECI growth the US keeps from the date "
-                 "below: 100% is no pacing (the Takeoff tab's path), 0% is a "
-                 "pause (frozen there for good), and 50% runs the US along "
-                 "that same path at half speed, so automated coding and RSI "
-                 "arrive later too.")
-        st.caption("100% = no pacing \u00b7 0% = pause \u00b7 in between, "
-                   "the share of its ECI growth the US keeps")
-        # With no pacing (and no pacing windows) nothing starts on the date,
-        # so the snapshot and the race read today, shown on a greyed stand-in;
-        # the chosen date stays in state (and the URL) for when pacing returns.
-        for _k, _ok in (("pc_cut", _PC_CUT_OPTIONS), ("pc_cut_mo", _PC_CUT_MONTHS)):
-            if st.session_state.get(_k) not in _ok:
-                st.session_state.pop(_k, None)
-        cut_k = st.select_slider(
-            "Cut US R&D compute", options=_PC_CUT_OPTIONS,
-            value=_PC_DEFAULTS["pc_cut"], key="pc_cut",
-            format_func=lambda k: "off" if k == 1 else f"÷{k}",
-            help="From the date below, US labs put this many times less "
-                 "compute into AI research: training runs, experiments and "
-                 "the AI agents doing research all shrink by it, the rest "
-                 "going to other uses. Unlike the pace above, which slows "
-                 "the Takeoff tab's path by a set share, this reruns the "
-                 "Takeoff model with less compute: research slows by less "
-                 "than the cut, since researchers and algorithms carry on, "
-                 "and China's takeoff follows the slower US. The two levers "
-                 "stack.")
-        cut_mo = st.select_slider(
-            "Cut lasts", options=_PC_CUT_MONTHS,
-            value=_PC_DEFAULTS["pc_cut_mo"], key="pc_cut_mo",
-            disabled=cut_k == 1,
-            format_func=lambda m: "for good" if m == 0 else f"{m} months",
-            help="When it ends the compute comes back at once at the level "
-                 "it would have had, so research rebounds and part of the "
-                 "delay is made up.")
-        pc_cut = None if cut_k == 1 else (cut_k, cut_mo)
-        if st.session_state.get("pc_ban_review") not in _PC_BAN_REVIEW_MONTHS:
-            st.session_state.pop("pc_ban_review", None)
-        ban = st.checkbox(
-            "Ban runaway RSI", value=_PC_DEFAULTS["pc_ban"], key="pc_ban",
-            help="From the date below, US labs may automate AI research but "
-                 "not let it run on its own: people must review each gain in "
-                 "capability before research builds on it, as in the Humans "
-                 "in Control Act's ban on runaway recursive self-improvement. "
-                 "This reruns the Takeoff model with no autopilot at RSI "
-                 "and with every new model and every batch of fast "
-                 "improvements waiting at least the review time below. It "
-                 "stacks with the levers above.")
-        review_mo = st.select_slider(
-            "Human review per capability gain", options=_PC_BAN_REVIEW_MONTHS,
-            value=_PC_DEFAULTS["pc_ban_review"], key="pc_ban_review",
-            disabled=not ban,
-            format_func=lambda m: f"{m} month" + ("s" if m > 1 else ""),
-            help="The least time people take to review a new model, or a "
-                 "batch of smaller improvements, before research builds on "
-                 "it. One month is today's validation; without the ban, AI "
-                 "doing the checking shrinks it toward a day.")
-        pc_review = review_mo if ban else None
-        cut_box = st.container()
-        _no_pace = (pace_pct == 100 and not _pc_pace_windows(_today)
-                    and pc_cut is None and pc_review is None)
-        _help = ("From this date the US grows at the pace above, and any "
-                 "R&D compute cut or RSI ban begins. It also "
-                 "sets the compute and capability each side has then, the "
-                 "date the model-access lever bites, and the bar "
-                 "the *Compute Thresholds* race runs to. With no pacing it is "
-                 "greyed out at today, and those read today.")
-        if _no_pace:
-            st.session_state["pc_pause_mo"] = st.session_state.get(
-                "pc_pause_mo", _PC_DEFAULTS["pc_pause_mo"])
-            st.select_slider(
-                "Pacing starts on", options=[0], value=0, disabled=True,
-                format_func=lambda m: f"{_today:%b %Y}", help=_help)
-            pause_mo = 0
-        else:
-            pause_mo = st.select_slider(
-                "US pauses on" if not pace_pct else "Pacing starts on"
-                if pace_pct < 100 or _pc_pace_windows(_today)
-                else "Cut starts on" if pc_cut else "Ban starts on",
-                options=_months,
-                value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
-                format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
-                help=_help)
     pause_d = _pc_add_months(_today, pause_mo)
+    _pc_render_plan_chart(plan_box, _today, pause_d, pace_pct / 100.0, pc_cut, pc_horizon)
     # `pause_d` is on the run-finished clock, so the capacity read at it (the
     # race's bar) comes off the series shifted by one run, as the race's rows
     # are under that *Date points at* (`test_paused_us_does_not_cross_its_own_bar_after_the_pause`).
@@ -25552,14 +25817,36 @@ def _tk_cut_path(cut, horizon):
     """`takeoff.simulate`'s `compute_cut` for `cut` = (factor, start, end or
     None, in years from today): log(factor) phased in over
     `_TK_CUT_RAMP_YEARS` from `start` and out again from `end`. None for no
-    cut."""
-    if cut is None or cut[0] <= 1:
+    cut.
+
+    A schedule, ((start, end or None, (training, experiments, agents)), ...),
+    gives each span the share of its compute each use keeps (0.5 halves it,
+    1.5 moves half as much again into it): spans that overlap multiply, and
+    the result is one log path per use (`takeoff.COMPUTE_USES`), or a single
+    path when every span treats the three alike and only cuts."""
+    if cut is None:
         return None
-    factor, start, end = cut
     years = np.linspace(0, horizon, int(round(horizon * 96)) + 1)
-    on = np.clip((years - start) / _TK_CUT_RAMP_YEARS, 0, 1)
-    off = 0.0 if end is None else np.clip((years - end) / _TK_CUT_RAMP_YEARS, 0, 1)
-    return years, np.log(factor) * on * (1 - off)
+
+    def window(start, end):
+        on = np.clip((years - start) / _TK_CUT_RAMP_YEARS, 0, 1)
+        off = 0.0 if end is None else np.clip((years - end) / _TK_CUT_RAMP_YEARS, 0, 1)
+        return on * (1 - off)
+    if not isinstance(cut[0], tuple):
+        factor, start, end = cut
+        return (years, np.log(factor) * window(start, end)) if factor > 1 else None
+    spans = [s for s in cut if any(k != 1 for k in s[2])]
+    if not spans:
+        return None
+    logs = [sum(-np.log(kept[i]) * window(a, b) for a, b, kept in spans) for i in range(3)]
+    if all(len(set(kept)) == 1 and kept[0] <= 1 for _, _, kept in spans):
+        return years, logs[0]
+    return years, dict(zip(takeoff.COMPUTE_USES, logs))
+
+
+def _tk_cut_start(cut):
+    """Years from today to where `cut` (as `_tk_cut_path` takes it) begins."""
+    return min(s[0] for s in cut) if isinstance(cut[0], tuple) else cut[1]
 
 
 def _tk_cut_onset(onset, base, cut_run, start):
@@ -25598,10 +25885,10 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
     months) array. With `capability_at` (years), only each draw's capability then
     and the year its research direction is ready (`direction_ready`). `cut` =
     (factor, start, end or None, in years) divides R&D compute by `factor`
-    between the two (`_tk_cut_path`, laid out to `cut_years` when the run
-    itself stops sooner, so a shortened run takes the full run's values);
-    `review` = (start, months) bans runaway RSI from `start`
-    (`takeoff.simulate`'s `review`)."""
+    between the two, or a schedule by use (`_tk_cut_path`, laid out to
+    `cut_years` when the run itself stops sooner, so a shortened run takes
+    the full run's values); `review` = (start, months) bans runaway RSI from
+    `start` (`takeoff.simulate`'s `review`)."""
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
@@ -25990,7 +26277,7 @@ def _tk_run_cut(run, cut, years=None, review=None):
     (`test_a_cut_run_stopped_early_is_the_full_run_so_far`). The first pass
     runs whole, since a date it moves past the stop still shapes the months
     before it."""
-    start = min(([cut[1]] if cut else []) + ([review[0]] if review else []))
+    start = min(([_tk_cut_start(cut)] if cut else []) + ([review[0]] if review else []))
     fixed = _tk_finish(run["inputs"], run["onset"], cut, review=review)
     onset = _tk_cut_onset(run["onset"], run, fixed, start)
     return dict(_tk_finish(run["inputs"], onset, cut, years, review), inputs=run["inputs"],

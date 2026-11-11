@@ -5523,6 +5523,70 @@ class TestPacing:
         assert vp._pc_cut_equivalent(base, cut, 1.0) == (40, 18)
         assert vp._pc_cut_equivalent(base, cut, 7.9) is None
 
+    def test_a_cut_schedule_gives_each_use_its_own_path(self):
+        """`_tk_cut_path` on a schedule: spans cutting every use alike are the
+        plain cut's single path, overlapping spans multiply, compute moved
+        into a use is a negative log, and a schedule of 100%s is no cut."""
+        plain = vp._tk_cut_path((2.0, 1.0, 3.0), 5.0)
+        _, same = vp._tk_cut_path(((1.0, 3.0, (0.5, 0.5, 0.5)),), 5.0)
+        np.testing.assert_allclose(same, plain[1])
+        assert vp._tk_cut_path(((1.0, None, (1.0, 1.0, 1.0)),), 5.0) is None
+        sched = ((1.0, None, (0.5, 1.5, 1.0)), (2.0, 3.0, (0.5, 1.0, 1.0)))
+        years, logs = vp._tk_cut_path(sched, 5.0)
+        assert tuple(logs) == vp.takeoff.COMPUTE_USES
+
+        def at(use, t):
+            return float(np.interp(t, years, logs[use]))
+        assert [at("training", t) for t in (0.5, 1.5, 2.5, 4.0)] == pytest.approx(
+            [0.0, np.log(2), np.log(4), np.log(2)])
+        assert at("experiments", 2.5) == pytest.approx(-np.log(1.5))
+        assert at("agents", 2.5) == 0.0
+        assert vp._tk_cut_start(sched) == 1.0 == vp._tk_cut_start((2.0, 1.0, 3.0))
+
+    def test_plan_phases_carry_pace_and_compute_into_the_schedule(self, monkeypatch):
+        """A phase is a pacing window plus a compute span when it moves
+        compute (`_pc_plan_phases`, `_pc_cut_spans`); the base rows' cut alone
+        stays the plain (factor, start, end) cut, and their per-use sliders
+        multiply into it (`_pc_cut_schedule`). A preset adds its phases to
+        the end of the list up to the cap, the training-to-experiments one
+        keeps the total (`_pc_compute_total`), and *Clear plan* empties it."""
+        state = {"pc_win_n": 2, "pc_win1_pace": 0, "pc_win1_start": 6, "pc_win1_end": 18,
+                 "pc_win2_pace": 100, "pc_win2_start": 18, "pc_win2_end": 30,
+                 "pc_win2_train": 50, "pc_win2_exp": 150}
+        monkeypatch.setattr(vp.st, "session_state", state)
+        today = datetime(2026, 1, 1)
+        pause_d = vp._pc_add_months(today, 6)
+        phases = vp._pc_plan_phases(today)
+        assert [p[2:] for p in phases] == [(0.0, (1.0, 1.0, 1.0)), (1.0, (0.5, 1.5, 1.0))]
+        assert vp._pc_pace_windows(today) == [phases[0][:3]]   # 100% keeps the sidebar's pace
+        assert vp._pc_cut_spans(today, pause_d, None) == [
+            (phases[1][0], phases[1][1], (0.5, 1.5, 1.0))]
+        (span,) = vp._pc_cut_schedule(today, pause_d, today, None)
+        assert span[0] == pytest.approx(1.5, abs=0.01) and span[2] == (0.5, 1.5, 1.0)
+
+        state["pc_win_n"] = 0
+        c0 = (pause_d - today).days / 365.25
+        assert vp._pc_cut_schedule(today, pause_d, today, None) is None
+        assert vp._pc_cut_schedule(today, pause_d, today, (2, 12)) == (2.0, c0, c0 + 1.0)
+        state["pc_cut_train"] = 50
+        (span,) = vp._pc_cut_schedule(today, pause_d, today, (2, 0))
+        assert span == (c0, None, (0.25, 0.5, 0.5))
+        assert vp._pc_uses_label(span[2]) == "training 25%, experiments 50%, AI researchers 50%"
+        assert vp._pc_uses_label((0.5, 0.5, 0.5)) == "R&D compute ÷2"
+
+        presets = vp._pc_plan_presets(today)
+        assert all(set(ph) == set(vp._PC_PHASE_FIELDS)
+                   for phases in presets.values() for ph in phases)
+        state.clear()
+        vp._pc_apply_preset(presets["Pause a year, then half speed"])
+        vp._pc_apply_preset(presets["Training compute to experiments"])
+        assert state["pc_win_n"] == 3 and state["pc_win2_pace"] == 50
+        assert vp._pc_compute_total(vp._pc_plan_phases(today)[2][3]) == pytest.approx(1.0)
+        vp._pc_apply_preset(presets["Step down: 75%, 50%, 25%"])   # only two rows left
+        assert state["pc_win_n"] == vp._PC_WIN_MAX
+        vp._pc_apply_preset(presets["Clear plan"])
+        assert state["pc_win_n"] == 0
+
     def test_a_cut_moves_coding_dates_to_the_same_capability(self):
         """`_tk_cut_onset`: a coding date after the cut's start moves by how
         much later the cut run trains the uncut run's ECI on that date (never

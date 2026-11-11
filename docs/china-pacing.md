@@ -368,7 +368,7 @@ attribution; the threshold reaches the display through the chart title.
 
 The levers open with *Pace the US* (`pc_pace`, `_PC_PACE_OPTIONS` 100→0, default 100 = no
 pacing, 0 = the pause): from the pacing date the US runs its path on `_pc_paced_clock`, `pace`
-years a year (plus up to `_PC_WIN_MAX` *Pacing windows* under *Advanced*, `pc_win{i}_pace/start/end`, each its own pace from start to end, overriding the main lever while it runs (so a pause can resume), the slowest winning where windows overlap; they move only the US path, while the pacing date still sets the snapshot, the race bar and the from-pacing-start levers; `test_pacing_windows_slow_the_us_then_return_it_to_normal`, `test_a_pacing_window_slows_the_us_until_it_ends`), each change drawn as a thin purple rule labelled "pause", "N× slower" or "no pacing" (`_pc_pace_changes`, `_pc_pace_rule_label`) beside a dashed unpaced-US line; the pacing date sliders run to `_PC_PAUSE_LAST_YM` (Dec 2035)), so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
+years a year (plus up to `_PC_WIN_MAX` phases in the *Pacing plan* box at the top of the tab, `_pc_render_plan_builder`, one row each: `pc_win{i}_pace/start/end`, its own pace from start to end, overriding the main lever while it runs (so a pause can resume) unless left at 100%, which sets no pace so a compute-only phase keeps the lever's (`_pc_pace_windows`), the slowest winning where phases overlap; they move only the US path, while the pacing date still sets the snapshot, the race bar and the from-pacing-start levers; `test_pacing_windows_slow_the_us_then_return_it_to_normal`, `test_a_pacing_window_slows_the_us_until_it_ends`), each change drawn as a thin purple rule labelled "pause", "N× slower" or "no pacing" (`_pc_pace_changes`, `_pc_pace_rule_label`) beside a dashed unpaced-US line; the pacing date sliders run to `_PC_PAUSE_LAST_YM` (Dec 2035)), so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
 and released paths; released trails trained by the ship lag, which reproduces the old capped
 climb at 0). Under it, *Cut US R&D compute* (`pc_cut`, `_PC_CUT_OPTIONS`, 1 = off, the default; `pc_cut_mo`,
 0 = for good) divides the compute behind US research by that factor from the pacing date
@@ -392,8 +392,27 @@ is drawn. The caption under it (`_pc_cut_plan_note`) quotes the nearest pacing p
 `_pc_cut_equivalent`: the 5%-step pace and month count whose paced uncut median best tracks
 the cut run's median ECI up to ultraintelligence
 (`test_a_cut_reads_back_the_pacing_plan_that_makes_its_path`); for a lasting cut with no
-other pacing, *Use as a pacing plan* turns the cut off and writes that plan to window 1. A
-plan cannot outrun no pacing, so a cut that ends (rebound) gets the caption but no button.
+other pacing, *Use as a pacing plan* turns the cut off and writes that plan to phase 1. A
+plan cannot outrun no pacing, so a cut that ends (rebound) gets the caption but no button,
+and compute changes whose median path is no slower get "do not slow the US" instead.
+
+Compute can also move by use. The base rows' compute sliders
+(`pc_cut_train/exp/agents`, `_PC_USE_OPTIONS`, % of today's, 100 = off) and each phase's
+`pc_win{i}_train/exp/agents` set the share kept for training, experiments and AI
+researchers; a value over 100 is compute moved in, and `_pc_compute_total_note` says what
+the three sum to at Takeoff's training and experiment shares. The base rows' shares multiply
+with its ÷k and with any phase running at the same time (`_pc_cut_spans`), and
+`_pc_cut_schedule` hands Takeoff either the plain `(factor, start, end)` cut, when the
+base rows' uniform cut stands alone (so its memo key and numbers are unchanged), or a tuple
+of `(start, end, kept)` spans that `_tk_cut_path` turns into one log path per use for
+`simulate(compute_cut=(years, {use: logs}))`
+(`test_a_cut_schedule_gives_each_use_its_own_path`,
+`test_plan_phases_carry_pace_and_compute_into_the_schedule`). The US plan's levers all sit in the *Pacing plan* expander (open by default, `pc_ex_plan`), the base rows above the phases, none in the sidebar; `pc_win_n` is no widget but the count *Add a phase* (`_pc_add_phase`) raises and a row's X (`_pc_remove_phase`, later phases moving up) lowers. Add a setting to a phase and
+it must join `_PC_DEFAULTS`, `_PC_RESET_KEYS` and `_pc_cut_to_windows` and `_PC_PHASE_FIELDS`. The box's preset
+buttons (`_pc_plan_presets`, `_pc_apply_preset`) each add their phases to the end of the list, so every preset is rows with an X, a phase with no end running to the last month on offer; *Clear plan* resets base rows and phases
+together, and once the plan does anything the box
+draws it (`_pc_plan_fig`: US pace % over the compute kept per use, x-axis ending at the
+projection range; `test_the_plan_builder_sets_phases_presets_and_compute_by_use`).
 The compute race and the state-of-play capacities below do not move with the cut: they
 count installed compute, which the cut puts to other uses rather than removes
 (`test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan`).

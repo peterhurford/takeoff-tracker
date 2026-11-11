@@ -19,6 +19,8 @@ WORKFLOW_STAGES = ("Research direction", "Experiment design and interpretation",
 WORKFLOW_KEYS = ("direction", "experiments", "verification")
 # Share of an unassisted researcher's time in each stage (the app's `_TK_ACTIVITIES`).
 WORKFLOW_WEIGHTS = np.array([0.2, 0.7, 0.1])
+# What R&D compute is used for; a `compute_cut` can differ by use.
+COMPUTE_USES = ("training", "experiments", "agents")
 # RSI: research direction (the stage that chooses what to try next) needs at
 # most `full_human`% of baseline human hours, once coding is automated.
 # Capability past it is read as ECI.
@@ -632,7 +634,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     none) in the compute this run's R&D gets, off whatever frontier the rates
     or `compute_path` give: training, agents and experiments each lose it
     whole, as does the trend proxy's resource growth, and a cut that ends is
-    not a rise the RSI boost multiplies.
+    not a rise the RSI boost multiplies. With logs a dict keyed by
+    `COMPUTE_USES`, each use takes its own cut and a negative one is compute
+    moved to that use: a model's scale is its training compute, the trend
+    proxy takes the mean of the agents' and experiments' cuts, and the cuts
+    bind after the labs' own agent/experiment re-split.
 
     `review`, (start, months), is a ban on runaway self-improvement from
     `start` (years): no autopilot, and every capability gain waits for at
@@ -959,16 +965,35 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if not np.isfinite(review_from) or review_from < 0 or not review_time >= 0:
             raise ValueError("A review rule needs a start at or after today and a "
                              "review time of zero or more months.")
-    cut = None
+    cut = use_cut = None
     if compute_cut is not None:
-        cut_years, cut_logs = (np.asarray(v, dtype=float) for v in compute_cut)
-        cut = _check_path((cut_years, np.broadcast_to(
-            cut_logs, (n, cut_logs.shape[-1]))), n, "compute cut")
-        if cut[1].min() < 0:
-            raise ValueError("A compute cut is a log reduction, zero or more.")
+        by_use = isinstance(compute_cut[1], dict)
+        if by_use and set(compute_cut[1]) != set(COMPUTE_USES):
+            raise ValueError(f"A compute cut by use needs exactly {COMPUTE_USES}.")
+        cut_years = np.asarray(compute_cut[0], dtype=float)
+
+        def cut_path(logs):
+            logs = np.asarray(logs, dtype=float)
+            return _check_path((cut_years, np.broadcast_to(
+                logs, (n, logs.shape[-1]))), n, "compute cut")
+        if by_use:
+            use_cut = {k: cut_path(v) for k, v in compute_cut[1].items()}
+            cut = use_cut["training"]
+        else:
+            cut = cut_path(compute_cut[1])
+            if cut[1].min() < 0:
+                raise ValueError("A compute cut is a log reduction, zero or more.")
 
     def cut_log(u, rows=all_rows):
+        """The cut in training compute, which is every use's without a
+        by-use cut."""
         return 0.0 if cut is None else _paths_at(cut[1], cut[0], u, rows)
+
+    def use_shift(use, u):
+        """Log compute `use` keeps beyond training's under a by-use cut."""
+        if use_cut is None:
+            return 0.0
+        return cut_log(u) - _paths_at(use_cut[use][1], cut_years, u, all_rows)
 
     def uncut_log(u, rows=all_rows):
         if cpath is None:
@@ -976,8 +1001,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         return _paths_at(cpath[1], cpath[0], u, rows)
 
     def frontier_log(u, rows=all_rows):
-        """R&D compute (log, vs today) for draws `rows` at their times `u`:
-        the frontier less any `compute_cut`."""
+        """Training compute (log, vs today) for draws `rows` at their times
+        `u`: the frontier less any `compute_cut`."""
         return uncut_log(u, rows) - cut_log(u, rows)
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
@@ -1173,6 +1198,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         with np.errstate(divide="ignore"):
             ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
                                                     np.log1p(-human0) - np.log(ai_speed)))
+        agent_shift = use_shift("agents", mid_t)
+        exp_shift = use_shift("experiments", mid_t)
         agent_share = np.full(n, shares[2])
         if p["reallocate_compute"]:
             # How far AI has moved labor against experiments, beyond the
@@ -1190,22 +1217,24 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             agent_share = np.clip(agent_share, 1e-9 * pool, pool * (1 - 1e-9))
             labor_log = labor_log + parallel * np.log(agent_share / shares[2])
             experiment_log = experiment_log + parallel * np.log((pool - agent_share) / shares[1])
+        labor_log = labor_log + parallel * agent_shift
+        experiment_log = experiment_log + parallel * exp_shift
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log.copy()
         # Factor chart, exact: compute is the inputs with neither AI help nor
         # more staff, staff what they add to that (nothing once people do no
         # work), and AI help the rest (zero without transfer).
         staff_alone = headcount_log
-        exp_in = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
+        exp_in = parallel * (compute_log + exp_shift + exp_log + np.log(shares[1] / 0.4))
+        agent_in = parallel * (compute_log + agent_shift + np.log(shares[2] / 0.2))
         # At today's split: any gain from re-splitting is AI's doing.
-        bare = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2)), exp_in, rho)
+        bare = _ces_log(agent_in, exp_in, rho)
         compute_part = bare
-        labor_part = _ces_log(parallel * (compute_log + np.log(shares[2] / 0.2) + staff_alone),
-                              exp_in, rho) - bare
+        labor_part = _ces_log(agent_in + parallel * staff_alone, exp_in, rho) - bare
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
             resource_log = (np.log(initial_throughput) + parallel * input_rate * mid
-                            - parallel * cut_log(mid))
+                            - parallel * (cut_log(mid) - (agent_shift + exp_shift) / 2))
             residual = (experiment_slopes - parallel * compute_rate) * mid
             proxy_log = resource_log + p["rsi_useful_growth"] / 100 * residual
             weight = p["rsi_trend_weight"] / 100 * np.exp(
@@ -1236,8 +1265,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # integrated step by step like the actual path, never reaching RSI.
         ref_log_x, ref_penalty = difficulty_at(reference_gained)
         ref_research = _ces_log(
-            parallel * (base_compute_log + np.log(shares[2] / 0.2) + ref_headcount),
-            parallel * (base_compute_log + exp_log + np.log(shares[1] / 0.4)), rho)
+            parallel * (base_compute_log + agent_shift + np.log(shares[2] / 0.2)
+                        + ref_headcount),
+            parallel * (base_compute_log + exp_shift + exp_log + np.log(shares[1] / 0.4)), rho)
         reference_pace = np.exp(np.minimum(ref_research - ref_penalty, 700))
         ref_log_amount = np.log(software_rate) + ref_research + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
