@@ -12395,16 +12395,16 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH,
     central, low or high), capped at the CTS lithography ceiling on
     today's allocation; legal sales and smuggling each grow their chip
     count by `legal_growth` / `smug_growth` a year (fractions) while each
-    chip improves `_CN_SRC_CHIP_PERF_GROWTH` a year, smuggling keeping the
-    last stored year's relative range; remote access adds SemiAnalysis's
-    new offshore power at a density rising `_CN_SRC_DENSITY_GROWTH` a year.
-    Only domestic and smuggling carry a range; the rest are central.
+    chip improves `_CN_SRC_CHIP_PERF_GROWTH` a year; remote access adds
+    SemiAnalysis's new offshore power at a density rising
+    `_CN_SRC_DENSITY_GROWTH` a year. Legal sales, smuggling and remote
+    access each keep the last stored year's relative range.
     """
     duv = load_duv_production(_duv_mtime())
     cap = {y: p50 * 1e6 for y, _lo, p50, _hi in duv["continue_trend"]}
     base = int(list(data["flow"])[-1])
-    f0 = {k: v[0] for k, v in data["flow"][str(base)].items()}
-    smug = data["flow"][str(base)]["smuggled"][:3]
+    legal, smug, remote = (data["flow"][str(base)][k][:3]
+                           for k in ("legal", "smuggled", "remote"))
     s0 = {k: v[:3] for k, v in data["stock"][str(base)].items()}
     gw = _CN_SRC_OFFSHORE_GW
     # Each of central, low and high grows from 2027's own value, so a low year
@@ -12418,13 +12418,14 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH,
     for y in _CN_SRC_PROJ_YEARS:
         dom = [min(d * g, cap[y]) for d, g in zip(dom, rates)]
         f = {"domestic": tuple(dom),
-             "legal": (f0["legal"] * ((1.0 + legal_growth) * hw)
-                       ** (y - base),) * 3,
+             "legal": tuple(x * ((1.0 + legal_growth) * hw) ** (y - base)
+                            for x in legal),
              "smuggled": tuple(x * ((1.0 + smug_growth) * hw) ** (y - base)
                                for x in smug),
-             "remote": (f0["remote"] * (gw[y] - gw[y - 1])
-                        / (gw[base] - gw[base - 1])
-                        * _CN_SRC_DENSITY_GROWTH ** (y - base),) * 3}
+             "remote": tuple(x * (gw[y] - gw[y - 1])
+                             / (gw[base] - gw[base - 1])
+                             * _CN_SRC_DENSITY_GROWTH ** (y - base)
+                             for x in remote)}
         flow[str(y)] = {k: (*v, "projected") for k, v in f.items()}
         for k, v in f.items():
             run[k] = [r + x for r, x in zip(run[k], v)]
@@ -16021,10 +16022,10 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0):
     compute mix's domestic + legal + smuggled stock under `mix`
     (`_cn_src_with_policy` keywords). CTS's low and high output sit at
     `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
-    ∓1.64; legal sales carry no range. Past the mix's last year China
-    and its domestic stock continue at their own last-year growth, and the
-    world past CTS's last year at its last; before end-2025 the world runs
-    back at its 2026 growth. Both are log-linear between year-ends (Dec 31).
+    ∓1.64; legal sales stay central, their range small beside smuggling's.
+    Past the mix's last year China and its domestic stock continue at their
+    own last-year growth, and the world past CTS's last year at its last;
+    before end-2025 the world runs back at its 2026 growth. Both are log-linear between year-ends (Dec 31).
     """
     m = dict(mix or {})
     m.pop("remote_cut", None)

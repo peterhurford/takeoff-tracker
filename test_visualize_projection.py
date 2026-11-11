@@ -4612,6 +4612,17 @@ class TestChinaComputeSources:
         for k in ("domestic", "smuggled", "remote"):
             assert fast[k] == base[k]
 
+    def test_projected_channels_keep_2027s_relative_range(self):
+        """Legal sales, smuggling and remote access each project low and high
+        at the same ratio to central as IFP's 2027 flow."""
+        d = self._data()
+        f27, f30 = d["flow"]["2027"], vp._cn_src_projection(d)["flow"]["2030"]
+        for k in ("legal", "smuggled", "remote"):
+            for i in (1, 2):
+                assert f30[k][i] / f30[k][0] == pytest.approx(
+                    f27[k][i] / f27[k][0])
+            assert f30[k][1] < f30[k][0] < f30[k][2]
+
     def test_compute_payoff_default_is_the_mean_of_ours_and_ifps(self):
         """IFP's 10.8 months per 10x at the US's 15.7 ECI/yr is ~14 ECI;
         the default sits halfway between it and our fit."""

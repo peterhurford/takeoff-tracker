@@ -387,7 +387,7 @@ not a reading of the CSVs. Six things are load-bearing:
    `_WC_NOTES`, shown on its bar's hover.
 3. **The band has three independent sources.** CTS's low and high output
    (scenarios, not quantiles; read as 10th and 90th, `_wc_skew`), the mix's
-   p5/p95 domestic and smuggled stocks (legal sales carry no range), and the
+   p5/p95 domestic and smuggled stocks (legal sales stay central: their range is small beside smuggling's), and the
    split's spread (`_wc_split_paths`) — the published estimates' disagreement
    on levels, then each region's growth rate. `_WC_COMMON_LOAD` loads every
    non-China region on one global shock so a low-US split is a slow world, not
