@@ -5545,34 +5545,37 @@ class TestPacing:
 
     def test_plan_phases_carry_pace_and_compute_into_the_schedule(self, monkeypatch):
         """A phase is a pacing window plus a compute span when it moves
-        compute (`_pc_plan_phases`, `_pc_cut_spans`); the base rows' cut alone
-        stays the plain (factor, start, end) cut, and their per-use sliders
-        multiply into it (`_pc_cut_schedule`). A preset adds its phases to
-        the end of the list up to the cap, the training-to-experiments one
-        keeps the total (`_pc_compute_total`), and *Clear plan* empties it."""
+        compute and an RSI ban when it has one (`_pc_plan_phases`,
+        `_pc_cut_spans`, `_pc_cut_schedule`, `_pc_ban_rule`); a lone pacing
+        phase with no end that starts the plan is the plan's pace
+        (`_pc_pace_plan`). A preset adds its phases to the end of the list up
+        to the cap, the training-to-experiments one keeps the total
+        (`_pc_compute_total`), and *Clear plan* empties it."""
         state = {"pc_win_n": 2, "pc_win1_pace": 0, "pc_win1_start": 6, "pc_win1_end": 18,
                  "pc_win2_pace": 100, "pc_win2_start": 18, "pc_win2_end": 30,
                  "pc_win2_train": 50, "pc_win2_exp": 150}
         monkeypatch.setattr(vp.st, "session_state", state)
         today = datetime(2026, 1, 1)
-        pause_d = vp._pc_add_months(today, 6)
         phases = vp._pc_plan_phases(today)
-        assert [p[2:] for p in phases] == [(0.0, (1.0, 1.0, 1.0)), (1.0, (0.5, 1.5, 1.0))]
-        assert vp._pc_pace_windows(today) == [phases[0][:3]]   # 100% keeps the sidebar's pace
-        assert vp._pc_cut_spans(today, pause_d, None) == [
-            (phases[1][0], phases[1][1], (0.5, 1.5, 1.0))]
-        (span,) = vp._pc_cut_schedule(today, pause_d, today, None)
-        assert span[0] == pytest.approx(1.5, abs=0.01) and span[2] == (0.5, 1.5, 1.0)
+        assert [p[2:] for p in phases] == [(0.0, (1.0, 1.0, 1.0), 0), (1.0, (0.5, 1.5, 1.0), 0)]
+        assert vp._pc_pace_plan(today) == (1.0, [phases[0][:3]])   # 100% sets no pace
+        assert vp._pc_cut_spans(today) == [(phases[1][0], phases[1][1], (0.5, 1.5, 1.0))]
+        (span,) = vp._pc_cut_schedule(today, today)
+        assert span[0] == pytest.approx(1.5, abs=0.01) and span[1] == pytest.approx(2.5, abs=0.01)
+        assert span[2] == (0.5, 1.5, 1.0)
+        assert vp._pc_ban_rule(today) is None
+        state.update(pc_win1_ban=1, pc_win2_ban=3)
+        assert vp._pc_ban_rule(today) == (phases[0][0], phases[1][1], 3)
+        assert vp._pc_uses_label((0.25, 0.5, 0.5)) == "training 25%, experiments 50%, AI researchers 50%"
 
+        state.update(pc_win_n=1, pc_win1_end=vp._PC_PAUSE_MO_MAX)
+        assert vp._pc_pace_plan(today) == (0.0, [])
+        assert vp._pc_ban_rule(today)[1] is None
         state["pc_win_n"] = 0
-        c0 = (pause_d - today).days / 365.25
-        assert vp._pc_cut_schedule(today, pause_d, today, None) is None
-        assert vp._pc_cut_schedule(today, pause_d, today, (2, 12)) == (2.0, c0, c0 + 1.0)
-        state["pc_cut_train"] = 50
-        (span,) = vp._pc_cut_schedule(today, pause_d, today, (2, 0))
-        assert span == (c0, None, (0.25, 0.5, 0.5))
-        assert vp._pc_uses_label(span[2]) == "training 25%, experiments 50%, AI researchers 50%"
+        assert vp._pc_cut_schedule(today, today) is None
         assert vp._pc_uses_label((0.5, 0.5, 0.5)) == "R&D compute ÷2"
+        assert [vp._pc_uses_label((k,) * 3) for k in (0.17, 0.33, 0.67)] == [
+            "R&D compute ÷6", "R&D compute ÷3", "R&D compute ÷1.5"]
 
         presets = vp._pc_plan_presets(today)
         assert all(set(ph) == set(vp._PC_PHASE_FIELDS)
@@ -5670,7 +5673,7 @@ class TestPacing:
 
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI
-        blend's weights and its not-yet conditioning. The pause is an int of
+        blend's weights and its not-yet conditioning. Phase dates are ints of
         months-from-today rather than a month label, so a bookmarked value
         can never go stale the way the cut-off sliders' options can."""
         assert set(vp._PC_DEFAULTS) == set(vp._PC_RESET_KEYS)
@@ -5681,8 +5684,8 @@ class TestPacing:
         for slug, w in vp._PC_RSI_WEIGHTS.items():
             assert defaults[vp._PC_RSI_W_KEY + slug] == w, slug
         assert sum(vp._PC_RSI_WEIGHTS.values()) == 90       # nine research cards
-        assert 0 <= defaults["pc_pause_mo"] <= vp._PC_PAUSE_MO_MAX
-        assert isinstance(defaults["pc_pause_mo"], int)
+        assert 0 <= defaults["pc_win1_start"] < vp._PC_PAUSE_MO_MAX
+        assert isinstance(defaults["pc_win1_start"], int)
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
 

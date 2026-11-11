@@ -640,9 +640,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     proxy takes the mean of the agents' and experiments' cuts, and the cuts
     bind after the labs' own agent/experiment re-split.
 
-    `review`, (start, months), is a ban on runaway self-improvement from
-    `start` (years): no autopilot, and every capability gain waits for at
-    least `months` of human review before research builds on it, a successor
+    `review`, (start, months) or (start, months, end), is a ban on runaway
+    self-improvement from `start` (years) until `end` (for good without
+    one): no autopilot, and every capability gain waits for at least
+    `months` of human review before research builds on it, a successor
     model's validation and each fast cycle alike.
 
     `follower` runs a country behind the frontier (see `FOLLOWER_KEYS`): its
@@ -959,12 +960,18 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     epath = (_check_path(experiment_path, n, "experiment compute")
              if experiment_path is not None else None)
     all_rows = np.arange(n)
-    review_from, review_time = np.inf, 0.0
+    review_from, review_to, review_time = np.inf, np.inf, 0.0
     if review is not None:
         review_from, review_time = float(review[0]), float(review[1]) / 12
-        if not np.isfinite(review_from) or review_from < 0 or not review_time >= 0:
-            raise ValueError("A review rule needs a start at or after today and a "
-                             "review time of zero or more months.")
+        if len(review) > 2 and review[2] is not None:
+            review_to = float(review[2])
+        if not np.isfinite(review_from) or review_from < 0 or not review_time >= 0 \
+                or not review_to > review_from:
+            raise ValueError("A review rule needs a start at or after today, an end "
+                             "after it and a review time of zero or more months.")
+
+    def under_review(x):
+        return (x >= review_from - 1e-12) & (x < review_to - 1e-12)
     cut = use_cut = None
     if compute_cut is not None:
         by_use = isinstance(compute_cut[1], dict)
@@ -1141,7 +1148,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         human_now = humans(effective, t, now[1] + follow_log)
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
-                      & (t < review_from - 1e-12)] = 0.0
+                      & ~under_review(t)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
         # More copies of the AI researcher on the same compute as its
         # algorithms improve: AI's share of the work speeds up with them.
@@ -1364,7 +1371,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             eval_len[done] = (eval_time * (h_ver + (1 - h_ver) / ai_speed)
                               / (today_hours[:, 2] + (1 - today_hours[:, 2]) / ai_speed))[done]
         # Under a review rule no model ships before people have reviewed it.
-        reviewed = done & (end >= review_from - 1e-12)
+        reviewed = done & under_review(end)
         eval_len[reviewed] = np.maximum(eval_len[reviewed], review_time)
         candidate_compute = np.log(np.maximum(run_compute / reference_train_compute, 1e-12))
         candidate = (1 - fast_fraction) * snapshot + candidate_compute
@@ -1410,7 +1417,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                                       + reference_at_fast_start[fast_ready])
         reference_at_fast_start[fast_ready] = reference_gained[fast_ready]
         fast_snapshot[fast_ready] = software[fast_ready]
-        fast_next[fast_ready] += np.where(end[fast_ready] >= review_from - 1e-12,
+        fast_next[fast_ready] += np.where(under_review(end[fast_ready]),
                                           max(fast_time, review_time), fast_time)
         # For non-ready slow runs, only their already deployed algorithms count.
         validated = np.where(ready, pending_software, deployed_software) + fast_deployed
@@ -1535,7 +1542,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                        realized_history[:, j])[:, 0] <= p["full_human"] / 100
         direction_ready[ready & ~np.isfinite(direction_ready)] = workflow_grid[j]
         hours = humans(capability_history[:, j], workflow_grid[j], realized_history[:, j])
-        if p["rsi_autopilot"] and workflow_grid[j] < review_from - 1e-12:
+        if p["rsi_autopilot"] and not under_review(workflow_grid[j]):
             hours[events["RSI"] <= workflow_grid[j] + 1e-12] = 0.0
         return hours
 

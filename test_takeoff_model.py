@@ -1198,3 +1198,22 @@ def test_a_review_rule_ends_autopilot_and_holds_each_gain_for_review():
     assert np.median(free["workflow_progress"]["capability_log"][:, -1]) > cap[1.0] > cap[3.0]
     with pytest.raises(ValueError, match="review rule"):
         tk.simulate(dict(years=5), review=(-1.0, 1.0), **kw)
+
+
+def test_a_review_rule_with_an_end_lifts_at_the_end():
+    """`review` = (start, months, end): the months before `end` match the
+    rule for good, autopilot returns after it, and capability ends between
+    the free run's and the lasting ban's; an end at or before the start is
+    refused."""
+    kw = dict(n=60, onset_years=np.full(60, 0.5))
+    free = tk.simulate(dict(years=5), **kw)
+    ban = tk.simulate(dict(years=5), review=(0.0, 3.0), **kw)
+    ends = tk.simulate(dict(years=5), review=(0.0, 3.0, 2.0), **kw)
+    years = free["workflow_progress"]["years"]
+    cap = {k: r["workflow_progress"]["capability_log"] for k, r in
+           (("free", free), ("ban", ban), ("ends", ends))}
+    np.testing.assert_array_equal(cap["ends"][:, years < 2.0], cap["ban"][:, years < 2.0])
+    final = {k: np.median(c[:, -1]) for k, c in cap.items()}
+    assert final["free"] > final["ends"] > final["ban"]
+    with pytest.raises(ValueError, match="review rule"):
+        tk.simulate(dict(years=5), review=(1.0, 1.0, 1.0), **kw)

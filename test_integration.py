@@ -15,7 +15,7 @@ import base64
 import json
 import re
 from itertools import combinations
-from visualize_projection import (_pc_add_months, _pc_pause_default_mo,
+from visualize_projection import (_pc_add_months, _pc_pause_default_mo, _PC_PAUSE_MO_MAX,
                                    _pc_span, _ECI_COMPANIES, _ECI_FRONTIER_LABEL,
                                    load_eci_frontier,
                                    _SLUG_FOR_TAB, N_SAMPLES)
@@ -104,6 +104,35 @@ def _switch_tab(at, tab_name):
     """Switch to a tab and run."""
     [r for r in at.radio if r.label == "Tab"][0].set_value(tab_name).run()
     _assert_no_error(at, f"switch to {tab_name}")
+
+
+def _plan(at, run=True, **fields):
+    """Set the Pacing plan to one phase: `fields` over the current phase 1,
+    else over a phase at no pacing from `_pc_pause_default_mo()` with no
+    end (as a preset adds it). Runs unless `run` is False."""
+    import visualize_projection as vp
+    ss = at.session_state
+    if "pc_win_n" in ss and ss["pc_win_n"]:
+        ph = {f: ss[f"pc_win1_{f}"] for f in vp._PC_PHASE_FIELDS}
+    else:
+        ph = dict(pace=100, start=vp._pc_pause_default_mo(), end=vp._PC_PAUSE_MO_MAX,
+                  ban=0, **{u: 100 for u in vp._PC_USES})
+    ph.update(fields)
+    ss["pc_win_n"] = 1
+    for f, v in ph.items():
+        ss[f"pc_win1_{f}"] = v
+    return at.run() if run else at
+
+
+# A shared link to the Pacing pause preset: one phase at 0% with no end.
+_PAUSE_URL = {"pc_win_n": "1", "pc_win1_pace": "0",
+              "pc_win1_end": str(_PC_PAUSE_MO_MAX)}
+
+
+def _pause_mo(at):
+    """The pacing month: phase 1's start (the tests set one phase), 0 with none."""
+    ss = at.session_state
+    return ss["pc_win1_start"] if "pc_win_n" in ss and ss["pc_win_n"] else 0
 
 
 # ===========================================================================
@@ -3154,7 +3183,7 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        at.select_slider(key="pc_pace").set_value(0).run()
+        _plan(at, pace=0)
         at.checkbox(key="pc_withhold").check().run()
         at.slider(key="pc_leak_cut").set_value(100).run()
         return at
@@ -3289,26 +3318,22 @@ class TestPacingTab:
         assert climb["y"][1] >= climb["y"][0]
 
     def test_the_pacing_date_and_model_access_grey_out_with_no_pacing(self):
-        """With no pacing nothing starts on the pacing date: it greys out at
-        today, the state of play reads today, the model-access lever is
-        disabled and ignored even when set, and the chosen date returns with
-        pacing."""
-        import visualize_projection as vp
+        """With no phases nothing starts on a pacing date: the state of play
+        reads today, the model-access lever is disabled and ignored even when
+        set, and a phase brings both back at its start."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        date = next(w for w in at.select_slider if w.label == "Pacing starts on")
-        assert date.disabled and date.key != "pc_pause_mo"
+        assert not [c for c in at.caption if "Pacing starts" in str(c.value)]
         assert at.checkbox(key="pc_withhold").disabled
         assert any("Today" in t.value.columns for t in at.table)
         before = [(str(m.label), str(m.value)) for m in at.metric]
         at.session_state["pc_withhold"] = True
         at.run()
         assert [(str(m.label), str(m.value)) for m in at.metric] == before
-        at.select_slider(key="pc_pace").set_value(50).run()
-        assert not at.select_slider(key="pc_pause_mo").disabled
-        assert at.select_slider(key="pc_pause_mo").value == \
-            vp._PC_DEFAULTS["pc_pause_mo"]
+        _plan(at, pace=50)
+        start = f"{_pc_add_months(datetime.now(), _pc_pause_default_mo()):%b %Y}"
+        assert any(f"Pacing starts {start}" in str(c.value) for c in at.caption)
         assert not at.checkbox(key="pc_withhold").disabled
 
     def test_compute_ratios_show_without_a_crossing(self):
@@ -3426,7 +3451,7 @@ class TestPacingTab:
         # The public ECI line's own rate, so the paced US is still caught
         # before 2032 and the leak has a crossing to move.
         at.session_state["tk_eci_today"] = round(vp_fit_ppy(), 2)
-        at.select_slider(key="pc_pace").set_value(15).run()
+        _plan(at, pace=15)
 
         def surpass(at):
             m = next(m for m in at.metric
@@ -3463,7 +3488,7 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         at.selectbox(key="pc_end_year").set_value(2035).run()
-        at.select_slider(key="pc_pace").set_value(25).run()
+        _plan(at, pace=25)
 
         def surpass(at):
             m = next(m for m in at.metric
@@ -3535,8 +3560,8 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         at.selectbox(key="pc_end_year").set_value(2035).run()
-        at.select_slider(key="pc_pace").set_value(45).run()
-        self._paired(at.select_slider(key="pc_pause_mo").set_value(3))
+        _plan(at, pace=45)
+        self._paired(_plan(at, run=False, start=3))
         t = next(x.value for x in at.table if "Source" in x.value.columns)
         row = t[t["Source"].str.startswith("US software")].iloc[0]
         start = float(row["China ECI/yr at US pacing start"])
@@ -3606,13 +3631,11 @@ class TestPacingTab:
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
 
-    def test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan(self):
-        """Off by default and then nothing is drawn for it. On, the US line
-        falls below a dotted no-cut line, China's below its own, the cut
-        quotes a pacing plan, and the button swaps the cut for that plan in
-        window 1; a cut that ends offers no button and loses less."""
-        import visualize_projection as vp
-
+    def test_an_rd_compute_cut_slows_the_us_and_quotes_a_pacing_plan(self):
+        """No phase moves compute by default and then nothing is drawn for
+        it. A phase that cuts every use 10x puts the US line below a dotted
+        no-cut line, China's below its own, and quotes a pacing plan; a cut
+        that ends loses less."""
         def traces(at):
             for el in at.get("plotly_chart"):
                 d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
@@ -3627,12 +3650,10 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        assert at.select_slider(key="pc_cut").value == 1
-        assert at.select_slider(key="pc_cut_mo").disabled
-        assert not plan(at) and not [b for b in at.button if b.key == "pc_cut_use"]
+        assert not plan(at)
         free_cn = traces(at)["China, projected"]["y"]
 
-        at.select_slider(key="pc_cut").set_value(6).run()
+        _plan(at, train=10, exp=10, agents=10)
         _assert_no_error(at, "Pacing / R&D compute cut")
         d = traces(at)
         assert "US, no pacing" not in d
@@ -3648,29 +3669,19 @@ class TestPacingTab:
         (m,) = plan(at)
         pct, months = int(m.group(1)), int(m.group(2))
         assert 0 <= pct < 100 and pct % 5 == 0 and months >= 1
-        start = at.select_slider(key="pc_pause_mo").value
 
-        at.select_slider(key="pc_cut_mo").set_value(12).run()
+        _plan(at, end=_pause_mo(at) + 12)
         _assert_no_error(at, "Pacing / R&D compute cut for a year")
-        assert plan(at) and not [b for b in at.button if b.key == "pc_cut_use"]
+        assert plan(at)
         assert traces(at)["US, projected"]["y"][-1] > cut_us
 
-        at.select_slider(key="pc_cut_mo").set_value(0).run()
-        at.button(key="pc_cut_use").click().run()
-        _assert_no_error(at, "Pacing / cut used as a pacing plan")
-        assert at.select_slider(key="pc_cut").value == 1 and not plan(at)
-        assert at.session_state["pc_win_n"] == 1
-        assert at.selectbox(key="pc_win1_pace").value == pct
-        assert at.selectbox(key="pc_win1_start").value == start
-        assert at.selectbox(key="pc_win1_end").value == min(
-            start + months, vp._PC_PAUSE_MO_MAX)
-        assert "US, no pacing" in traces(at)
+    def test_an_rsi_ban_slows_the_us_and_quotes_a_pacing_plan(self):
+        """Off by default. The preset adds a banning phase: the US falls
+        below a dotted no-ban line, the cards and table name the ban, a
+        pacing plan is quoted, and a longer review slows the US more; with
+        a compute cut too, the dotted line names both."""
+        import visualize_projection as vp
 
-    def test_an_rsi_ban_slows_the_us_and_converts_to_a_pacing_plan(self):
-        """Off by default, its review slider greyed. On, the US falls below a
-        dotted no-ban line, the cards and table name the ban, a pacing plan
-        is quoted, and a longer review slows the US more; with the cut too,
-        the dotted line names both; the button swaps both for the plan."""
         def traces(at):
             for el in at.get("plotly_chart"):
                 d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
@@ -3684,35 +3695,31 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        assert not at.checkbox(key="pc_ban").value
-        assert at.select_slider(key="pc_ban_review").disabled and not plan(at)
+        assert not plan(at)
 
-        at.checkbox(key="pc_ban").check().run()
+        j = list(vp._pc_plan_presets(datetime.now())).index("Ban runaway RSI")
+        at.button(key=f"pc_preset_{j}").click().run()
         _assert_no_error(at, "Pacing / RSI ban")
+        assert at.selectbox(key="pc_win1_ban").value == 1
         d = traces(at)
         assert d["US, no RSI ban"]["line"]["dash"] == "dot"
         assert any("(RSI ban)" in str(m.label) for m in at.metric)
         assert any("At the RSI ban" in t.value.columns for t in at.table)
-        assert plan(at) and at.select_slider(key="pc_pause_mo").label == "Ban starts on"
+        assert plan(at)
         one = d["US, projected"]["y"][-1]
         assert one < d["US, no RSI ban"]["y"][-1]
 
-        at.select_slider(key="pc_ban_review").set_value(6).run()
+        at.selectbox(key="pc_win1_ban").set_value(6).run()
         _assert_no_error(at, "Pacing / RSI ban, 6-month reviews")
         assert traces(at)["US, projected"]["y"][-1] < one - 5
 
-        at.select_slider(key="pc_cut").set_value(2).run()
+        _plan(at, train=50, exp=50, agents=50)
         _assert_no_error(at, "Pacing / RSI ban and compute cut")
         assert "US, no compute cut or RSI ban" in traces(at)
-        at.select_slider(key="pc_cut").set_value(1).run()
-        at.button(key="pc_cut_use").click().run()
-        _assert_no_error(at, "Pacing / ban used as a pacing plan")
-        assert not at.checkbox(key="pc_ban").value and not plan(at)
-        assert at.session_state["pc_win_n"] == 1
 
     def test_the_plan_builder_sets_phases_presets_and_compute_by_use(self):
-        """No plan draws no plan chart. A preset adds its phases to the list,
-        leaving the base rows alone; compute moved from training to
+        """No plan draws no plan chart. A preset adds its phases to the list;
+        compute moved from training to
         experiments reruns the US (a dotted no-cut line, a rule naming the
         uses) at an unchanged total; overlapping phases' compute shares
         multiply; a phase's X removes it; and *Clear plan* clears it all."""
@@ -3733,7 +3740,6 @@ class TestPacingTab:
         assert not charts(at, "US pace")
 
         preset(at, "Pause a year, then half speed")
-        assert at.select_slider(key="pc_pace").value == 100
         assert at.session_state["pc_win_n"] == 2
         assert at.selectbox(key="pc_win1_pace").value == 0
         assert at.selectbox(key="pc_win2_pace").value == 50
@@ -3748,7 +3754,6 @@ class TestPacingTab:
         assert at.session_state["pc_win_n"] == 1
         assert at.selectbox(key="pc_win1_train").value == 50
         assert at.selectbox(key="pc_win1_exp").value == 150
-        assert at.select_slider(key="pc_cut_train").value == 100
         assert any("total is unchanged" in str(c.value) for c in at.caption)
         (race,) = charts(at, "China, projected")
         assert race["US, no compute cut"]["line"]["dash"] == "dot"
@@ -3781,7 +3786,7 @@ class TestPacingTab:
         assert not charts(at, "US pace")
 
     def test_phases_alone_set_the_pacing_date_and_fill_to_the_cap(self):
-        """With the base rows untouched the pacing date is a greyed stand-in at
+        """The plan box has no widget outside its phases: the pacing date is
         the earliest phase's start, and follows it. Presets keep adding
         phases to `_PC_WIN_MAX`, where a caption says the plan is full."""
         import visualize_projection as vp
@@ -3791,22 +3796,19 @@ class TestPacingTab:
             at.button(key=f"pc_preset_{j}").click().run()
             _assert_no_error(at, f"Pacing / preset {name}")
 
-        def stand_in(at):
-            (s,) = [s for s in at.select_slider if s.label == "Pacing starts on"]
-            assert s.disabled
-            return s.value
+        def starts(at):
+            (c,) = [c for c in at.caption if "Pacing starts" in str(c.value)]
+            return str(c.value)
 
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        assert stand_in(at) == 0
+        assert not [c for c in at.caption if "Pacing starts" in str(c.value)]
         preset(at, "Halve R&D compute")
-        assert stand_in(at) == vp._PC_DEFAULTS["pc_pause_mo"]
+        assert f"{_pc_add_months(datetime.now(), _pc_pause_default_mo()):%b %Y}" in starts(at)
         at.selectbox(key="pc_win1_start").set_value(30).run()
         _assert_no_error(at, "Pacing / phase 1 starts later")
-        assert stand_in(at) == 30
-        at.select_slider(key="pc_pace").set_value(50).run()
-        assert at.select_slider(key="pc_pause_mo").value == vp._PC_DEFAULTS["pc_pause_mo"]
+        assert f"{_pc_add_months(datetime.now(), 30):%b %Y}" in starts(at)
 
         preset(at, "Clear plan")
         down_up = next(n for n in vp._pc_plan_presets(datetime.now()) if n.startswith("Down-and-up"))
@@ -3841,7 +3843,7 @@ class TestPacingTab:
         assert steps() == [1, 2, 3] and not at.get("progress")
         at.run()
         assert steps() == [] and not at.get("progress")
-        at.select_slider(key="pc_pace").set_value(50).run()
+        _plan(at, pace=50)
         _assert_no_error(at, "Pacing / loading pill")
         assert steps() == [1, 2, 3] and not at.get("progress")
 
@@ -4168,13 +4170,12 @@ class TestPacingTab:
         # The domestic row is rebuilding at a pause inside the setback, not
         # missing data. The setback's length is live data (the domestic
         # buildout pace), so the pause moves to 3 months out to sit inside it.
-        self._paired(at.select_slider(key="pc_pause_mo").set_value(3))
+        self._paired(_plan(at, run=False, start=3))
         tbl = next(x.value for x in at.table if "Source" in x.value.columns)
         dom = tbl[tbl["Source"].str.startswith("Compute, domestic")].iloc[0]
         assert dom["China ECI/yr at US pause"] == "Regrowing"
         import visualize_projection as vp
-        at.select_slider(key="pc_pause_mo").set_value(
-            vp._PC_DEFAULTS["pc_pause_mo"]).run()
+        _plan(at, start=_pc_pause_default_mo())
         # Dating the cut later leaves part of it standing.
         when = at.select_slider(key="pc_remote_when").options
         self._paired(at.select_slider(key="pc_remote_when").set_value(
@@ -4251,9 +4252,9 @@ class TestPacingTab:
         default pause and at a later one."""
         import visualize_projection as vp
         at = self._app()
-        for mo in (None, vp._PC_PAUSE_MO_MAX):
+        for mo in (None, vp._PC_PAUSE_MO_MAX - 1):
             if mo is not None:
-                at.select_slider(key="pc_pause_mo").set_value(mo).run()
+                _plan(at, start=mo)
                 _assert_no_error(at, f"Pacing / pause {mo}")
             us = self._state(at).iloc[0]["Largest trainable run (capacity)"].split()[0]
             titles = [json.loads(el.proto.spec)["layout"].get("title", {})
@@ -4382,16 +4383,16 @@ class TestPacingTab:
         depend on the crossing and still renders."""
         at = self._app()
         at.selectbox(key="pc_end_year").set_value(2028).run()
-        at.select_slider(key="pc_pause_mo").set_value(48).run()
+        _plan(at, start=48)
         _assert_no_error(at, "Pacing / pause past the projection range")
         card = next(m for m in at.metric if "paused US frontier" in str(m.label))
         assert str(card.value) == "After 2028"
         assert list(self._state(at)["At pause start"]) == [
             "United States", "China-accessible", "China (domestic only)"]
 
-    def test_us_pause_bar_follows_the_pause_slider(self):
-        """The pause is a date the user names: pausing later freezes a
-        better model, so the bar rises and the crossing lands later."""
+    def test_us_pause_bar_follows_the_pause_phase(self):
+        """The pause is its phase's start: pausing later freezes a better
+        model, so the bar rises and the crossing lands later."""
         at = self._app()
 
         def _bar(at):
@@ -4403,30 +4404,27 @@ class TestPacingTab:
                 m.value for m in at.metric
                 if "paused US frontier" in str(m.label))), "%b %Y")
 
-        sl = at.select_slider(key="pc_pause_mo")
+        sl = at.selectbox(key="pc_win1_start")
         assert sl.value == _pc_pause_default_mo()   # months; labelled a date
         assert sl.options[18] == f"{_pc_add_months(datetime.now(), 18):%b %Y}"
         base, base_d = _bar(at), _cross(at)
-        at.select_slider(key="pc_pause_mo").set_value(15).run()
+        _plan(at, start=15)
         _assert_no_error(at, "Pacing / pause 15 months out")
         assert _bar(at) > base
         assert _cross(at) > base_d
-        at.select_slider(key="pc_pause_mo").set_value(18).run()
+        _plan(at, start=18)
 
     def test_pacing_slows_the_us_and_delays_china(self):
-        """The *Pace the US* slider opens at 100% (no pacing), where China
-        does not catch the US in the window and the panel says so rather
-        than going blank; at 10% the US keeps climbing, so China catches it
-        later than a pause, on a bar that has moved up."""
+        """With no phases (no pacing) China does not catch the US in the
+        window and the panel says so rather than going blank; a phase at
+        10% keeps the US climbing, so China catches it later than a pause,
+        on a bar that has moved up."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
         assert at.checkbox(key="pc_withhold").value is False
         assert at.slider(key="pc_leak_cut").value == 0
         assert at.slider(key="pc_theft_share").value == 0
-        pace = at.select_slider(key="pc_pace")
-        assert pace.value == 100 and pace.options[0] == "100% \u00b7 no pacing"
-        assert pace.options[-1] == "0% \u00b7 pause"
         card = next(m for m in at.metric if "(no pacing)" in str(m.label))
         assert str(card.value).startswith("After ")
         assert "of samples by" in str(card.delta)
@@ -4436,9 +4434,11 @@ class TestPacingTab:
             m = next(m for m in at.metric if word in str(m.label))
             return datetime.strptime(str(m.value), "%b %Y"), _card_bar(m)
 
-        at.select_slider(key="pc_pace").set_value(0).run()
+        _plan(at, pace=0)
+        pace = at.selectbox(key="pc_win1_pace")
+        assert pace.options[0] == "No pacing" and pace.options[-1] == "0% \u00b7 pause"
         paused, paused_bar = _cross(at, "paused US frontier")
-        at.select_slider(key="pc_pace").set_value(10).run()
+        _plan(at, pace=10)
         _assert_no_error(at, "Pacing / paced at 10%")
         paced, start_bar = _cross(at, "paced US")
         assert paced > paused
@@ -4446,12 +4446,13 @@ class TestPacingTab:
         assert any("At pacing start" in t.value.columns for t in at.table)
 
     def test_a_window_restarts_a_paused_us(self):
-        """Windows override the main lever, so a pause can resume: the card
-        stops calling the US paused and China catches it no sooner."""
+        """A pause that ends hands the US to the next phase, so it can
+        resume: the card stops calling the US paused and China catches it
+        no sooner."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        at.select_slider(key="pc_pace").set_value(0).run()
+        _plan(at, pace=0)
 
         def card():
             m = next(m for m in at.metric if "US" in str(m.label)
@@ -4460,21 +4461,22 @@ class TestPacingTab:
 
         label, paused = card()
         assert "paused US frontier" in label
-        start = at.select_slider(key="pc_pause_mo").value
+        start = _pause_mo(at)
+        at.selectbox(key="pc_win1_end").set_value(start + 3).run()
         at.button(key="pc_win_add").click().run()
-        at.selectbox(key="pc_win1_start").set_value(start + 3)
-        at.selectbox(key="pc_win1_end").set_value(start + 40).run()
-        _assert_no_error(at, "Pacing / pause resumed by a window")
+        at.selectbox(key="pc_win2_start").set_value(start + 3)
+        at.selectbox(key="pc_win2_end").set_value(start + 40).run()
+        _assert_no_error(at, "Pacing / pause resumed by a phase")
         label, resumed = card()
-        assert "paced US" in label and "1 pacing window" in label
+        assert "paced US" in label and "2 pacing phases" in label
         if not resumed.startswith("After"):
             assert datetime.strptime(resumed, "%b %Y") >= \
                 datetime.strptime(paused, "%b %Y")
 
     def test_a_pacing_window_slows_the_us_until_it_ends(self):
-        """A pause window in the Advanced expander lowers the US frontier at
-        the pacing date and draws its band; a window that ends before it
-        starts is ignored, and dropping the window restores the cards."""
+        """A pause phase before a lightly paced one lowers the US frontier
+        at the pacing date; a phase that ends before it starts is ignored,
+        and removing the phase restores the cards."""
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
@@ -4486,23 +4488,22 @@ class TestPacingTab:
             return _card_bar(next(m for m in at.metric
                                   if "paced US" in str(m.label)))
 
-        # Lightly paced, so the pacing date is live (no pacing reads today).
-        at.select_slider(key="pc_pace").set_value(95).run()
+        _plan(at, pace=95)
         before, bar0 = cards(), bar()
-        start = at.select_slider(key="pc_pause_mo").value
+        start = _pause_mo(at)
         at.button(key="pc_win_add").click().run()
-        assert at.selectbox(key="pc_win1_pace").value == 50
-        at.selectbox(key="pc_win1_pace").set_value(0)
-        at.selectbox(key="pc_win1_start").set_value(0)
-        at.selectbox(key="pc_win1_end").set_value(start).run()
-        _assert_no_error(at, "Pacing / pause window")
+        assert at.selectbox(key="pc_win2_pace").value == 50
+        at.selectbox(key="pc_win2_pace").set_value(0)
+        at.selectbox(key="pc_win2_start").set_value(0)
+        at.selectbox(key="pc_win2_end").set_value(start).run()
+        _assert_no_error(at, "Pacing / pause phase")
         assert bar() < bar0
-        assert "1 pacing window" in next(
+        assert "2 pacing phases" in next(
             m.proto.help for m in at.metric if "paced US" in str(m.label))
-        at.selectbox(key="pc_win1_end").set_value(0).run()
+        at.selectbox(key="pc_win2_end").set_value(0).run()
         assert any("is ignored" in c.value for c in at.caption)
         assert bar() == bar0
-        at.button(key="pc_win1_x").click().run()
+        at.button(key="pc_win2_x").click().run()
         assert cards() == before
 
     def test_us_path_inherits_takeoffs_coder_and_rsi(self):
@@ -4535,8 +4536,8 @@ class TestPacingTab:
         for name, label in (("US automated coder", "Full coding automation"),
                             ("US RSI", "RSI: AI directs research")):
             assert abs((got[name] - card[label]).days) <= 75, (name, got, card)
-        at.select_slider(key="pc_pace").set_value(0).run()
-        at.select_slider(key="pc_pause_mo").set_value(0).run()
+        _plan(at, pace=0)
+        _plan(at, start=0)
         assert "US RSI" not in marks(at)
 
     def test_milestone_table_dates_both_sides(self):
@@ -4546,7 +4547,7 @@ class TestPacingTab:
         at = _fresh_app()
         at.run()
         _switch_tab(at, "Pacing")
-        at.select_slider(key="pc_pace").set_value(40).run()
+        _plan(at, pace=40)
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
                  and "Gap" in x.value.columns)
         assert list(t["Milestone"]) == ["Automated coder", "RSI",
@@ -4590,7 +4591,7 @@ class TestPacingTab:
             # subset, within three.
             for want, have, tol in zip((cards[card], lo, hi), got.groups(), (1, 3, 3)):
                 assert abs(months(want) - months(have)) <= tol, (card, us[i])
-        at.select_slider(key="pc_pace").set_value(40).run()
+        _plan(at, pace=40)
         t = next(x.value for x in at.table if "Milestone" in x.value.columns
                  and "Gap" in x.value.columns)
         for before, after in zip(us, t["US (median, 80%)"]):
@@ -4625,7 +4626,7 @@ class TestPacingTab:
         the breakdown, which times a catch-up, is left out."""
         for params in (dict(pc_theft_weights="true", pc_wt_mode="Ongoing"),):
             at = _fresh_app()
-            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.query_params.update(tab="pacing", **_PAUSE_URL, **params)
             at.run()
             _assert_no_error(at, f"Pacing / China already level {params}")
             cards = {m.label: m.value for m in at.metric}
@@ -4640,15 +4641,15 @@ class TestPacingTab:
                        dict(tk_cn_distill="abc", tk_cn_leak="nan"),
                        dict(tk_cn_compute="Bogus")):
             at = _fresh_app()
-            at.query_params.update(tab="pacing", pc_pace="0", **params)
+            at.query_params.update(tab="pacing", **_PAUSE_URL, **params)
             at.run()
             _assert_no_error(at, f"Pacing / malformed China settings {params}")
             assert any("China" in m.label for m in at.metric)
 
     def test_a_pause_after_the_horizon_says_so(self):
         at = _fresh_app()
-        at.query_params.update(tab="pacing", pc_pace="0", pc_end_year="2027",
-                               pc_pause_mo="100")
+        at.query_params.update(tab="pacing", **{**_PAUSE_URL, "pc_win1_start": "100"},
+                               pc_end_year="2027")
         at.run()
         _assert_no_error(at, "Pacing / pause after the horizon")
         cards = {m.label: m.value for m in at.metric}
@@ -4658,7 +4659,7 @@ class TestPacingTab:
         """China's channels run back before today at today's rates, so a pause
         today reads real rates, not zero."""
         at = _fresh_app()
-        at.query_params.update(tab="pacing", pc_pace="0", pc_pause_mo="0")
+        at.query_params.update(tab="pacing", **{**_PAUSE_URL, "pc_win1_start": "0"})
         at.run()
         why = next(t.value for t in at.table if "Source" in t.value.columns)
         row = why[why["Source"].str.startswith("Innovation")].iloc[0]
@@ -4717,7 +4718,7 @@ class TestPacingTab:
         _assert_no_error(at, "Pacing / country, paused")
         assert at.selectbox(key="pc_timing").value == "Training run finished"
         now = _dt.now()
-        m = now.month - 1 + int(at.select_slider(key="pc_pause_mo").value)
+        m = now.month - 1 + int(_pause_mo(at))
         pause = _dt(now.year + m // 12, m % 12 + 1, 1)
         table = self._entities(at)
         us = table[table["Entity"] == "United States"].iloc[0]
@@ -4742,7 +4743,7 @@ class TestPacingTab:
         us_run = self._state(at).iloc[0]["Largest trainable run (capacity)"].split(
             " (")[0]
         assert us_run in _title(at)
-        at.select_slider(key="pc_pause_mo").set_value(42).run()
+        _plan(at, start=42)
         _assert_no_error(at, "Pacing / bar at a later pause")
         later = self._state(at).iloc[0]["Largest trainable run (capacity)"].split(" (")[0]
         assert float(later.split()[0]) > float(us_run.split()[0])
@@ -4802,12 +4803,12 @@ class TestPacingTab:
 
     def test_reset_restores_defaults(self):
         at = self._app()
-        at.select_slider(key="pc_pause_mo").set_value(42).run()
+        _plan(at, start=42)
         at.radio(key="pc_party").set_value(
             "Operator (who owns the building)").run()
         [b for b in at.button if b.key == "pc_reset"][0].click().run()
         _assert_no_error(at, "Pacing / reset")
-        assert at.session_state["pc_pause_mo"] == _pc_pause_default_mo()
+        assert at.session_state["pc_win_n"] == 0
         assert at.radio(key="pc_party").value == "Tenant (who trains there)"
         assert at.selectbox(key="pc_pool").value == \
             "Nearby + announced fabric"
@@ -4824,7 +4825,7 @@ class TestPacingExplains:
         at.run()
         _switch_tab(at, "Pacing")
         if pace is not None:
-            at.select_slider(key="pc_pace").set_value(pace).run()
+            _plan(at, pace=pace)
         _assert_no_error(at, f"Pacing at {pace}")
         return at
 

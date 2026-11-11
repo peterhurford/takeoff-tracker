@@ -366,13 +366,27 @@ attribution; the threshold reaches the display through the chart title.
    the DC tab does — default is run-finished (capacity-online, or +30d for
    release, one click away); the fine print states which milestone the dates mean.
 
-The levers open with *Pace the US* (`pc_pace`, `_PC_PACE_OPTIONS` 100→0, default 100 = no
-pacing, 0 = the pause): from the pacing date the US runs its path on `_pc_paced_clock`, `pace`
-years a year (plus up to `_PC_WIN_MAX` phases in the *Pacing plan* box at the top of the tab, `_pc_render_plan_builder`, one row each: `pc_win{i}_pace/start/end`, its own pace from start to end, overriding the main lever while it runs (so a pause can resume) unless left at 100%, which sets no pace so a compute-only phase keeps the lever's (`_pc_pace_windows`), the slowest winning where phases overlap; they move only the US path, while the pacing date sets the snapshot, the race bar and the from-pacing-start levers, and with the base rows untouched that date is a greyed stand-in at the earliest phase's start (`_pc_first_phase_mo`, today with no phases; `test_phases_alone_set_the_pacing_date_and_fill_to_the_cap`); `test_pacing_windows_slow_the_us_then_return_it_to_normal`, `test_a_pacing_window_slows_the_us_until_it_ends`), each change drawn as a thin purple rule labelled "pause", "N× slower" or "no pacing" (`_pc_pace_changes`, `_pc_pace_rule_label`) beside a dashed unpaced-US line; the pacing date sliders run to `_PC_PAUSE_LAST_YM` (Dec 2035)), so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
+The US plan is the *Pacing plan* expander at the top of the tab (`_pc_render_plan_builder`,
+open by default, `pc_ex_plan`): only its buttons change it, presets and *Add a phase*, and
+whatever they do lands as phases in the list, up to `_PC_WIN_MAX`, each a row
+(`pc_win{i}_pace/start/end/train/exp/agents/ban`, `_PC_PHASE_FIELDS`) with an X. There are no
+always-live rows above the phases: a cut, pace or ban outside a phase would change the plan
+without a click and without showing in the list. A phase runs the US at its own pace on
+`_pc_paced_clock` from start to end, then hands it back; at 100% it sets no pace, so a
+compute-only phase leaves the pace alone, and the slowest wins where phases overlap
+(`_pc_pace_plan`). A lone pacing phase that starts the plan and has no end (its end the last
+month on offer, shown *No end*) is the plan's pace for good, `pace` with no windows, so a
+pause reads as a pause; anything else is pace 1 plus windows. The pacing date is the earliest
+phase's start (`_pc_first_phase_mo`, today with none, captioned in the box), and sets the
+snapshot, the race bar and the from-pacing-start levers
+(`test_phases_alone_set_the_pacing_date_and_fill_to_the_cap`,
+`test_a_window_restarts_a_paused_us`, `test_a_pacing_window_slows_the_us_until_it_ends`). Each
+pace change is drawn as a thin purple rule labelled "pause", "N× slower" or "no pacing"
+(`_pc_pace_changes`, `_pc_pace_rule_label`) beside a dashed unpaced-US line; phase dates run to
+`_PC_PAUSE_LAST_YM` (Dec 2035), so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
 and released paths; released trails trained by the ship lag, which reproduces the old capped
-climb at 0). Under it, *Cut US R&D compute* (`pc_cut`, `_PC_CUT_OPTIONS`, 1 = off, the default; `pc_cut_mo`,
-0 = for good) divides the compute behind US research by that factor from the pacing date
-(which then stays live at 100% pace, `_no_pace` being false). It is not a clock: the Takeoff
+climb at 0). A phase's compute shares cut or move the compute behind US research while it
+runs (`_no_pace` false). It is not a clock: the Takeoff
 run is rerun with `takeoff.simulate(compute_cut=…)` (`_tk_cut_path`, a month's ramp in and
 out; `_tk_run_cut`, memoized per rerun by `_tk_run_cut_seeded`), twice, the second on coding
 dates moved to where the cut run trains the same ECI (`_tk_cut_onset`; the inherited dates
@@ -391,54 +405,55 @@ lines and `free` China stay on the uncut `tk_free`
 is drawn. The caption under it (`_pc_cut_plan_note`) quotes the nearest pacing plan,
 `_pc_cut_equivalent`: the 5%-step pace and month count whose paced uncut median best tracks
 the cut run's median ECI up to ultraintelligence
-(`test_a_cut_reads_back_the_pacing_plan_that_makes_its_path`); for a lasting cut with no
-other pacing, *Use as a pacing plan* turns the cut off and writes that plan to phase 1. A
-plan cannot outrun no pacing, so a cut that ends (rebound) gets the caption but no button,
-and compute changes whose median path is no slower get "do not slow the US" instead.
+(`test_a_cut_reads_back_the_pacing_plan_that_makes_its_path`); compute changes whose median
+path is no slower get "do not slow the US" instead. It offers no button to swap the plan in,
+which would change the plan from a caption rather than the list.
 
-Compute can also move by use. The base rows' compute sliders
-(`pc_cut_train/exp/agents`, `_PC_USE_OPTIONS`, % of today's, 100 = off) and each phase's
-`pc_win{i}_train/exp/agents` set the share kept for training, experiments and AI
-researchers; a value over 100 is compute moved in, and `_pc_compute_total_note` says what
-the three sum to at Takeoff's training and experiment shares. The base rows' shares multiply
-with its ÷k and with any phase running at the same time (`_pc_cut_spans`), and
-`_pc_cut_schedule` hands Takeoff either the plain `(factor, start, end)` cut, when the
-base rows' uniform cut stands alone (so its memo key and numbers are unchanged), or a tuple
-of `(start, end, kept)` spans that `_tk_cut_path` turns into one log path per use for
-`simulate(compute_cut=(years, {use: logs}))`
+Compute moves by use: each phase's `pc_win{i}_train/exp/agents` (`_PC_USE_OPTIONS`, %
+of no-plan, 100 = off) set the share kept for training, experiments and AI researchers; a
+value over 100 is compute moved in, and `_pc_compute_total_note` says what the three sum to
+at Takeoff's training and experiment shares. Overlapping phases' shares multiply
+(`_pc_cut_spans`), and `_pc_cut_schedule` hands Takeoff a tuple of `(start, end, kept)` spans
+that `_tk_cut_path` turns into one log path per use for
+`simulate(compute_cut=(years, {use: logs}))`; equal paths match a single cut exactly
 (`test_a_cut_schedule_gives_each_use_its_own_path`,
-`test_plan_phases_carry_pace_and_compute_into_the_schedule`). The US plan's levers all sit in the *Pacing plan* expander (open by default, `pc_ex_plan`), the base rows above the phases, none in the sidebar; `pc_win_n` is no widget but the count *Add a phase* (`_pc_add_phase`) raises and a row's X (`_pc_remove_phase`, later phases moving up) lowers. Add a setting to a phase and
-it must join `_PC_DEFAULTS`, `_PC_RESET_KEYS` and `_pc_cut_to_windows` and `_PC_PHASE_FIELDS`. The box's preset
-buttons (`_pc_plan_presets`, `_pc_apply_preset`) each add their phases to the end of the list, so every preset is rows with an X, a phase with no end running to the last month on offer; a preset that would pass `_PC_WIN_MAX` is disabled, with a caption saying why, since a greyed button alone reads as a dead click; *Clear plan* resets base rows and phases
-together, and once the plan does anything the box
+`test_plan_phases_carry_pace_and_compute_into_the_schedule`). `pc_win_n` is no widget but the
+count *Add a phase* (`_pc_add_phase`) raises and a row's X (`_pc_remove_phase`, later phases
+moving up) lowers. Add a setting to a phase and it must join `_PC_DEFAULTS` and
+`_PC_PHASE_FIELDS` (`_PC_RESET_KEYS` reads the latter). The preset buttons
+(`_pc_plan_presets`, `_pc_apply_preset`) each add their phases to the end of the list, from
+`_PC_PAUSE_DEFAULT_YM`, a phase with no end running to the last month on offer; a preset that
+would pass `_PC_WIN_MAX` is disabled, with a caption saying why, since a greyed button alone
+reads as a dead click; *Clear plan* empties the list, and once the plan does anything the box
 draws it (`_pc_plan_fig`: US pace % over the compute kept per use, x-axis ending at the
 projection range; `test_the_plan_builder_sets_phases_presets_and_compute_by_use`).
 The compute race and the state-of-play capacities below do not move with the cut: they
 count installed compute, which the cut puts to other uses rather than removes
-(`test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan`).
+(`test_an_rd_compute_cut_slows_the_us_and_quotes_a_pacing_plan`).
 A rerun whose Pacing settings differ from the last one drawn (`_pc_loading_start`, the
 `_PC_RESET_KEYS` values against `_pc_drawn`) pins a pill over the page that steps through
 `_PC_LOADING_STEPS` (US rerun, China's takeoff, charts) and the dispatch clears; a rerun
 that changes no setting draws none, so opening a section does not flash it
 (`test_pacing_shows_a_loading_pill_only_when_its_settings_change`).
-*Ban runaway RSI* (`pc_ban`, default off; `pc_ban_review`, `_PC_BAN_REVIEW_MONTHS`,
-default 1; in the plan box's base rows, reset by *Clear plan*) is the Humans in Control Act's section 4 on the same rerun path: from the
-pacing date, `takeoff.simulate(review=(start, months))` ends autopilot and holds every
-successor model and fast batch for at least that much human review (1 month is today's
+A phase's *RSI ban* (`pc_win{i}_ban`, `_PC_BAN_OPTIONS`, review months, 0 = off; the *Ban
+runaway RSI* preset adds one at 1) is the Humans in Control Act's section 4 on the same rerun
+path: `_pc_ban_rule` makes one ban from the first banning phase's start to the last one's end
+(for good when that is the last month on offer) at the longest review, and
+`takeoff.simulate(review=(start, months, end))` ends autopilot and holds every successor model
+and fast batch finishing in that span for at least that much human review (1 month is today's
 validation, which AI verification otherwise shrinks toward a day). `_pc_takeoff_us(cut,
 review)` and `_tk_run_cut(run, cut, review)` take both, so the two stack; the labels
-name whichever is on (`_lever`: "US, no RSI ban", "At the RSI ban"), and the plan
-button turns both off. Seed 42, 2,000 samples, ban from Jul 2027: the ultraintelligence
+name whichever is on (`_lever`: "US, no RSI ban", "At the RSI ban"). Seed 42, 2,000 samples, ban from Jul 2027: the ultraintelligence
 median moves late Sep 2028 to late Nov 2028 at 1 month (about 85% pace for 12 months),
 Feb 2029 at 2, Apr 2029 at 3, Dec 2029 at 6 (30% for 17 months): a review is a delay per step,
 not a cap on how big a step is. Section 3's instance caps are not modeled
-(`test_an_rsi_ban_slows_the_us_and_converts_to_a_pacing_plan`,
+(`test_an_rsi_ban_slows_the_us_and_quotes_a_pacing_plan`,
 `test_an_rsi_ban_delays_ultraintelligence_more_for_longer_reviews`).
 Crossing dates are percentiles over every sample, a never-crossed one counting as
 past the window; under half crossing, the cards read *After <year>* with the share that
 does and the breakdown is skipped. Which milestone the dates mean is in the crossing card's
-hover (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set
-`pc_pace` to 0 in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. The US path is the Takeoff tab's: `_pc_takeoff_us` reads `_tk_run`
+hover (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set one phase at
+0% with no end (`_plan` in `test_integration.py`) in `TestPacingTab._app`. The pacing date and `_pc_render_us_pause()` follow. The US path is the Takeoff tab's: `_pc_takeoff_us` reads `_tk_run`
 (seeded, so it neither depends on nor shifts this tab's stream) and each sample follows one
 Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead; the chart
 marks when the paced US reaches automated coding and RSI (`us_ms`): each scenario's own
@@ -480,22 +495,21 @@ best *trained* models, and China's start is its measured frontier. Under the cha
 ultraintelligence (Takeoff's `tk_ultra_eci`, via `_pc_takeoff_us`'s `ultra`) for both sides from `ms_years`, the same per-sample first
 crossings the chart's marks take medians of (`test_milestone_table_dates_both_sides`, `test_milestone_table_follows_the_takeoff_threshold`); the chart's top sits `_PC_ECI_VIEW_PAST_ULTRA` above that level
 (`test_speedup_multiplies_chinas_rate_and_is_its_own_channel`). It is capability-indexed and
-unpaced: pacing slows the US, not what AI at a given ECI does for research. `pc_pause_mo` and
+unpaced: pacing slows the US, not what AI at a given ECI does for research. The pacing date and
 the `_pc_capacity_at()` reading it implies are rendered by `render_pacing()`, not
 by the panel, because the race below needs the same bar; the panel takes
 `pause_d` and `caps` as arguments. The US pauses on that date, frozen at whatever
 its compute-derived climb reached by then,
 per sample (`us_pause_level` and the sim target are arrays — only the climb is
-uncertain, the date is chosen). The control is a `select_slider` over
+uncertain, the date is chosen). Phase dates are selectboxes over
 months-from-today with `format_func` labelling each position with the date
-(`_pc_add_months`, whole calendar months so no label repeats): it reads as a date
-picker while the stored value stays an int, which round-trips through the URL and
-can never go stale the way the scenario cut-off *labels* can. With no pacing (pace 100%, no windows) a greyed
-stand-in shows today, which the snapshot and race then read, and `pc_withhold` is disabled
-and ignored; `pc_pause_mo` stays in state for when pacing returns
-(`test_the_pacing_date_and_model_access_grey_out_with_no_pacing`). The default is
-`_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
-than a hardcoded month count, so the reset restores a *date*. The pause is on the
+(`_pc_add_months`, whole calendar months so no label repeats): they read as date
+pickers while the stored value stays an int, which round-trips through the URL and
+can never go stale the way the scenario cut-off *labels* can. With no phases the snapshot
+and race read today, and `pc_withhold` is disabled and ignored
+(`test_the_pacing_date_and_model_access_grey_out_with_no_pacing`). Presets and new phases
+start at `_pc_pause_default_mo()`, the offset to `_PC_PAUSE_DEFAULT_YM` (Jul 2027) rather
+than a hardcoded month count. The pause is on the
 **run-finished** clock; the displayed date carries `timing_label`'s
 offset (each side's own release lag on *Model release*). `_pc_capacity_at()` reads
 it off the series shifted by one run, the clock the race's rows use by default, so
@@ -562,8 +576,7 @@ remote cut's setback takes proportionally longer to regrow, and the breakdown's
 against, the whole band scales by `1−p`.
 An *Advanced* expander dates the two cuts (`pc_dist_when` / `pc_remote_when`,
 `_pc_when_options` month labels — strings, so they round-trip through the URL and
-reset to a constant `Now` = the checkbox alone; a stale label is dropped like
-`pc_pause_mo`). Sliders are `disabled` without their checkbox. It also carries
+reset to a constant `Now` = the checkbox alone; a stale label is dropped). Sliders are `disabled` without their checkbox. It also carries
 `pc_cn_run` (2–12 months, min = the bar's own run length, default = it): China need
 not match the length the bar was set at. A longer run is a one-off **level** move,
 never a faster rate — ×(L/L_us) compute into one model, worth `a_partial` per ×10 —
