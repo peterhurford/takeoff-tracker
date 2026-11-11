@@ -17273,8 +17273,15 @@ def _render_cc_compute_sources():
                        if hi > lo else "")
                 cd.append(f"{v / 1e6:,.2f}M H100e ({v / tot:.0%} of the bar)"
                           f"{rng}<br>{words}")
+            # The legend shows each channel plain, from a zero-height bar in
+            # its group; the data bar's swatch would take its first year's
+            # hatch or fade (`test_the_legend_keys_channels_and_bases_apart`).
             fig.add_trace(go.Bar(
-                x=xs, y=vals, name=label,
+                x=[xs[0]], y=[0.0], name=label, legendgroup=key,
+                marker=dict(color=color, line=dict(color='white', width=1)),
+                hoverinfo='skip'))
+            fig.add_trace(go.Bar(
+                x=xs, y=vals, name=label, legendgroup=key, showlegend=False,
                 marker=dict(color=color, opacity=op,
                             line=dict(color='white', width=1),
                             pattern=dict(shape=pat, fillmode='overlay',
@@ -17282,6 +17289,18 @@ def _render_cc_compute_sources():
                 customdata=cd,
                 hovertemplate="%{x}: %{customdata}<extra>" + label
                               + "</extra>"))
+        # Two keys for the bases, in neutral grey.
+        _ifp_alpha = _CN_SRC_BASIS["ifp"][1]
+        for name, alpha, shape in (
+                ("Projected (IFP)", _ifp_alpha, ''),
+                ("Our estimate / projection (hatched)", 1.0, '/')):
+            fig.add_trace(go.Bar(
+                x=[xs[0]], y=[0.0], name=name, legendgroup=name,
+                marker=dict(color='#8C8C8C', opacity=alpha,
+                            line=dict(color='white', width=1),
+                            pattern=dict(shape=shape, fillmode='overlay',
+                                         fgcolor='white', size=6)),
+                hoverinfo='skip'))
         # Shares, with each year's total printed over its bar: the totals
         # span three orders of magnitude, which a linear axis flattens.
         for i, rows in enumerate(rows_by_year.values()):

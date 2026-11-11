@@ -81,6 +81,14 @@ larger. Epoch's cluster share (`_WC_EPOCH_CLUSTER_SHARE`) sits beside our back-r
 its date, flagged as a share of tracked clusters holding an estimated 10-20% of world
 compute (`TestCcCrossCheck`, `test_cross_check_sets_the_app_beside_epoch`).
 
+## China tab — by-source legend
+
+Each by-source bar carries its year's fade and hatch, and a legend swatch copies a trace's
+first point, so the data bars stay out of the legend (`showlegend=False`, grouped by
+channel) and a zero-height plain bar per channel stands in for them, with two grey keys for
+the bases (`test_the_legend_keys_channels_and_bases_apart`). Pacing's
+`_pc_render_compute_mix` draws plain bars with no fade or hatch, so it needs none.
+
 ## China tab — smuggling range
 
 `_render_cc_smuggling_range` holds every input central but the smuggled stock, set to its

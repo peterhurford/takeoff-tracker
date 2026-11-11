@@ -1753,6 +1753,36 @@ class TestCcComputeSourcesTab:
         assert "Faded bars are projections" in caps
 
 
+    def test_the_legend_keys_channels_and_bases_apart(self):
+        """Each by-source chart's legend shows every channel plain and two
+        grey keys for the bases; the data bars, which carry the per-year
+        fade and hatch, stay out of it."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "china"
+        at.run()
+        _assert_no_error(at, "China")
+        charts = [json.loads(c.proto.spec) for c in at.get("plotly_chart")]
+        charts = [c for c in charts if (c["layout"].get("yaxis", {}).get(
+            "title", {}).get("text") == "Share of H100e")]
+        assert len(charts) == 2
+        labels = [lab for _k, lab, _c in vp._CN_SOURCES]
+        for c in charts:
+            shown = [d for d in c["data"] if d.get("showlegend") is not False]
+            assert [d["name"] for d in shown] == labels + [
+                "Projected (IFP)", "Our estimate / projection (hatched)"]
+            for d in shown[:len(labels)]:
+                m = d["marker"]
+                assert not (m.get("pattern") or {}).get("shape")
+                assert m.get("opacity", 1) == 1
+                assert d["y"] == [0.0]
+            assert shown[-1]["marker"]["pattern"]["shape"] == "/"
+            assert shown[-2]["marker"]["opacity"] < 1
+            data = [d for d in c["data"] if d.get("showlegend") is False]
+            assert {d["legendgroup"] for d in data} == {
+                k for k, _l, _c in vp._CN_SOURCES}
+
+
 class TestRsiTab:
     """CoBench score vs release date, plus the fitted trend."""
 
