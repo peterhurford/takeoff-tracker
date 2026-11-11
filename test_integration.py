@@ -2948,9 +2948,10 @@ class TestDataCentersRegionShare:
         at = self._app()
         [line] = [str(m.value) for m in at.markdown
                   if "of the world's AI compute is in the US" in str(m.value)]
-        pct = [int(x) for x in re.findall(r"(\d+)%", line)]
-        assert len(pct) == 4
-        us_guess, cn_guess, us_tracked, cn_tracked = pct
+        us_guess, cn_guess = (int(x) for x in
+                              re.findall(r"\*\*(\d+)% \(", line))
+        us_tracked, cn_tracked = (
+            int(x) for x in re.search(r"say (\d+)% and (\d+)%", line).groups())
         assert us_tracked > us_guess and cn_guess > cn_tracked
 
     def test_the_headline_is_the_split_the_chart_prints_today(self):
@@ -2960,7 +2961,8 @@ class TestDataCentersRegionShare:
         at = self._app()
         [line] = [str(m.value) for m in at.markdown
                   if "of the world's AI compute is in the US" in str(m.value)]
-        us_guess, cn_guess = (int(x) for x in re.findall(r"(\d+)%", line)[:2])
+        us_guess, cn_guess = (int(x) for x in
+                              re.findall(r"\*\*(\d+)% \(", line))
         cen = vp._wc_central_shares(datetime.now(), [0.0])
         assert us_guess == round(float(cen[vp._WC_LABELS[0]][0]))
         assert cn_guess == round(float(cen[vp._WC_LABELS[1]][0]))
@@ -2970,6 +2972,24 @@ class TestDataCentersRegionShare:
         edge = {a["text"] for a in spec["layout"]["annotations"]
                 if a.get("xanchor") == "left"}
         assert f"{us_guess}%" in edge and f"{cn_guess}%" in edge
+
+    def test_the_headline_ranges_are_the_bars_whiskers(self):
+        """The US and China ranges in the headline are the Today bars'
+        whiskers (10th and 90th of the same draws), to two figures."""
+        at = self._app()
+        [line] = [str(m.value) for m in at.markdown
+                  if "of the world's AI compute is in the US" in str(m.value)]
+        rng = [(float(a), float(b)) for a, b in
+               re.findall(r"\*\*\d+% \(([\d.]+)\u2013([\d.]+)%\)", line)]
+        assert len(rng) == 2 and "80% ranges" in line
+        bar = next(tr for c in at.get("plotly_chart")
+                   for tr in json.loads(c.proto.spec).get("data", [])
+                   if tr.get("name") == "Best guess")
+        for i, (lo, hi) in enumerate(rng):
+            med, e = bar["x"][i], bar["error_x"]
+            assert lo == float(f"{med - e['arrayminus'][i]:.2g}")
+            assert hi == float(f"{med + e['array'][i]:.2g}")
+            assert lo <= med <= hi
 
     def test_not_on_the_china_tab(self):
         at = _fresh_app()
@@ -3231,6 +3251,7 @@ class TestPacingTab:
         cross = next(c for c in tbl.columns if c.startswith("China catches up"))
         row = tbl[tbl["Compares"].str.startswith("Installed compute")].iloc[0]
         assert row[cross].endswith("US " + at.metric[-1].value)
+        assert "(80%)" in at.metric[-1].proto.delta
         # Order on the page: the cards, then the warning, then the table.
         def walk(node):
             for c in getattr(node, "children", {}).values():

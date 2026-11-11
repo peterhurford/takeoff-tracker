@@ -5289,6 +5289,32 @@ class TestPacing:
             cn(today, {}, t_cut - 0.01))
         assert cn(today, cut, t30) == pytest.approx(ins)
 
+    def test_compute_lead_band_brackets_the_card_and_moves_no_draw(
+            self, monkeypatch):
+        """The lead's 80% range straddles the card's central ratio, repeats
+        exactly, leaves numpy's generator where it was, and narrows to the
+        ratio when every drawn input is held at its centre."""
+        today = datetime(2026, 10, 23)
+        when = datetime(2031, 12, 31)
+        t = [(when - today).days / 365.25]
+        r = float(vp._pc_us_installed(today, t)[0]
+                  / vp._pc_cn_installed(today, {}, t)[0])
+        monkeypatch.setattr(vp, "_pc_compute_lead",
+                            lambda ci: (r, when, False))
+        ci = {"today": today, "mix": {}}
+        np.random.seed(7)
+        before = np.random.get_state()[1].copy()
+        lo, hi = vp._pc_compute_lead_band(ci, n=2000)
+        assert (np.random.get_state()[1] == before).all()
+        assert lo < r < hi
+        assert vp._pc_compute_lead_band(ci, n=2000) == (lo, hi)
+        # Inputs at their centres: the range collapses onto the card.
+        monkeypatch.setattr(vp.np.random, "normal",
+                            lambda m, s, size: np.zeros(size))
+        clo, chi = vp._pc_compute_lead_band(ci, n=50)
+        assert clo == pytest.approx(r, rel=1e-9)
+        assert chi == pytest.approx(r, rel=1e-9)
+
     def test_compute_lead_moves_once_per_lever(self):
         """Every lever in the mix lowers China's installed compute, the
         growth sliders raise or lower it. A domestic cut leaves the US side

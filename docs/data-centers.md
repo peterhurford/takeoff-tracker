@@ -419,7 +419,9 @@ not a reading of the CSVs. Six things are load-bearing:
    all-central scenario (`_wc_central_shares`), which sums to 100 with no
    rescaling; the *Today* bars and headline read it at today, so the headline
    matches the chart's Today edge
-   (`test_the_headline_is_the_split_the_chart_prints_today`).
+   (`test_the_headline_is_the_split_the_chart_prints_today`); its US and China
+   ranges are those bars' whiskers, the same draws at two significant figures
+   (`_wc_range`, `test_the_headline_ranges_are_the_bars_whiskers`).
 4. **It is by location, not owner.** Same convention as the Data Centers tab's
    region chart, so Chinese labs' capacity abroad counts under SEA, and most of
    Europe/UK is US firms building there. The area chart opens at `_CC_X_START`

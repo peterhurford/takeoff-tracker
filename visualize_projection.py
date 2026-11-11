@@ -16736,6 +16736,13 @@ def _wc_band(arr):
     return f"{med:.0f}% ({lo:.0f}\u2013{hi:.0f})"
 
 
+def _wc_range(arr):
+    """'5.5–9%': the 10th to 90th percentile of a share, two significant
+    figures, for the headline."""
+    lo, hi = (float(f"{np.percentile(arr, q):.2g}") for q in (10, 90))
+    return f"{lo:g}\u2013{hi:g}%"
+
+
 def _render_world_shares(today, horizon):
     """Where the world's AI compute is, and where it is heading.
 
@@ -16777,11 +16784,15 @@ def _render_world_shares(today, horizon):
         "8-bit; they are taken as the same unit, an assumption.")
 
     _fn_line(
-        f"About **{med[us]:.0f}% of the world's AI compute is in the US** "
-        f"and **{med[cn]:.0f}% in mainland China**, of about "
-        f"{world[i0]:.0f}M H100e installed worldwide. The tracked sites "
-        f"alone say {catalogued.get(us, 0):.0f}% and "
+        f"About **{med[us]:.0f}% ({_wc_range(shares[us])}) of the world's AI "
+        f"compute is in the US** and **{med[cn]:.0f}% "
+        f"({_wc_range(shares[cn])}) in mainland China** (80% ranges), of "
+        f"about {world[i0]:.0f}M H100e installed worldwide. The tracked "
+        f"sites alone say {catalogued.get(us, 0):.0f}% and "
         f"{catalogued.get(cn, 0):.0f}%.",
+        ("80% ranges", "The Today bars' whiskers, from the same draws: "
+                       "CTS's output, China's domestic and smuggled stocks "
+                       "and the split outside China."),
         ("installed worldwide", _identity),
         ("tracked sites alone", "Epoch's catalogue, which the rest of this "
                                 "tab reads: large frontier sites, mostly "
@@ -19624,6 +19635,31 @@ def _pc_compute_lead(ci):
             rp['end_d'], rp['cross'])
 
 
+def _pc_compute_lead_band(ci, n=None):
+    """The compute lead's 80% range (p10, p90) at `_pc_compute_lead`'s date,
+    or None: the world identity at drawn CTS output and drawn domestic and
+    smuggled stocks (`_wc_stocks`), the US its drawn share of the rest
+    (`_wc_split_paths`), China's legal sales and remote access central.
+    Seeded, and the generator's state put back, so no draw around it moves
+    (`test_compute_lead_band_brackets_the_card_and_moves_no_draw`)."""
+    lead = _pc_compute_lead(ci)
+    if lead is None:
+        return None
+    n = n or N_SAMPLES
+    today, mix = ci['today'], ci.get('mix')
+    t = [(lead[1] - today).days / 365.25]
+    with _seeded_rng(_APP_SEED):
+        z = np.random.normal(0.0, 1.0, (3, n))
+        world, china = _wc_stocks(today, t, mix, z_us=z[0], z_dom=z[1],
+                                  z_smug=z[2])
+        us = (world - china)[0] * _wc_split_paths(t, n)[_WC_LABELS[0]][0]
+    # China's remote stock, and its legal sales, at their central values.
+    _w0, china0 = _wc_stocks(today, t, mix)
+    rest = float(_pc_cn_installed(today, mix, t)[0]) - float(china0[0, 0])
+    ratio = us / (china[0] + rest)
+    return tuple(float(np.percentile(ratio, q)) for q in (10, 90))
+
+
 def _pc_render_compute_ratios(ci):
     """How far ahead the US is in compute (`_pc_ratio_paths`), the gap
     between its clusters and its trained run being the overhang; and total
@@ -22266,11 +22302,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _lead = _pc_compute_lead(compute_info)
     if _lead is not None:
         _r, _rd, _rx = _lead
+        _fx = (lambda v: f"{v:.1f}\u00d7" if v < 10 else f"{v:,.0f}\u00d7")
+        _band = _pc_compute_lead_band(compute_info)
         _cards.append((
             "US compute lead at the crossing" if _rx
             else f"US compute lead, end-{_rd:%Y}",
-            f"{_r:.1f}\u00d7" if _r < 10 else f"{_r:,.0f}\u00d7",
-            f"total installed, {_rd:%b %Y}",
+            _fx(_r),
+            (f"{_fx(_band[0])} \u2013 {_fx(_band[1])} (80%), {_rd:%b %Y}"
+             if _band else f"total installed, {_rd:%b %Y}"),
             "US over China in total installed AI compute, "
             + ("at the median crossing date" if _rx else
                f"at the end of {_rd:%Y}, since China has not caught up by then")
@@ -22289,7 +22328,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
               "the date move it; the model-access levers move it only "
               "through the crossing date. The table under *Compute: total installed* gives both "
               "sides' levels, and the largest-run rows the gap in single "
-              "runs."))
+              "runs. The 80% range is at that date: it draws CTS's output, "
+              "the compute mix's domestic and smuggled stocks and the US's "
+              "share of the compute outside China; legal sales and remote "
+              "access stay central."))
     for _col, (_lab, _val, _dlt, _hlp) in zip(st.columns(len(_cards)), _cards):
         _col.metric(_lab, _val, _dlt, delta_color="off", help=_hlp)
     if _run_note:
