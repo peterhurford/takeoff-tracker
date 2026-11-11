@@ -12269,14 +12269,21 @@ _WC_GROWTH = (
 # deliveries from every tracked designer: Nvidia, Google, AMD, Amazon,
 # Huawei, Cambricon), plus each later year's US-and-allied chip output from
 # the CTS report (`load_duv_production()["us"]`) and China's domestic output
-# from its compute mix. Deliveries with nothing retired, so an upper read of
-# what is installed. CTS counts dense FP16 H100e: the two are taken as one
+# from its compute mix, each year's chips retired `_CHIP_LIFE_YEARS` later.
+# CTS counts dense FP16 H100e: the two are taken as one
 # unit, an assumption (an H100e reads about the same on both bases,
 # CHINA_COMPUTE_JUDGMENTS.md §5). Epoch's mid-2026 reading is a check, not a
 # pin (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`):
 # CTS gives only calendar-year output, so pinning mid-2026 would need a guess
 # at its H1/H2 split.
 _WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
+# Every year's chips retire this many years later, on both sides: the world
+# (`_wc_stocks`) and China's compute mix (`_cn_src_retired`), so the China
+# tab, Pacing and China's takeoff read one retired stock. Epoch puts a
+# typical AI chip's life at 3-6 years; AI-2027 assumes about 4
+# (`test_each_cohort_retires_after_the_chip_life`). Whole years: cohorts are
+# calendar years.
+_CHIP_LIFE_YEARS = 5
 _WC_WORLD_END2025 = 20.4e6
 _WC_WORLD_MID2026 = (datetime(2026, 6, 30), 31.7e6, 27.8e6, 36.0e6)
 # Installed means arrived: Epoch's AI chip imports explorer assumes a chip
@@ -12434,7 +12441,10 @@ def load_china_compute_sources(mtime=None):
 def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH,
                        legal_growth=_CN_SRC_LEGAL_COUNT_GROWTH,
                        smug_growth=_CN_SRC_SMUGGLED_COUNT_GROWTH):
-    """Flows and stocks for `_CN_SRC_PROJ_YEARS`, in `data`'s format.
+    """Flows for `_CN_SRC_PROJ_YEARS`, and stocks for every year, stored and
+    projected, each year's cohort retired `_CHIP_LIFE_YEARS` later
+    (`_cn_src_retired`), in `data`'s format; merged over `data`'s, the
+    retired stocks replace the stored ones.
 
     From the last stored year: domestic output grows at `growth` (its range
     at ÷/× `_DUV_CN_OUTPUT_SPREAD`, each from the last stored year's own
@@ -12476,7 +12486,23 @@ def _cn_src_projection(data, growth=_DUV_CN_OUTPUT_GROWTH,
         for k, v in f.items():
             run[k] = [r + x for r, x in zip(run[k], v)]
         stock[str(y)] = {k: (*v, "projected") for k, v in run.items()}
-    return {"flow": flow, "stock": stock}
+    return {"flow": flow,
+            "stock": _cn_src_retired({**data["flow"], **flow},
+                                     {**data["stock"], **stock})}
+
+
+def _cn_src_retired(flow, stock):
+    """`stock` ({period: {source: (h100e, p5, p95, basis)}}, cumulative)
+    less every flow at least `_CHIP_LIFE_YEARS` older than its period, each
+    of central, low and high its own, floored at 0."""
+    life = _CHIP_LIFE_YEARS
+    out = {}
+    for p, rows in stock.items():
+        gone = [flow[q] for q in flow if int(q) <= int(p) - life]
+        out[p] = {k: tuple(max(r[i] - sum(g[k][i] for g in gone), 0.0)
+                           for i in range(3)) + (r[3],)
+                  for k, r in rows.items()}
+    return out
 
 
 def _cn_src_channel_cut(start, end, cuts, data=None,
@@ -12503,7 +12529,10 @@ def _cn_src_channel_cut(start, end, cuts, data=None,
     def _in_china(rows):
         return sum(rows[k][0] for k in _CN_SRC_IN_CHINA)
 
-    def _stock_at(t):
+    # Chips retire `_CHIP_LIFE_YEARS` after they arrive, removed ones too.
+    life = timedelta(days=365.25 * _CHIP_LIFE_YEARS)
+
+    def _made_by(t):
         run = 0.0
         for p, rows in flow.items():
             y0 = datetime(int(p), 1, 1)
@@ -12511,12 +12540,19 @@ def _cn_src_channel_cut(start, end, cuts, data=None,
             run += _in_china(rows) * min(max((t - y0) / (y1 - y0), 0.0), 1.0)
         return run
 
-    removed = 0.0
-    for p, rows in flow.items():
-        y0, y1 = datetime(int(p), 1, 1), datetime(int(p) + 1, 1, 1)
-        lap = (min(end, y1) - max(start, y0)) / (y1 - y0)
-        if lap > 0:
-            removed += lap * sum(rows[k][0] * f for k, f in cuts.items())
+    def _removed_by(t):
+        out = 0.0
+        for p, rows in flow.items():
+            y0, y1 = datetime(int(p), 1, 1), datetime(int(p) + 1, 1, 1)
+            lap = (min(t, y1) - max(start, y0)) / (y1 - y0)
+            if lap > 0:
+                out += lap * sum(rows[k][0] * f for k, f in cuts.items())
+        return out
+
+    def _stock_at(t):
+        return _made_by(t) - _made_by(t - life)
+
+    removed = _removed_by(end) - _removed_by(end - life)
     s0, s1 = _stock_at(start), _stock_at(end)
     if s0 <= 0 or s1 <= s0:
         return 0.0
@@ -12541,7 +12577,7 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
     (0-1, the further-slowdown slider) and, year by year, by `dom_cut_path`
     ({year: 0-1}, the DUVi cuts): each year's flow growth g becomes
     g^(1 - cut), compounding. Stocks are the baseline's
-    less the flows removed. Same format as `load_china_compute_sources`.
+    less the flows removed, each retired with its cohort. Same format as `load_china_compute_sources`.
     """
     data = data or load_china_compute_sources(_cn_src_mtime())
     proj = _cn_src_projection(data, legal_growth=legal_growth,
@@ -12554,7 +12590,7 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
         y0, y1 = datetime(int(p), 1, 1), datetime(int(p) + 1, 1, 1)
         return min(max((y1 - d) / (y1 - y0), 0.0), 1.0)
 
-    out_f, out_s, removed = {}, {}, {k: 0.0 for k, *_ in _CN_SOURCES}
+    out_f, out_s, cut_by = {}, {}, {}
     dom_ratio, v_prev = 1.0, None
     for p, rows in flow.items():
         mult = {"legal": 1.0 - (_after(legal_start or today, p)
@@ -12571,8 +12607,11 @@ def _cn_src_with_policy(today, *, smug_cut=0.0, smug_start=None,
         mult["domestic"] *= 1.0 - hbm_cut * _after(hbm_start or today, p)
         out_f[p] = {k: (r[0] * mult[k], r[1] * mult[k], r[2] * mult[k], r[3])
                     for k, r in rows.items()}
-        for k, r in rows.items():
-            removed[k] += r[0] - out_f[p][k][0]
+        # Chips a lever kept out would have retired with their cohort.
+        cut_by[p] = {k: r[0] - out_f[p][k][0] for k, r in rows.items()}
+        removed = {k: sum(c[k] for q, c in cut_by.items()
+                          if int(q) > int(p) - _CHIP_LIFE_YEARS)
+                   for k in rows}
         lost = (remote_cut is not None
                 and remote_cut < datetime(int(p) + 1, 1, 1))
         out_s[p] = {k: ((0.0, 0.0, 0.0, r[3]) if k == "remote" and lost
@@ -16065,17 +16104,21 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     today, each shaped (len(years), n) for n draws of the z's.
 
     Chips made: the world at each year-end is `_WC_WORLD_END2025` plus
-    cumulative CTS US-and-allied output and China's domestic output since.
+    cumulative CTS US-and-allied output and China's domestic output since,
+    each year's chips retired `_CHIP_LIFE_YEARS` later: the US-and-allied
+    part is its cumulative less the same `_CHIP_LIFE_YEARS` earlier, back-run
+    before end-2025, and China's domestic part the mix's retired stock.
     Chips arrived: everything but China's domestic stock is read `lag`
     years earlier (`_WC_ARRIVAL_LAG_YEARS`; 0 gives chips made). China is the
-    compute mix's domestic + legal + smuggled stock under `mix`
+    compute mix's retired domestic + legal + smuggled stock under `mix`
     (`_cn_src_with_policy` keywords). CTS's low and high output (from
     `_WC_US_WIDE_FROM`, widened to `_WC_US_LOW_RATIO` / `_WC_US_HIGH_RATIO`
     of central where those are wider) sit at `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
     ∓1.64; legal sales stay central, their range small beside smuggling's.
     Past the mix's last year China and its domestic stock continue at their
-    own last-year growth, and the world past CTS's last year at its last;
-    before end-2025 the world runs back at its 2026 growth. Both are log-linear between year-ends (Dec 31).
+    own last-year growth, and the US-and-allied cumulative past CTS's last
+    year at its last; before end-2025 the world runs back at its 2026
+    growth. All are log-linear between year-ends (Dec 31).
     """
     m = dict(mix or {})
     m.pop("remote_cut", None)
@@ -16100,12 +16143,21 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     for y in range(mix_last + 1, last + 1):
         for s in (dom, cn):
             s[y] = s[y - 1] * s[mix_last] / s[mix_last - 1]
-    world = {y0: np.full_like(z_us, _WC_WORLD_END2025)}
+    # US-and-allied chips made to date: the world at end-2025 less China's
+    # domestic stock then (no cohort old enough to retire), plus CTS output.
+    life = _CHIP_LIFE_YEARS
+    made = {y0: _WC_WORLD_END2025 - dom[y0]}
     for y in range(y0 + 1, last + 1):
-        world[y] = (world[y - 1] + _wc_skew(us[y], z_us, 1.2816) * 1e6
-                    + dom[y] - dom[y - 1] if y in us
-                    else world[y - 1] ** 2 / world[y - 2])
-    world[first] = world[y0] ** 2 / world[y0 + 1]
+        made[y] = (made[y - 1] + _wc_skew(us[y], z_us, 1.2816) * 1e6
+                   if y in us else made[y - 1] ** 2 / made[y - 2])
+    # Before end-2025 the world runs back at its 2026 growth.
+    w0 = _WC_WORLD_END2025
+    g = (made[y0 + 1] + dom[y0 + 1]) / w0
+    for y in range(first - life, y0):
+        dom_y = (dom[y] if y in dom else
+                 stock[str(y)]["domestic"][0] if str(y) in stock else 0.0)
+        made[y] = np.maximum(w0 * g ** (y - y0) - dom_y, 1.0)
+    allied = {y: made[y] - made[y - life] for y in ys}
     t = np.array([(datetime(y, 12, 31) - today).days / 365.25 for y in ys])
     yrs = np.atleast_1d(np.asarray(years, dtype=float))
 
@@ -16119,7 +16171,6 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     # Everything but China's domestic chips arrives `lag` after it is made.
     # That part is interpolated on its own, so a domestic cut, which moves
     # `dom` alone, leaves it exactly where it was.
-    allied = {y: world[y] - dom[y] for y in ys}
     return (_interp(allied, yrs - lag) + _interp(dom, yrs),
             _interp(cn, yrs))
 
@@ -16718,8 +16769,8 @@ def _render_world_shares(today, horizon):
         f"Epoch's end-2025 chip-sales total, "
         f"{_WC_WORLD_END2025 / 1e6:.1f}M H100e, plus every chip made since: "
         "US-and-allied output from the CTS lithography report and China's "
-        "domestic output from its compute mix (the China tab), nothing "
-        "retired. Chips outside China count "
+        "domestic output from its compute mix (the China tab), each "
+        f"year's chips retired {_CHIP_LIFE_YEARS} years later. Chips outside China count "
         f"{_WC_ARRIVAL_LAG_YEARS * 12:.0f} months after they are made, the "
         "arrival delay Epoch's chip imports explorer assumes (an assumption, "
         "not a measurement). CTS counts dense 16-bit H100e and Epoch dense "
@@ -16975,7 +17026,7 @@ def _render_cc_compute_sources():
         st.plotly_chart(_fig(flow, "Added each year (total over each bar)"),
                         width="stretch")
     with c2:
-        st.plotly_chart(_fig(stock, "Installed, cumulative from 2022"),
+        st.plotly_chart(_fig(stock, f"Installed, each year's chips retired after {_CHIP_LIFE_YEARS} years"),
                         width="stretch")
     s = stock[end]
     tot = sum(r[0] for r in s.values())
@@ -16988,8 +17039,8 @@ def _render_cc_compute_sources():
         f"Sources: Epoch [chip owners]({_CN_SRC_SOURCE_OWNERS}) data and "
         f"[smuggling estimate]({_CN_SRC_SOURCE_SMUGGLING}) to 2025, "
         f"[IFP]({_CN_SRC_SOURCE_IFP}) for 2026\u201327.",
-        ("could use", "Deliveries since 2022, nothing retired, so an upper "
-                      "read of what is running. Remote access is capacity "
+        ("could use", f"Deliveries since 2022, each year's retired "
+                      f"{_CHIP_LIFE_YEARS} years later. Remote access is capacity "
                       "Chinese firms rent abroad, not chips they own. No "
                       "new US policy is assumed."),
         ("hatched ones are ours",

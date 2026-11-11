@@ -4600,24 +4600,30 @@ class TestChinaComputeSources:
             for i in range(3):
                 assert f["domestic"][i] == pytest.approx(
                     min(f27["domestic"][i] * rates[i] ** (y - 2027), cap[y]))
+            # Stocks run on from 2027's, less each cohort
+            # `_CHIP_LIFE_YEARS` old.
+            flows = {**d["flow"], **p["flow"]}
             for k in f:
                 run[k] += f[k][0]
-                assert p["stock"][str(y)][k][0] == pytest.approx(run[k])
+                gone = sum(flows[q][k][0] for q in flows
+                           if int(q) <= y - vp._CHIP_LIFE_YEARS)
+                assert p["stock"][str(y)][k][0] == pytest.approx(
+                    run[k] - gone)
         # Offshore leasing flattens after 2027, so remote additions fall.
         assert p["flow"]["2029"]["remote"][0] < f27["remote"][0]
 
     def test_chip_count_growth_moves_only_its_own_channel(self):
-        """The default 10%/yr more legal and smuggled chips put ~5.0M and
-        ~5.7M H100e of each in China by end-2030 (~24.4M in China, ~28.9M
-        with remote); 0% smuggling growth holds 2027's count, and each rate
-        moves only its own channel."""
+        """The default 10%/yr more legal and smuggled chips put ~4.6M and
+        ~5.0M H100e of each in China by end-2030, net of retirements (~22.6M
+        in China, ~26.5M with remote); 0% smuggling growth holds 2027's
+        count, and each rate moves only its own channel."""
         d = self._data()
         s30 = vp._cn_src_projection(d)["stock"]["2030"]
-        assert s30["legal"][0] == pytest.approx(4.98e6, rel=0.01)
-        assert s30["smuggled"][0] == pytest.approx(5.66e6, rel=0.01)
+        assert s30["legal"][0] == pytest.approx(4.57e6, rel=0.01)
+        assert s30["smuggled"][0] == pytest.approx(5.02e6, rel=0.01)
         in_cn = sum(s30[k][0] for k in ("domestic", "legal", "smuggled"))
-        assert in_cn == pytest.approx(24.4e6, rel=0.01)
-        assert in_cn + s30["remote"][0] == pytest.approx(28.9e6, rel=0.01)
+        assert in_cn == pytest.approx(22.6e6, rel=0.01)
+        assert in_cn + s30["remote"][0] == pytest.approx(26.5e6, rel=0.01)
         held = vp._cn_src_projection(d, smug_growth=0.0)["flow"]
         f27 = d["flow"]["2027"]["smuggled"]
         for y in vp._CN_SRC_PROJ_YEARS:
@@ -4941,6 +4947,38 @@ class TestCcWorldShares:
             # Renormalizing pulls the medians a little off the inputs.
             assert abs(med - want) < max(1.0, 0.1 * want), (lab, med)
 
+    def test_each_cohort_retires_after_the_chip_life(self, monkeypatch):
+        """Each year's chips leave the stock `_CHIP_LIFE_YEARS` later, on
+        both sides: China's 2027 stock is the stored one less 2022's flow,
+        and the world less China's domestic stock is the US-and-allied
+        chips made by year-end less those made by five years before."""
+        assert vp._CHIP_LIFE_YEARS == 5
+        d = vp.load_china_compute_sources(vp._cn_src_mtime())
+        st27 = vp._cn_src_projection(d)["stock"]["2027"]
+        for k in ("domestic", "legal", "smuggled", "remote"):
+            assert st27[k][0] == pytest.approx(
+                d["stock"]["2027"][k][0] - d["flow"]["2022"][k][0]), k
+        # Years whose cohort five back falls inside the identity's own span.
+        ys = range(2029, 2031)
+        t = [(datetime(y, 12, 31) - self._T).days / 365.25 for y in ys]
+
+        def allied():
+            w, _ = vp._wc_stocks(self._T, t, lag=0.0)
+            st = vp._cn_src_projection(d)["stock"]
+            return {y: float(w[i, 0]) - st[str(y)]["domestic"][0]
+                    for i, y in enumerate(ys)}
+        ret = allied()
+        monkeypatch.setattr(vp, "_CHIP_LIFE_YEARS", 100)
+        made = allied()
+        tb = [(datetime(y - 5, 12, 31) - self._T).days / 365.25 for y in ys]
+        w_back, _ = vp._wc_stocks(self._T, tb, lag=0.0)
+        st = vp._cn_src_projection(d)["stock"]
+        for i, y in enumerate(ys):
+            dom = st[str(y - 5)]["domestic"][0]
+            made_back = float(w_back[i, 0]) - dom
+            assert ret[y] == pytest.approx(made[y] - made_back,
+                                           rel=1e-6), y
+
     def test_world_is_china_plus_the_rest_and_shares_sum_to_100(self):
         """China's share is the mix's in-China stock over the world total;
         the others split the remainder, so every sample sums to 100."""
@@ -4969,7 +5007,8 @@ class TestCcWorldShares:
             want = sum(st[str(y)][k][0] for k in vp._CN_SRC_IN_CHINA)
             assert float(cn[0, 0]) == pytest.approx(want), y
 
-    def test_the_band_draws_cts_scenarios_and_the_mix_s_ranges(self):
+    def test_the_band_draws_cts_scenarios_and_the_mix_s_ranges(
+            self, monkeypatch):
         """CTS's low and high read as 10th and 90th, from 2027 widened to
         the forecasts' ratios to its central where those are wider; the
         mix's p5 and p95 domestic and smuggled stocks as 5th and 95th."""
@@ -4984,6 +5023,9 @@ class TestCcWorldShares:
         assert us[2027][2] < c27 * vp._WC_US_HIGH_RATIO
         us[2027] = (c27 * vp._WC_US_LOW_RATIO, c27,
                     c27 * vp._WC_US_HIGH_RATIO)
+        # Chip life off, so the gap is the band's alone (the pre-2025
+        # cohorts' backcast moves with the 2026 draw).
+        monkeypatch.setattr(vp, "_CHIP_LIFE_YEARS", 100)
         w0, _ = vp._wc_stocks(self._T, [t], lag=0.0)
         lo, _ = vp._wc_stocks(self._T, [t], z_us=-1.2816, lag=0.0)
         hi, _ = vp._wc_stocks(self._T, [t], z_us=1.2816, lag=0.0)
@@ -5230,7 +5272,7 @@ class TestPacing:
         t29 = (datetime(2029, 12, 31) - today).days / 365.25
         cn = vp._pc_cn_installed
         assert cn(today, {}, t30) == pytest.approx(ins + rem)
-        assert ins + rem == pytest.approx(28.9e6, rel=0.01)
+        assert ins + rem == pytest.approx(26.5e6, rel=0.01)
         # Between year-ends each series is geometric; after, it keeps its
         # 2029->30 growth.
         ins29 = sum(st["2029"][k][0] for k in vp._CN_SRC_IN_CHINA)
@@ -5293,16 +5335,26 @@ class TestPacing:
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
 
-    def test_world_stock_is_epochs_anchor_plus_every_chip_made_since(self):
+    def test_world_stock_is_epochs_anchor_plus_every_chip_made_since(
+            self, monkeypatch):
         """Chips made: the world at each year-end is Epoch's end-2025
         chip-sales total plus CTS's US-and-allied output and China's
-        domestic output since, nothing retired, and Epoch's mid-2026 sales
+        domestic output since, and Epoch's mid-2026 sales
         reading (31.7M, 27.8-36.0M) is a check on it, not a pin. Chips
         arrived: the same with everything but China's domestic stock read
         two months earlier, checked by Epoch's 27.39M (24.64-30.21M)
-        arrived by mid-2026."""
+        arrived by mid-2026. Both checks hold with retirements too (the
+        first lines); the identity is read with the chip life off."""
         today = datetime(2026, 11, 10)
         yt = lambda d: (d - today).days / 365.25
+        d26 = yt(vp._WC_WORLD_MID2026[0])
+        made_ret, _ = vp._wc_stocks(today, [d26], lag=0.0)
+        arr_ret, _ = vp._wc_stocks(today, [d26])
+        assert (vp._WC_WORLD_MID2026[2] < float(made_ret[0, 0])
+                < vp._WC_WORLD_MID2026[3])
+        assert (vp._WC_WORLD_ARRIVED_MID2026[2] < float(arr_ret[0, 0])
+                < vp._WC_WORLD_ARRIVED_MID2026[3])
+        monkeypatch.setattr(vp, "_CHIP_LIFE_YEARS", 100)
         ends = [yt(datetime(y, 12, 31)) for y in (2025, 2026, 2027)]
         world, _ = vp._wc_stocks(today, ends, lag=0.0)
         w = world[:, 0]

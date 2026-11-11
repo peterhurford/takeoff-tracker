@@ -358,7 +358,14 @@ not a reading of the CSVs. Six things are load-bearing:
    `_wc_stocks()`: the world at each year-end is Epoch's end-2025 chip-sales
    total (`_WC_WORLD_END2025`, 20.4M H100e) plus every chip made since,
    CTS's US-and-allied output (`load_duv_production()["us"]`) and China's
-   domestic output from its compute mix, nothing retired. China is the mix's
+   domestic output from its compute mix, each year's chips retired
+   `_CHIP_LIFE_YEARS` (5) later; Epoch puts a chip's life at 3–6 years and
+   AI-2027 assumes ~4. The US-and-allied part is chips made by year-end less
+   those made five years before, the years before end-2025 run back at the
+   world's 2026 growth; China's mix retires the same way, stored stocks
+   included (`_cn_src_retired`; the CSV stays gross), so the China tab,
+   Pacing and China's takeoff read one stock
+   (`test_each_cohort_retires_after_the_chip_life`). China is the mix's
    in-China stock (domestic + legal + smuggled); remote access stays abroad.
    CTS counts dense FP16 H100e and Epoch dense 8-bit; they are taken as one
    unit, which holds chip by chip for Nvidia and AMD and is unverifiable for
@@ -383,13 +390,10 @@ not a reading of the CSVs. Six things are load-bearing:
    report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`. Two other
    forecasts bracket CTS's output and set its band from 2027 (item 3): AI-2027's
    compute forecast has 25M H100e made in 2026 and 60M in 2027 (CTS 35M and
-   74M; its world stock is 100M at end-2027 against the identity's 132M, on a
+   74M; its world stock is 100M at end-2027 against the identity's 131M (chips made, retired), on a
    TPP basis with a ~4-year chip life), and Epoch's measured 3.3×/yr
    (2.7–4.1×) carried forward from >10M sold in 2025 gives ~33M and ~109M.
    CTS's own low-to-high for 2027 (67–81M) is narrower than that spread.
-   Nothing is retired: a 5-year chip life on both the world and China would
-   lower the end-2031 world 5% (1,102M to 1,046M) and China's share 0.1
-   point, a 4-year life 12% and 0.1 point.
 2. **Outside China, published shares split the rest.** `_WC_REGIONS` carries
    `(label, central, p10, p90)` for the US, SEA, the UAE, Europe/UK and Other,
    as published beside China's ~9%; only their ratios are used
