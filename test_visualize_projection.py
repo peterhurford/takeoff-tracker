@@ -3360,6 +3360,17 @@ class TestTasteVal:
         assert abs(12 / before - 14.0) < 1.0
         assert abs(12 / after - 3.0) < 0.15
 
+    def test_unscored_models_are_estimated_from_eci(self):
+        """Fable 5.2 reads ~4× off the post-break ECI line, inside its 80%
+        range, and drops out once a measured row for it lands."""
+        rows = vp.load_tasteval()
+        (est,) = vp._tasteval_eci_estimate(rows)
+        assert est['name'] == "Claude Fable 5.2"
+        assert 3.0 < est['mult'] < 5.5 and est['lo'] < est['mult'] < est['hi']
+        assert 4.0 < est['per_doubling'] < 6.0
+        scored = rows + [{**rows[-1], 'name': "Claude Fable 5.2"}]
+        assert vp._tasteval_eci_estimate(scored) == []
+
     def test_dates_are_epochs_release_dates(self):
         with open(os.path.join(os.path.dirname(vp.__file__),
                                "epoch_capabilities_index.csv")) as f:

@@ -707,7 +707,7 @@ rule.
 The sixth section (`_render_rsi_tasteval()`) is TasteVal, outside the automated-coder
 blend but feeding Takeoff's judgment elasticity: Table 2's compute multipliers on a log
 axis with the paper's two fits split at GPT-5.2 (`_tasteval_fit`) against a 1× expert
-line, then the prediction sigmoid (`_tasteval_predict_mase`) against the card's
+line, plus `_TASTEVAL_ESTIMATE`'s unscored models as orange diamonds read off ECI (`_tasteval_eci_estimate`: log2 multiplier on ECI over the scored post-break models, 80% from its residual sd; outside every fit; drop the name once P-Zero's row lands, `test_unscored_models_are_estimated_from_eci`), then the prediction sigmoid (`_tasteval_predict_mase`) against the card's
 90% bar: the paper's, refit with the models P-Zero scored since (`_TASTEVAL_PREDICT_HELDOUT`, Fable 5.2, drawn in orange), 1/CI-weighted over Figure 7's ten digitized models plus those; the same fit on the ten alone returns the paper's path (`test_refit_reproduces_the_paper_then_adds_the_later_models`). The multiplier runs on as a fan from the post-GPT-5.2 fit (80% from half to double its doubling time, widened to the t-interval) with today's diamond; no bar or ETA, since the expert line is already passed and the card dates the prediction curve (`test_tasteval_section_charts_without_dating`).
 
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against

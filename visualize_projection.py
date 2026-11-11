@@ -1564,6 +1564,36 @@ def _tasteval_fit(rows):
     return out
 
 
+# Frontier models P-Zero has not scored (or not yet published), drawn as an
+# estimate from their Epoch ECI; drop a name once its measured row is in
+# `_TASTEVAL_RAW`.
+_TASTEVAL_ESTIMATE = ["Claude Fable 5.2"]
+
+
+def _tasteval_eci_estimate(rows, eci_rows=None):
+    """Each `_TASTEVAL_ESTIMATE` model's multiplier read off ECI: log2
+    multiplier on ECI over the fitted models from the break on, with an 80%
+    range from the fit's residual sd. [{name, date, eci, mult, lo, hi}]."""
+    brk = datetime.strptime(_TASTEVAL_BREAK, '%Y-%m-%d')
+    eci = {r['version']: r for r in (eci_rows or _eci_rows_by_version())}
+    post = [r for r in rows if r['fitted'] and r['date'] >= brk and r['name'] in eci]
+    if len(post) < 3:
+        return []
+    x = np.array([eci[r['name']]['eci'] for r in post])
+    y = np.log2([r['mult'] for r in post])
+    slope, icpt = np.polyfit(x, y, 1)
+    sd = float(np.std(y - (icpt + slope * x), ddof=2))
+    out = []
+    for name in _TASTEVAL_ESTIMATE:
+        if name not in eci or any(r['name'] == name for r in rows):
+            continue
+        c = icpt + slope * eci[name]['eci']
+        out.append({"name": name, "date": eci[name]['date'], "eci": eci[name]['eci'],
+                    "mult": 2 ** c, "lo": 2 ** (c - 1.282 * sd),
+                    "hi": 2 ** (c + 1.282 * sd), "per_doubling": 1 / slope})
+    return out
+
+
 def _tasteval_predict_mase(dates):
     """Figure 7's sigmoid: the MASE the paper's fit gives a model released on
     each date."""
@@ -8859,6 +8889,26 @@ def _render_rsi_tasteval(end_year):
                        f" (95% CI {r['lo']:.2f}–{r['hi']:.2f})"
                        for r in pts],
             hoverinfo='text'))
+    est = _tasteval_eci_estimate(rows)
+    if est:
+        fig.add_trace(go.Scatter(
+            x=[e['date'] for e in est], y=[e['mult'] for e in est],
+            mode='markers+text', name="Estimated from ECI (not scored)",
+            marker=dict(color='white', size=11, symbol='diamond-open',
+                        line=dict(color='#d35400', width=2)),
+            error_y=dict(type='data', symmetric=False,
+                         array=[e['hi'] - e['mult'] for e in est],
+                         arrayminus=[e['mult'] - e['lo'] for e in est],
+                         color='rgba(211,84,0,0.4)', thickness=1.2, width=3),
+            text=[e['name'].replace('Claude ', '') + " (est.)" for e in est],
+            textposition='middle right', textfont=dict(size=10, color='#d35400'),
+            hovertext=[f"{e['name']}<br>{e['date'].strftime('%b %d, %Y')}"
+                       f"<br>Estimated multiplier: {e['mult']:.1f}× "
+                       f"(80% {e['lo']:.1f}–{e['hi']:.1f}×)<br>from its ECI "
+                       f"{e['eci']:.1f}, at 2× per {e['per_doubling']:.1f} ECI "
+                       "points (the scored models since GPT-5.2); not in the fit"
+                       for e in est],
+            hoverinfo='text'))
     # Only the leader is named: the models just past 1× ship within weeks of
     # each other and their labels collide.
     top = max(rows, key=lambda r: r['mult'])
@@ -8943,7 +8993,10 @@ def _render_rsi_tasteval(end_year):
          "Each model at its main setting, the highest reasoning available "
          "(GPT-5.2 at high). Grey points are the paper's non-frontier models "
          "(the Kimis and GLM-5.3) and two baselines outside its fit; dates "
-         "are Epoch's release dates."))
+         "are Epoch's release dates. The orange diamond is not scored: its "
+         "multiplier is estimated from its ECI, on the line the scored models "
+         "since GPT-5.2 trace from ECI to multiplier, which the Chinese "
+         "models also sit on."))
 
     pred_end = datetime(end_year, 12, 31)
     first = datetime(2024, 4, 9)               # GPT-4 Turbo, the paper's first

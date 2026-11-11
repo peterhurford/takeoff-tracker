@@ -1827,7 +1827,7 @@ class TestRsiTab:
         assert mult["layout"]["yaxis"]["type"] == "log"
         assert any(s.get("y0") == s.get("y1") == 1.0 for s in mult["layout"]["shapes"])
         names = {t.get("name") for t in mult["data"]}
-        assert {"80% CI", "Median projection"} <= names
+        assert {"80% CI", "Median projection", "Estimated from ECI (not scored)"} <= names
         assert any(str(t.get("text", [""])[0]).startswith("today (est.)")
                    for t in mult["data"] if t.get("mode") == "markers+text")
         pred = next(f for f in figures if any(
