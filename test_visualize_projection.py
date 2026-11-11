@@ -4975,9 +4975,9 @@ class TestCcWorldShares:
         t = (datetime(2027, 12, 31) - self._T).days / 365.25
         us = {y: (lo, c, hi) for y, lo, c, hi
               in vp.load_duv_production(vp._duv_mtime())["us"]}
-        w0, _ = vp._wc_stocks(self._T, [t])
-        lo, _ = vp._wc_stocks(self._T, [t], z_us=-1.2816)
-        hi, _ = vp._wc_stocks(self._T, [t], z_us=1.2816)
+        w0, _ = vp._wc_stocks(self._T, [t], lag=0.0)
+        lo, _ = vp._wc_stocks(self._T, [t], z_us=-1.2816, lag=0.0)
+        hi, _ = vp._wc_stocks(self._T, [t], z_us=1.2816, lag=0.0)
         add = lambda w: (w[0, 0] - vp._WC_WORLD_END2025) / 1e6
         # Domestic adds are the same at every z_us, so the gap is CTS's.
         assert add(w0) - add(lo) == pytest.approx(
@@ -5050,9 +5050,11 @@ class TestCcWorldShares:
                     for l in paths if l != "US domestic"}
             tot = sum(gain.values())
             return {l: g / tot for l, g in gain.items()}
+        np.random.seed(0)
         indep = absorbed(vp._wc_split_paths([3.3], 40000, common=0.0))
         shared = absorbed(vp._wc_split_paths([3.3], 40000))
-        assert shared["Europe/UK"] < indep["Europe/UK"] - 0.05
+        # Seeded: at 40k draws the gap is ~0.07 with a spread of ~0.01.
+        assert shared["Europe/UK"] < indep["Europe/UK"] - 0.03
 
     def test_the_correction_is_the_point_of_the_section(self):
         """The tracked sites alone say the US holds nearly everything; the
@@ -5283,14 +5285,17 @@ class TestPacing:
         assert "rsi_notyet_ramp" in keys
 
     def test_world_stock_is_epochs_anchor_plus_every_chip_made_since(self):
-        """The world at each year-end is Epoch's end-2025 chip-sales total
-        plus CTS's US-and-allied output and China's domestic output since,
-        nothing retired. Epoch's mid-2026 reading (31.7M, 27.8-36.0M) is a
-        check on it, not a pin."""
+        """Chips made: the world at each year-end is Epoch's end-2025
+        chip-sales total plus CTS's US-and-allied output and China's
+        domestic output since, nothing retired, and Epoch's mid-2026 sales
+        reading (31.7M, 27.8-36.0M) is a check on it, not a pin. Chips
+        arrived: the same with everything but China's domestic stock read
+        two months earlier, checked by Epoch's 27.39M (24.64-30.21M)
+        arrived by mid-2026."""
         today = datetime(2026, 11, 10)
         yt = lambda d: (d - today).days / 365.25
         ends = [yt(datetime(y, 12, 31)) for y in (2025, 2026, 2027)]
-        world, _ = vp._wc_stocks(today, ends)
+        world, _ = vp._wc_stocks(today, ends, lag=0.0)
         w = world[:, 0]
         assert w[0] == pytest.approx(vp._WC_WORLD_END2025)
         us = {y: c for y, _lo, c, _hi
@@ -5301,8 +5306,25 @@ class TestPacing:
                 us[y] * 1e6 + dom[str(y)]["domestic"][0]
                 - dom[str(y - 1)]["domestic"][0]), y
         d, _mid, lo, hi = vp._WC_WORLD_MID2026
-        mid26, _ = vp._wc_stocks(today, [yt(d)])
+        mid26, _ = vp._wc_stocks(today, [yt(d)], lag=0.0)
         assert lo < float(mid26[0, 0]) < hi
+        d, _mid, lo, hi = vp._WC_WORLD_ARRIVED_MID2026
+        arr, _ = vp._wc_stocks(today, [yt(d)])
+        assert lo < float(arr[0, 0]) < hi
+        assert float(arr[0, 0]) < float(mid26[0, 0])
+        # The lag reads the US-and-allied part earlier; China's domestic
+        # stock and China's in-China stock are as made.
+        lag = vp._WC_ARRIVAL_LAG_YEARS
+        t0, t1 = yt(datetime(2026, 12, 31)), yt(datetime(2027, 12, 31))
+        _w0, c0 = vp._wc_stocks(today, [t1], lag=0.0)
+        w1, c1 = vp._wc_stocks(today, [t1])
+        assert float(c1[0, 0]) == pytest.approx(float(c0[0, 0]))
+        w_ends, _ = vp._wc_stocks(today, [t0, t1], lag=0.0)
+        a0, a1 = (float(w_ends[k, 0]) - dom[y]["domestic"][0]
+                  for k, y in ((0, "2026"), (1, "2027")))
+        a_back = a0 * (a1 / a0) ** ((t1 - lag - t0) / (t1 - t0))
+        assert float(w1[0, 0]) == pytest.approx(
+            a_back + dom["2027"]["domestic"][0])
 
     def test_compute_lead_is_the_us_over_china_from_one_world(self):
         """The US side is its central share of the world outside China, so

@@ -12279,6 +12279,16 @@ _WC_GROWTH = (
 _WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
 _WC_WORLD_END2025 = 20.4e6
 _WC_WORLD_MID2026 = (datetime(2026, 6, 30), 31.7e6, 27.8e6, 36.0e6)
+# Installed means arrived: Epoch's AI chip imports explorer assumes a chip
+# arrives about two months after it is sold, an assumption, not a
+# measurement, and reads 27.39M H100e arrived worldwide by end-Jun 2026 (90%
+# 24.64-30.21M). `_wc_stocks` reads the US-and-allied part of the world that
+# much earlier; China's in-China stock is not lagged (its legal and smuggled
+# channels are customs- or arrival-based, and its domestic chips never ship).
+# `_WC_WORLD_MID2026` checks the unlagged series, this the lagged one
+# (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`).
+_WC_ARRIVAL_LAG_YEARS = 2 / 12
+_WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
@@ -16039,12 +16049,15 @@ def _wc_skew(row, z, q):
     return mid * np.where(z >= 0, hi / mid, mid / lo) ** (z / q)
 
 
-def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0):
+def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
+               lag=_WC_ARRIVAL_LAG_YEARS):
     """(world, China in-China) installed AI compute in H100e, `years` from
     today, each shaped (len(years), n) for n draws of the z's.
 
-    World at each year-end is `_WC_WORLD_END2025` plus cumulative CTS
-    US-and-allied output and China's domestic output since; China is the
+    Chips made: the world at each year-end is `_WC_WORLD_END2025` plus
+    cumulative CTS US-and-allied output and China's domestic output since.
+    Chips arrived: everything but China's domestic stock is read `lag`
+    years earlier (`_WC_ARRIVAL_LAG_YEARS`; 0 gives chips made). China is the
     compute mix's domestic + legal + smuggled stock under `mix`
     (`_cn_src_with_policy` keywords). CTS's low and high output sit at
     `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
@@ -16082,15 +16095,20 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0):
     world[first] = world[y0] ** 2 / world[y0 + 1]
     t = np.array([(datetime(y, 12, 31) - today).days / 365.25 for y in ys])
     yrs = np.atleast_1d(np.asarray(years, dtype=float))
-    # Each point's segment, the first or last one outside the span, so the
-    # same line extends it.
-    i = np.clip(np.searchsorted(t, yrs) - 1, 0, len(t) - 2)
-    f = ((yrs - t[i]) / (t[i + 1] - t[i]))[:, None]
 
-    def _interp(series):
+    def _interp(series, at):
+        # Each point's segment, the first or last one outside the span, so
+        # the same line extends it.
+        i = np.clip(np.searchsorted(t, at) - 1, 0, len(t) - 2)
+        f = ((at - t[i]) / (t[i + 1] - t[i]))[:, None]
         lv = np.log(np.array([series[y] for y in ys]))     # (len(ys), n)
         return np.exp(lv[i] * (1.0 - f) + lv[i + 1] * f)
-    return _interp(world), _interp(cn)
+    # Everything but China's domestic chips arrives `lag` after it is made.
+    # That part is interpolated on its own, so a domestic cut, which moves
+    # `dom` alone, leaves it exactly where it was.
+    allied = {y: world[y] - dom[y] for y in ys}
+    return (_interp(allied, yrs - lag) + _interp(dom, yrs),
+            _interp(cn, yrs))
 
 
 def _wc_shares(world, china, split):
@@ -16688,8 +16706,11 @@ def _render_world_shares(today, horizon):
         f"{_WC_WORLD_END2025 / 1e6:.1f}M H100e, plus every chip made since: "
         "US-and-allied output from the CTS lithography report and China's "
         "domestic output from its compute mix (the China tab), nothing "
-        "retired. CTS counts dense 16-bit H100e and Epoch dense 8-bit; they "
-        "are taken as the same unit, an assumption.")
+        "retired. Chips outside China count "
+        f"{_WC_ARRIVAL_LAG_YEARS * 12:.0f} months after they are made, the "
+        "arrival delay Epoch's chip imports explorer assumes (an assumption, "
+        "not a measurement). CTS counts dense 16-bit H100e and Epoch dense "
+        "8-bit; they are taken as the same unit, an assumption.")
 
     _fn_line(
         f"About **{med[us]:.0f}% of the world's AI compute is in the US** "
@@ -22186,8 +22207,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                f"at the end of {_rd:%Y}, since China has not caught up by then")
             + ": the US's central share of the world's compute outside "
               "China, the world being Epoch's end-2025 stock plus every chip "
-              "made since (CTS's US-and-allied output, China's domestic "
-              "output), so a chip kept out of China stays in the world "
+              "made since (CTS's US-and-allied output, counted on arrival, "
+              "and China's domestic output), so a chip kept out of China "
+              "stays in the world "
               "outside it; "
               "China's compute mix under these levers (domestic, legal, "
               "smuggled, and the compute its labs reach abroad until remote "

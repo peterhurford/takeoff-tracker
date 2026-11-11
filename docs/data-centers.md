@@ -366,9 +366,17 @@ not a reading of the CSVs. Six things are load-bearing:
    log-linear between year-ends (Dec 31); past the mix's last year China and
    its domestic stock keep their last-year growth, past CTS's last year the
    world keeps its, and before end-2025 the world runs back at its 2026
-   growth. Epoch's mid-2026 reading (31.7M, 27.8–36.0M, `_WC_WORLD_MID2026`)
-   is a check, not the anchor: CTS gives calendar-year output only, so pinning
-   mid-2026 would need a guess at its H1/H2 split
+   growth. That is chips made; installed is chips arrived, so the US-and-allied
+   part (world less China's domestic stock, interpolated on its own) is read
+   `_WC_ARRIVAL_LAG_YEARS` (two months) earlier, the delay Epoch's chip imports
+   explorer assumes (an assumption, not a measurement). China's in-China stock
+   is not lagged: its legal and smuggled channels are customs- or
+   arrival-based and its domestic chips never ship. Epoch's mid-2026 sales
+   reading (31.7M, 27.8–36.0M, `_WC_WORLD_MID2026`) checks the unlagged series
+   (`lag=0`) and its arrivals reading (27.39M, 24.64–30.21M,
+   `_WC_WORLD_ARRIVED_MID2026`) the lagged one; neither is the anchor: CTS
+   gives calendar-year output only, so pinning mid-2026 would need a guess at
+   its H1/H2 split
    (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`;
    `test_world_is_china_plus_the_rest_and_shares_sum_to_100`). The published
    China estimates (Epoch's cluster share 14–15%, AI-2027 12%, the smuggling

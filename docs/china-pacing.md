@@ -494,7 +494,7 @@ Under it, drawn with or without a crossing (`test_compute_ratios_show_without_a_
 usable run and its domestic clusters, against a US run frozen at the pause; and total
 installed compute in millions of H100e. The US is its central share of the world outside
 China (`_pc_us_installed`), the world being the Data Centers identity (`_wc_stocks`: Epoch's
-end-2025 chip-sales total plus CTS's US-and-allied output and China's domestic output since)
+end-2025 chip-sales total plus CTS's US-and-allied output, counted two months after it is made, and China's domestic output since)
 less China's in-China stock under the same `_mix`, still installing through the pause. So
 a smuggling or legal-sales cut keeps those chips in the world outside China and the US gains
 its share of them, while a domestic cut, which removes chips from the world, leaves the US
