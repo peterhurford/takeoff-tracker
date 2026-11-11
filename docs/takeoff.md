@@ -113,7 +113,7 @@ near that tab's own fixed-compute fits (`TestTakeoffEciRates`); today's growth i
 for both also fits the history but credits the algorithm-driven takeoff less: it put
 ultraintelligence 7 months later. The coding test uses the same reading
 (`simulate(coding_weights=…)`). The path is floored for `_TK_ECI_FLOOR_YEARS` at today's trend sped up as research speeds up (`_tk_eci_floor`: compute's share plus algorithms' share times the median scenario's research pace relative to today's, read a training-plus-validation lag earlier; shared by every scenario, as the fixed trend was; `TestTakeoffEciFloor`)
-(the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down; the chart's view stops `_TK_ECI_VIEW_PAST_ULTRA` above the threshold.
+(the shipping lag), the lift then fading over `_TK_ECI_FLOOR_FADE_YEARS` so no line steps down. The floor is 6 months, until the first new model ships: the fade hands the lift back, so a longer floor reads as a slow following year, and a lift kept instead would move the ultraintelligence dates and hide a lever's first-year effect for good (`test_the_floor_ends_when_the_first_model_ships`); the chart's view stops `_TK_ECI_VIEW_PAST_ULTRA` above the threshold.
 v7 adds a CES labor-compute mean (`substitution`), Amdahl labor gains as the human share
 falls (`ai_speed`), non-AI input growth holding the frozen-AI pace (`baseline_inputs`), a
 steady-state pipeline, and an `r` control (`tk_returns`) from which the app sets

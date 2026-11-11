@@ -15403,7 +15403,7 @@ def _cc_us_vs_china(cc_rows, today, horizon=datetime(2029, 12, 31),
 
 # The breakdown's sources, in stack order: (key, label, colour). Compute's
 # four take `_CN_SOURCES`' channel colours; copying is magentas, China's own
-# research green, the first-year trend floor grey.
+# research green, the early trend floor grey.
 _CC_DRIVERS = (
     ("domestic", "Compute: domestic chips", "#E34948"),
     ("legal", "Compute: legal US sales", "#2A78D6"),
@@ -15414,7 +15414,7 @@ _CC_DRIVERS = (
     ("distillation", "Distillation of US models", "#B4306E"),
     ("stolen", "US software stolen", "#7A1846"),
     ("weights", "US weights stolen", "#4A0E2B"),
-    ("floor", "Today's trend held (first year)", "#B0B0B0"),
+    ("floor", "Today's trend held (first 6 months)", "#B0B0B0"),
 )
 _CC_DRIVER_GREY = ("smuggled", "remote")
 # The projected bars average the scenarios whose total gain sits in this
@@ -24915,7 +24915,7 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
     years = wp["years"]
     w_compute, w_software = result["eci_rates"]["compute"], result["eci_rates"]["software"]
     software = wp["software_realized_log"]
-    # Today's trend is a floor for the first year, covering the months before
+    # Today's trend is a floor for `_TK_ECI_FLOOR_YEARS`, covering the months before
     # the next model ships. The lift it gives a scenario then fades out over
     # the next `_TK_ECI_FLOOR_FADE_YEARS`, so the scenario returns to its own
     # dynamics (and can fall behind the trend) without a step.
@@ -24955,8 +24955,10 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
 
 
 # Years from today during which projected ECI is floored at today's trend, and
-# the years over which that lift then fades out.
-_TK_ECI_FLOOR_YEARS = 1.0
+# the years over which that lift then fades out. The floor lasts only until the
+# first new model ships: the lift is handed back as it fades, so a longer floor
+# shows as a slow following year (`test_the_floor_ends_when_the_first_model_ships`).
+_TK_ECI_FLOOR_YEARS = 0.5
 _TK_ECI_FLOOR_FADE_YEARS = 1.0
 
 # GPT-4 (Mar 2023) to GPT-6 Astra on Epoch's ECI, the "jump" the explainer counts in.
@@ -26261,7 +26263,7 @@ def _cn_tk_run(today, run=None, pacing=None):
     follow = cw["follow_eci"]
     model = level[:, None] + w_c * (cap - soft) + w_s * soft
     # As on the US side: today's trend (China's own slope) floors the first
-    # year, before the next model ships, and its lift then fades out.
+    # `_TK_ECI_FLOOR_YEARS`, before the next model ships, and its lift then fades out.
     trend = level[:, None] + slope[:, None] * years[None, :]
     floored = np.maximum(model, trend)
     j = min(np.searchsorted(years, _TK_ECI_FLOOR_YEARS), len(years) - 1)
@@ -27712,7 +27714,7 @@ def _render_takeoff(loading):
          + ". Algorithms earn more per 10\u00d7 because compute explains only "
          f"{eci['ppy'] - rates['algo_ppy']:.1f} of the {eci['ppy']:.1f} points; one rate "
          "for both would also fit the climb but credit an algorithm-driven takeoff less, "
-         "so ultraintelligence would come later. For the first year ECI is floored at the trend, since no new model has "
+         "so ultraintelligence would come later. For the first 6 months ECI is floored at the trend, since no new model has "
          "shipped yet."))
     st.plotly_chart(_tf(_tk_to(_tk_eci_fig(result, today, eci, markers), view_end)),
                     width="stretch")

@@ -6919,6 +6919,14 @@ class TestTakeoffEciToday:
 
 
 class TestTakeoffEciFloor:
+    def test_the_floor_ends_when_the_first_model_ships(self):
+        """The floor covers the wait for the first trained model, no longer:
+        at most the default training plus validation, plus a couple of months
+        of slack."""
+        d = vp.takeoff.DEFAULTS
+        ship = (d["training_months"] + d["validation_months"]) / 12
+        assert ship <= vp._TK_ECI_FLOOR_YEARS <= ship + 2 / 12
+
     def test_the_eci_floor_follows_research_pace(self):
         """Flat pace: the floor is today's trend. Rising pace: the floor's growth
         rises with it, but only after the training-and-validation lag."""
