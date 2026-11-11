@@ -372,7 +372,13 @@ not a reading of the CSVs. Six things are load-bearing:
    (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`;
    `test_world_is_china_plus_the_rest_and_shares_sum_to_100`). The published
    China estimates (Epoch's cluster share 14–15%, AI-2027 12%, the smuggling
-   report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`.
+   report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`. Two other
+   forecasts bracket CTS's output and are not read by the code: AI-2027's
+   compute forecast has 25M H100e made in 2026 and 60M in 2027 (CTS 35M and
+   74M; its world stock is 100M at end-2027 against the identity's 132M, on a
+   TPP basis with a ~4-year chip life), and Epoch's measured 3.3×/yr
+   (2.7–4.1×) carried forward from >10M sold in 2025 gives ~33M and ~109M.
+   CTS's own low-to-high for 2027 (67–81M) is narrower than that spread.
 2. **Outside China, published shares split the rest.** `_WC_REGIONS` carries
    `(label, central, p10, p90)` for the US, SEA, the UAE, Europe/UK and Other,
    as published beside China's ~9%; only their ratios are used
