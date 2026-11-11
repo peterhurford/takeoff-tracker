@@ -2844,9 +2844,7 @@ class TestRsi:
         dt = np.log(2) / slope
         assert round(dt * 2) < vp._rsi_dt_ci(fr, dt)[1] < vp._DT_CAP_DAYS
         rows = vp.load_rsi_survey()
-        days = np.array([(r['date'] - rows[0]['date']).days for r in rows],
-                        dtype=float)
-        _, sslope = vp.fit_line(days, np.log([r['uplift'] for r in rows]))
+        _, _, sslope = vp._rsi_survey_fit(rows)
         sdt = np.log(2) / sslope
         slo, shi = vp._rsi_survey_dt_ci(rows, sdt)
         assert round(sdt * 2) <= shi < vp._DT_CAP_DAYS
@@ -2865,11 +2863,25 @@ class TestRsi:
         anchor, _days = vp._pc_rsi_survey_eta(rows, samples=True)
         assert anchor == rows[-1]['date']
 
-        def fit_dt(rs):
-            days = [(r['date'] - rs[0]['date']).days for r in rs]
-            return np.log(2) / vp.fit_line(np.array(days, dtype=float),
-                                           np.log([r['uplift'] for r in rs]))[1]
-        assert seen == [pytest.approx(fit_dt(rows))]
+        assert seen == [pytest.approx(np.log(2) / vp._rsi_survey_fit(rows)[2])]
+
+    def test_survey_fits_the_gain_over_no_ai(self):
+        """The one survey fit is OLS on log(multiple - 1): a series whose gain
+        over no AI doubles every 100 days is recovered exactly, where a fit on
+        log(multiple) would read it slower. The card dates its bar on the same
+        line, and Takeoff's coding elasticity is that growth against
+        capability's, with no transfer term."""
+        t0 = datetime(2025, 1, 1)
+        rows = [{'date': t0 + timedelta(days=d), 'uplift': 1 + 0.2 * 2 ** (d / 100)}
+                for d in (0, 100, 200, 300, 400)]
+        base, icpt, slope = vp._rsi_survey_fit(rows)
+        assert base == t0 and np.exp(icpt) == pytest.approx(0.2)
+        assert np.log(2) / slope == pytest.approx(100)
+        ex = [{'date': t0}, {'date': t0 + timedelta(days=365.25)}]
+        yearly = 2 ** 3.6525
+        assert vp._tk_survey_coding(rows, ex, yearly ** 2) == pytest.approx(0.5, abs=0.005)
+        assert vp._tk_survey_coding(rows, ex, yearly ** 2, copies_yearly=yearly) \
+            == vp.takeoff.DEFAULTS["coding_slope"]
 
 
 class TestRsiDirection:
@@ -7187,9 +7199,9 @@ class TestTakeoffRsiCalibration:
     def test_coding_default_is_the_survey_fit(self):
         args = (vp.load_rsi_survey(), vp.load_rsi_experiments())
         cap = vp._TK_DEFAULTS["tk_cal_capability"]
-        coding = vp._tk_survey_coding(*args, cap, 0.6)
+        coding = vp._tk_survey_coding(*args, cap)
         assert coding > 0
-        assert vp._tk_survey_coding(*args, 2 * cap, 0.6) < coding
+        assert vp._tk_survey_coding(*args, 2 * cap) < coding
 
     def test_judgment_reads_the_square_root_of_the_win_odds(self, monkeypatch):
         """Judgment grows as the next-step win odds raised to
@@ -7351,7 +7363,7 @@ class TestEvidenceMathCoding:
         params = dict(tk.DEFAULTS)
         params["coding_slope"] = vp._tk_survey_coding(
             vp.load_rsi_survey(), vp.load_rsi_experiments(),
-            vp._TK_DEFAULTS["tk_cal_capability"], tk.DEFAULTS["transfer"] / 100,
+            vp._TK_DEFAULTS["tk_cal_capability"],
             vp._tk_copies_yearly(vp.load_rsi_automation()))
         return vp._tk_evidence_chain(params)
 

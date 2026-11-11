@@ -249,7 +249,7 @@ logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
 ± 1 point; RSI CoBench: single OLS in logit space, odds-doubling time over
 `_rsi_dt_ci()`'s widened interval (slow edge `_RSI_SLOW_STEP_MULT`× the slowest frontier
 step), position ± `_PC_RSI_POS_CI` around the measured score, not the fitted line; RSI
-survey: OLS on log(multiple) over every round the tab fits (the carried-over
+survey: OLS on log(multiple − 1) (`_rsi_survey_fit`) over every round the tab fits (the carried-over
 `estimated` point included, as on the tab), doubling time over
 `_rsi_survey_dt_ci()`'s t-widened interval, position over the
 fitted multiple ÷ and × `_RSI_SURVEY_POS_FACTOR`, widened to reach the latest

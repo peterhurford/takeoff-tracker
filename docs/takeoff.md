@@ -342,7 +342,9 @@ experiment half of the research CES; ~0.25 and ~0.76). Both regimes are carried 
 steady final-score trend reproduces the break (the paper's Table 2: the multiplier climbs
 faster per unit of score near the expert's flattening curve), so the post-break rate gets a
 third of the weight; `judgment_spread` (70) keeps all three inside its 80% band
-(`TestTakeoffRsiCalibration`). The coding elasticity is the staff survey's yearly output growth. Both go
+(`TestTakeoffRsiCalibration`). The coding elasticity is the yearly growth of the staff survey's gain over no AI
+(`_tk_survey_coding`: ln of that growth, less more copies' part, over ln of capability's;
+the gain is transfer × (raw speedup − 1), so transfer cancels). The judgment fits go
 through `_tk_elasticity` against capability growth over the experiment window, which
 comes from evidence (`_tk_evidence_window_growth`: the data-center compute fit times the
 software trend at today's pace, each rounded to the math section's digits so its product multiplies out, `test_the_yardstick_multiplies_out_as_shown`. The baseline software doubling sets that yardstick but ECI cannot identify it (only algorithms' points a year), so the math section sets the prior beside its compute-equivalent reading, and changing it, like ECI growth, re-reads the evidence (`_tk_reread_evidence`, `test_the_baseline_doubling_rereads_the_evidence`); TasteVal is likewise read at `_TK_ECI_TODAY`), never a free assumption: an elasticity measured against one
@@ -632,14 +634,17 @@ the AL3/AL4 boundary this series is drawn at. Guarded by `TestRsiAutomation`,
 The tab's third section (`_render_rsi_survey()`) charts the report's other
 substitution series, the internal staff survey (§3.4.2): self-reported output
 multiple against no AI assistance, from `_RSI_SURVEY` via `load_rsi_survey()`,
-fitted and projected on **log(multiple)** — a multiple has no ceiling to bound it
-against, so it compounds the way METR's horizon does rather than saturating like
-a percentage. Three things are load-bearing. Rows marked `metr` are read off METR's
+fitted and projected on **log(multiple − 1)**, the gain over no AI, by the one
+`_rsi_survey_fit` the chart, the milestone card and Takeoff's coding elasticity share
+(`test_survey_fits_the_gain_over_no_ai`). A multiple has no ceiling to bound it
+against, so its gain compounds the way METR's horizon does rather than saturating
+like a percentage; log(multiple) looks the natural form but bends upward while the
+gain is small, since 1× is no help. Three things are load-bearing. Rows marked `metr` are read off METR's
 *Informal self-reported uplift* chart (Nov 2026): targeted surveys for Claude 3.7
 Sonnet and Opus 4 (whose system-card round gave only a bound), and broad Slack polls
 for Opus 4.6, Mythos 5 and Model 4 (12×); a METR reading of a round already listed is
-not added twice. They are fitted like the rest (log-linear, ~3.9×/yr; METR's own
-exponential fit is 3.9×/yr). The carried-over Model 2 estimate is gone, superseded by
+not added twice. They are fitted like the rest (the gain grows ~12×/yr; METR's own
+exponential fit, on the multiple itself, is 3.9×/yr). The carried-over Model 2 estimate is gone, superseded by
 real later readings (`test_survey_eta_fits_every_round_metrs_included`). The rounds do not
 report the same statistic on the same sample (medians on superusers, then on a
 broader sample, then a geometric mean on an opt-in poll), so each point carries

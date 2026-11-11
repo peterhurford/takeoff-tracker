@@ -6984,15 +6984,32 @@ def _dt_ci_t_widened(days, ys, fit_dt):
     return float(round(max(5.0, lo))), float(round(hi))
 
 
+def _rsi_log_gain(multiple):
+    """log(multiple - 1): the gain over no AI, the quantity the survey fits."""
+    return np.log(np.maximum(np.asarray(multiple, dtype=float) - 1, 0.01))
+
+
+def _rsi_survey_fit(rows):
+    """OLS through the staff survey on log(multiple - 1). The gain over no AI
+    is what compounds (1x is no help, so log(multiple) bends upward while the
+    gain is small). Returns (base_date, intercept, slope_per_day); the chart,
+    the card and Takeoff's coding elasticity all read this one fit
+    (`test_survey_fits_the_gain_over_no_ai`)."""
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    icpt, slope = fit_line(days, _rsi_log_gain([r['uplift'] for r in rows]))
+    return base, icpt, slope
+
+
 def _rsi_survey_dt_ci(rows, fit_dt):
-    """Default 80% CI on the survey's doubling time, in days.
+    """Default 80% CI on the doubling time of the survey's gain, in days.
 
     `_dt_ci_t_widened` over every point the fit uses, METR's digitized
     readings included, like the fit itself.
     """
     return _dt_ci_t_widened(
         [(r['date'] - rows[0]['date']).days for r in rows],
-        np.log([r['uplift'] for r in rows]), fit_dt)
+        _rsi_log_gain([r['uplift'] for r in rows]), fit_dt)
 
 
 def _rsi_dir_fit(frontier):
@@ -7717,16 +7734,14 @@ def _render_rsi_automation(end_year):
 def _render_rsi_survey(end_year):
     """The report's other substitution series: self-reported researcher uplift.
 
-    Fitted and projected the same way the CoBench half is, but on log(multiple)
-    rather than log-odds: an output multiple has no ceiling to bound it against,
-    so it compounds the way METR's horizon does.
+    Fitted and projected the same way the CoBench half is, but on the log of
+    the gain over no AI (`_rsi_survey_fit`) rather than log-odds: an output
+    multiple has no ceiling to bound it against, so its gain compounds the way
+    METR's horizon does.
     """
 
     rows = load_rsi_survey()
-    base = rows[0]['date']
-    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in rows]))
-    intercept, slope = fit_line(days, logs)
+    base, intercept, slope = _rsi_survey_fit(rows)
     cur = rows[-1]
 
     fig = go.Figure()
@@ -7737,13 +7752,14 @@ def _render_rsi_survey(end_year):
         proj_slope = np.log(2) / np.maximum(
             _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
         fitted = intercept + slope * (cur['date'] - base).days
-        centre, sigma = _fan_start_on_trend(fitted, np.log(cur['uplift']),
+        centre, sigma = _fan_start_on_trend(fitted, _rsi_log_gain(cur['uplift']),
                                    np.log(_RSI_SURVEY_POS_FACTOR) / 1.282)
         start_log = np.random.normal(centre, sigma, n)
 
         pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
         pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
+        pct = {q: v + 1 for q, v in _fan_pctiles(
+            start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95)).items()}
 
         for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
                                      (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
@@ -7756,12 +7772,13 @@ def _render_rsi_survey(end_year):
 
         hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
         hdates = [base + timedelta(days=int(d)) for d in hdays]
+        trend = 1 + np.exp(intercept + slope * hdays)
         fig.add_trace(go.Scatter(
-            x=hdates, y=np.exp(intercept + slope * hdays).tolist(), mode='lines',
+            x=hdates, y=trend.tolist(), mode='lines',
             line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2×:{dt:.0f}d)",
+            name=f"Fitted trend (gain over no AI 2×:{dt:.0f}d)",
             hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}×"
-                       for d, y in zip(hdates, np.exp(intercept + slope * hdays))],
+                       for d, y in zip(hdates, trend)],
             hoverinfo='text'))
         fig.add_trace(go.Scatter(
             x=pdates, y=pct[50].tolist(), mode='lines',
@@ -7841,14 +7858,14 @@ def _render_rsi_survey(end_year):
         f"frontier model: {_TK_NUMBER_WORDS[_n_rounds] if _n_rounds < 10 else _n_rounds} "
         f"rounds since {rows[0]['date']:%b %Y}, the latest {cur['name']} at "
         f"~{cur['uplift']:g}×. The rounds differ in sample and statistic, and the "
-        "trend is fitted on the log of the multiple. Source: "
+        "trend is fitted on the log of the gain over no AI (the multiple less 1). Source: "
         f"[Redacted Risk Report, August 2026, \u00a73.4.2]({_RSI_SOURCE_URL}), "
         f"the corresponding Claude system cards and [METR's chart]({_METR_ACCEL_SOURCE_URL}).",
         ("differ in sample and statistic",
          "Targeted surveys of heavy users and broad opt-in Slack polls, medians and "
          "geometric means; the METR-chart rounds are polls METR calls very loose "
          "evidence. Hover a point for its own note."),
-        ("fitted on the log of the multiple", f"All {_n_rounds} points, projected the "
+        ("fitted on the log of the gain over no AI", f"All {_n_rounds} points, projected the "
                                               "way the CoBench fan above is, but "
                                               "only a year out \u2014 compounded "
                                               "further it leaves the chart, which "
@@ -19021,7 +19038,7 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  f"Anthropic staff acceleration \u2265{_PC_RSI_SURVEY_TARGET_X:.0f}\u00d7",
                  _pc_rsi_survey_eta(load_rsi_survey(), n=n, samples=True), False,
                  "The staff-survey fan above, at its defaults: OLS on "
-                 "log(multiple) over every round fitted, the carried-over "
+                 "log(multiple − 1) over every round fitted, the carried-over "
                  "estimated point included. The rounds do not report the "
                  f"same statistic on the same sample. "
                  f"{_PC_RSI_SURVEY_TARGET_X:.0f}× is each person getting ten "
@@ -19290,7 +19307,7 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
                        samples=False):
     """(early, median, late) dates for self-reported speedup to reach `target_x`.
 
-    The RSI tab's survey fan at its defaults — OLS on log(multiple) over
+    The RSI tab's survey fan at its defaults — `_rsi_survey_fit` over
     every round the tab fits,
     doubling time lognormal around the fit over `_rsi_survey_dt_ci()`'s
     t-widened interval, position lognormal on the fit from
@@ -19298,19 +19315,16 @@ def _pc_rsi_survey_eta(rows, target_x=_PC_RSI_SURVEY_TARGET_X, n=None,
     negative.
     """
     n = n or N_SAMPLES
-    base = rows[0]['date']
-    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
-    logs = np.log(np.array([r['uplift'] for r in rows]))
-    intercept, slope = fit_line(days, logs)
+    base, intercept, slope = _rsi_survey_fit(rows)
     if slope <= 0:
         return None
     dt = np.log(2) / slope
     proj_slope = np.log(2) / np.maximum(
         _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
     fitted = intercept + slope * (rows[-1]['date'] - base).days
-    start = np.random.normal(*_fan_start_on_trend(fitted, np.log(rows[-1]['uplift']),
+    start = np.random.normal(*_fan_start_on_trend(fitted, _rsi_log_gain(rows[-1]['uplift']),
                                          np.log(_RSI_SURVEY_POS_FACTOR) / 1.282), n)
-    days_to = np.maximum((np.log(target_x) - start) / proj_slope, 0.0)
+    days_to = np.maximum((_rsi_log_gain(target_x) - start) / proj_slope, 0.0)
     return _pc_eta_out(rows[-1]['date'], days_to, samples)
 
 
@@ -23453,14 +23467,19 @@ def _tk_elasticity(yearly_growth, experiments, capability_growth, transfer, fall
     return round(float(np.log((yearly_growth - 1 + transfer) / transfer) / np.log(cap)), 2)
 
 
-def _tk_survey_coding(rows, experiments, capability_growth, transfer, copies_yearly=1.0):
-    """Coding-labor elasticity implied by the staff survey's yearly growth in
-    self-reported output, fitted on log(multiple) as the RSI tab does, less
-    the part `copies_yearly` (more AI copies) already explains."""
-    days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
-    _icpt, slope = fit_line(days, np.log([r['uplift'] for r in rows]))
-    return _tk_elasticity(np.exp(slope * 365.25) / copies_yearly, experiments,
-                          capability_growth, transfer, takeoff.DEFAULTS["coding_slope"])
+def _tk_survey_coding(rows, experiments, capability_growth, copies_yearly=1.0):
+    """Coding-labor elasticity implied by the staff survey: the yearly growth
+    of its gain over no AI (`_rsi_survey_fit`, the RSI tab's fit), less the
+    part `copies_yearly` (more AI copies) already explains, against
+    capability's. The gain is transfer x (raw AI speedup - 1), so transfer
+    cancels from its growth, which is the raw speedup's once that is well
+    past 1."""
+    _base, _icpt, slope = _rsi_survey_fit(rows)
+    years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
+    growth, cap = np.exp(slope * 365.25) / copies_yearly, capability_growth ** (1 / years)
+    if growth <= 1 or cap <= 1:
+        return takeoff.DEFAULTS["coding_slope"]
+    return round(float(np.log(growth) / np.log(cap)), 2)
 
 
 def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
@@ -23963,8 +23982,7 @@ def _tk_evidence_fig(params):
     odds = [r['better'] / (100 - r['better']) for r in nxt]
     survey = load_rsi_survey()
     exps = load_rsi_experiments()
-    sdays = np.array([(r['date'] - survey[0]['date']).days for r in survey], dtype=float)
-    s_icpt, s_slope = fit_line(sdays, np.log([r['uplift'] for r in survey]))
+    _sbase, s_icpt, s_slope = _rsi_survey_fit(survey)
     panels = [
         (f"Next-step + TasteVal \u2192 judgment {params['taste_slope']:g}",
          nxt, odds, "Win odds vs researcher", _rsi_dir_fit(nxt), True, "#8e44ad"),
@@ -23986,6 +24004,8 @@ def _tk_evidence_fig(params):
         grid = [xs[0] + (xs[-1] - xs[0]) * k / 40 for k in range(41)]
         fit_y = (np.exp(fit[1] + fit[2] * np.array([(d - fit[0]).days for d in grid]))
                  if logit else _line(rows, grid, fit))
+        if rows is survey:                    # fitted on the gain over no AI
+            fit_y = fit_y + 1
         fig.add_trace(go.Scatter(x=grid, y=fit_y, mode="lines", name="Trend",
                                  line=dict(color=color, width=1.5, dash="dash"),
                                  hoverinfo="skip", showlegend=False), row=1, col=col)
@@ -24098,10 +24118,9 @@ def _tk_evidence_chain(params):
     tv = [(per, 2 ** (E / per), 2 ** (_TK_TASTEVAL_TO_QUALITY * E / per), e)
           for per, e in zip(_TASTEVAL_ECI_PER_DOUBLING, e_tv)]
     rows = load_rsi_survey()
-    days = np.array([(r['date'] - rows[0]['date']).days for r in rows], dtype=float)
-    s_icpt, s_slope = fit_line(days, np.log([r['uplift'] for r in rows]))
-    survey_y = float(np.exp(s_slope * 365.25))
-    survey_now = float(np.exp(s_icpt + s_slope * (datetime.now() - rows[0]['date']).days))
+    _sbase, s_icpt, s_slope = _rsi_survey_fit(rows)
+    survey_y = float(np.exp(s_slope * 365.25))            # growth of the gain over no AI
+    survey_now = 1 + float(np.exp(s_icpt + s_slope * (datetime.now() - rows[0]['date']).days))
     sw0 = float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"]))
     copies_y = _tk_copies_yearly(load_rsi_automation(),
                                  dict(takeoff.DEFAULTS, software_months=sw0))
@@ -24140,7 +24159,7 @@ def _tk_evidence_chain(params):
         "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
         "cp_months": sw0,
         "cp_copies": takeoff.DEFAULTS["ai_copies"],
-        "coding_ev": float(np.log((survey_y / copies_y - 1 + T) / T) / np.log(cap ** (1 / yrs))),
+        "coding_ev": float(np.log(survey_y / copies_y) / np.log(cap ** (1 / yrs))),
         "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
         "cp_after": 1 / (cp_h + (1 - cp_h) / (cp_s * cp_g)),
         "exp_growth": eg, "parallel": params["parallelization"],
@@ -24343,9 +24362,10 @@ def _tk_evidence_math(c):
         f"**6. Coding labor.** Anthropic staff surveys put their speedup with AI at "
         f"~{c['survey_now']:.0f}× today on the trend through all {c['survey_n']} readings "
         f"since {mon(c['survey_from'])} (the latest, {c['survey_last_name']}, "
-        f"{c['survey_last']:g}×). A line through ln(speedup) against date has that speedup "
-        f"itself growing ×{c['survey_y']:.2f} a year, so a year on the trend reads "
-        f"~{c['survey_now'] * c['survey_y']:.0f}×; ×{c['survey_y']:.2f} is the growth, not "
+        f"{c['survey_last']:g}×). What compounds is the gain over no AI (1× is no help), so "
+        "the line is through ln(speedup − 1) against date: that gain grows "
+        f"×{c['survey_y']:.2f} a year, so a year on the trend reads "
+        f"~{1 + (c['survey_now'] - 1) * c['survey_y']:.0f}×; ×{c['survey_y']:.2f} is the growth, not "
         "the speedup.",
         "Part of that growth is just running more AI copies. The automation index, "
         "projected to today, puts people at "
@@ -24363,9 +24383,10 @@ def _tk_evidence_math(c):
         f"year: AI's part is already fast, so people's {c['cp_h']:.0%} sets the pace. "
         "Taking it out leaves "
         f"{c['survey_y']:.2f} ÷ {c['copies_y']:.3f} = ×{c['survey_y'] / c['copies_y']:.2f} a "
-        "year for better AI. Against effective compute's "
-        f"×{cy:.1f} a year, with T = {T:.0%} of AI's gains reaching research:",
-        rf"$$e = \frac{{\ln(({c['survey_y'] / c['copies_y']:.2f} - 1 + {T:g})/{T:g})}}{{\ln {cy:.1f}}} = \frac{{\ln {(c['survey_y'] / c['copies_y'] - 1 + T) / T:.2f}}}{{\ln {cy:.1f}}} = \frac{{{np.log((c['survey_y'] / c['copies_y'] - 1 + T) / T):.3f}}}{{{np.log(cy):.3f}}} = {c['coding_ev']:.2f}$$",
+        "year for better AI. The gain is T × (AI's raw speedup − 1), so T cancels from its "
+        "growth, which is the raw speedup's once that is well past 1. Against effective "
+        f"compute's ×{cy:.1f} a year:",
+        rf"$$e = \frac{{\ln {c['survey_y'] / c['copies_y']:.2f}}}{{\ln {cy:.1f}}} = \frac{{{np.log(c['survey_y'] / c['copies_y']):.3f}}}{{{np.log(cy):.3f}}} = {c['coding_ev']:.2f}$$",
         (f"With 10× the effective compute, AI's coding help is about "
          f"{10 ** c['coding_ev']:.1f}× bigger."
          + (f" The run uses {c['coding']:.2f}, set in the sidebar."
@@ -24461,7 +24482,7 @@ def _tk_flow_dot(v):
                       if c["fitted"] is not None else "calibration off"), p),
         # Coding labor.
         node("s_ev", "Staff speedup\\nsurvey", ora),
-        node("s_me", f"speedup ~{c['survey_now']:.0f}× today,\\nitself growing\\n×{c['survey_y']:.2f} a year", ora),
+        node("s_me", f"speedup ~{c['survey_now']:.0f}× today,\\nits gain over no AI\\ngrowing ×{c['survey_y']:.2f} a year", ora),
         node("s_cv", f"less what just running\\nmore copies adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
         node("pc", f"Coding labor {c['coding']:.2f}", ora),
         # Other inputs.
@@ -24840,7 +24861,7 @@ def _tk_evidence_settings(eci_today, software_months=None):
     comp, cap = _tk_evidence_window_growth(ex, eci_today, months)
     return {"tk_cal_compute": comp, "tk_cal_capability": cap,
             "tk_taste_slope": _tk_taste_default(rsi_dir_frontier_all, ex, cap, tr, eci_today),
-            "tk_coding_slope": _tk_survey_coding(load_rsi_survey(), ex, cap, tr,
+            "tk_coding_slope": _tk_survey_coding(load_rsi_survey(), ex, cap,
                                                  _tk_copies_yearly(load_rsi_automation(),
                                                                    dict(takeoff.DEFAULTS,
                                                                         software_months=months)))}
