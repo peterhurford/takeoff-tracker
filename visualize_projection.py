@@ -24122,6 +24122,23 @@ def _tk_factors_fig(result, today):
     return fig
 
 
+def _tk_pace_labor(pace, parallel, rho, transfer):
+    """(labor, raw AI speedup) that would give research `pace`× its 2024–25
+    level through the model's research mean, experiment compute on trend:
+    pace = CES_rho(labor^parallel, 1), labor = 1 − T + T × raw. (None, None)
+    where labor alone cannot reach `pace` (rho < 0 caps it at 2^(−1/rho))."""
+    if pace <= 1:
+        return 1.0, 1.0
+    if abs(rho) < 1e-9:
+        labor = pace ** (2 / parallel)
+    else:
+        inner = 2 * pace ** rho - 1
+        if inner <= 0:
+            return None, None
+        labor = inner ** (1 / (parallel * rho))
+    return labor, (labor - 1 + transfer) / transfer
+
+
 def _tk_evidence_chain(params):
     """Every number on the way from the evidence to the pace, live: today's pace
     from ECI growth, the capability yardstick, each judgment reading, the coding
@@ -24170,7 +24187,10 @@ def _tk_evidence_chain(params):
         eg, comp, cap, float(ss("tk_cal_yield", 1.0)), float(ss("tk_cal_validated", 0)) or None,
         transfer=T, coding_slope=params["coding_slope"], parallel=params["parallelization"],
         substitution=params["substitution"], automation_growth=auto) if T_set > 0 else None
+    labor_need, raw_need = _tk_pace_labor(
+        (E - c_pts) / a_pts, params["parallelization"], params["substitution"], T)
     return {
+        "labor_need": labor_need, "raw_need": raw_need,
         "E": E, "c_pts": c_pts, "a_pts": a_pts, "pace": (E - c_pts) / a_pts,
         "years": yrs, "compute": comp, "cap": cap, "cap_y": cap ** (1 / yrs), "T": T,
         "compute_y": comp ** (1 / yrs), "software": cap / comp,
@@ -24428,6 +24448,27 @@ def _tk_evidence_math(c):
         "the experiment check partly offsets it (a higher coding number leaves less to "
         "credit to judgment).",
     ]
+    par, rho = c["parallel"], c["substitution"]
+    if c["labor_need"] is None:
+        lines.append(
+            f"**8. The labor today's pace implies.** With ρ = {rho:g}, labor alone "
+            f"cannot make research {c['pace']:.2f}× faster against experiment compute on "
+            "trend, so today's pace needs more than AI labor.")
+    elif c["pace"] > 1:
+        solve = (rf"$$\text{{labor}} = {c['pace']:.2f}^{{2/{par:g}}} = {c['labor_need']:.1f}\times$$"
+                 if abs(rho) < 1e-9 else
+                 rf"$$\text{{labor}} = \left(2 \times {c['pace']:.2f}^{{{rho:g}}} - 1\right)^{{1/({par:g} \times {rho:g})}} = {c['labor_need']:.1f}\times$$")
+        lines += [
+            "**8. The labor today's pace implies.** Run step 7 backwards: if all of "
+            f"today's {c['pace']:.2f}× came from AI labor, experiment compute on its trend, "
+            f"the research mean (ρ = {rho:g}, parallelization {par:g}) needs labor at",
+            solve,
+            f"its 2024–25 level, which through T = {T:.0%} is a raw AI speedup of "
+            f"({c['labor_need']:.1f} − 1 + {T:g}) ÷ {T:g} = {c['raw_need']:.1f}×. Staff "
+            f"surveys read ~{c['survey_now']:.0f}× today (step 6), so the measured pace and "
+            "the reported speedup agree. Partly by construction: step 6's elasticity is "
+            "fitted to the same surveys.",
+        ]
     return "\n\n".join(lines)
 
 
@@ -26877,7 +26918,7 @@ def _render_takeoff(loading):
                    "train at larger compute (Gundlach et al. 2025: most historical gains, "
                    "like Transformers and Chinchilla scaling, grew with compute). That "
                    "share of a gain counts in full once models train at the compute set "
-                   "under Advanced (default 10\u00d7) past the frontier when it was found; "
+                   "under Advanced (default 2\u00d7) past the frontier when it was found; "
                    "gains at the pace AI-frozen research would make never wait. The labor"
                    "\u2013compute setting above is about discovering gains; this is about "
                    "when a discovered gain pays off.")
@@ -26970,8 +27011,11 @@ def _render_takeoff(loading):
             number("Compute a scale-dependent gain waits for (orders of magnitude)",
                    "scale_lag_oom", 0.1, 5.0, 0.1,
                    "How much more compute than the frontier had when a gain was found "
-                   "models must train at before its scale-dependent share counts. 1 is "
-                   "10\u00d7, about 2 years at today's compute growth. Nothing measures it.")
+                   "models must train at before its scale-dependent share counts. 0.3 is "
+                   "2\u00d7, about 7 months at today's compute growth. Until compute has "
+                   "grown this much past today, that share is held to history's ratio of "
+                   "software to compute whatever the setting, so it moves later years "
+                   "only. Nothing measures it.")
             number("Human research staff growth until RSI (%/yr)", "hiring_growth",
                    -50.0, 200.0, 5.0,
                    "More staff finish the share of research work people still do sooner. "

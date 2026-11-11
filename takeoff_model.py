@@ -115,14 +115,16 @@ DEFAULTS = {
     # Share of algorithmic gains that pay off only at scale (Gundlach et al.
     # 2025): that share counts in full once training compute has grown
     # `scale_lag_oom` orders of magnitude past where it was when the gain was
-    # found. Logit-normal share and lognormal lag per draw; spreads are each
-    # 1-sigma (log-odds, log) times 100.
+    # found. Before today history is taken as balanced, so until compute has
+    # grown one lag past today the lag cancels and that share is held to
+    # history's software-per-compute ratio. Logit-normal share and lognormal
+    # lag per draw; spreads are each 1-sigma (log-odds, log) times 100.
     "scale_dependent": 50.0, "scale_dependent_spread": 100.0,
     # Correlation between a draw's labor-compute elasticity and its
     # scale-dependent share, both readings of how compute-bound algorithmic
     # progress is: where labor stands in for compute, fewer gains need scale.
     "compute_bound_corr": 0.5,
-    "scale_lag_oom": 1.0, "scale_lag_spread": 70.0,
+    "scale_lag_oom": 0.3, "scale_lag_spread": 70.0,
 }
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,

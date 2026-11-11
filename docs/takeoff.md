@@ -49,7 +49,7 @@ returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceil
 exact step, `reference_software` the same closed form), so with it no draw diverges
 (`test_the_software_ceiling_holds_every_draw_below_its_limit`); a high end of 0 removes it,
 which the runaway tests use. Row 19 draws `scale_dependent` (median 50%, logit spread
-`scale_dependent_spread`; drawn with `compute_bound_corr`, default 0.5, against ρ's draw so a substitutable scenario has fewer scale-dependent gains, `test_elasticity_and_scale_dependence_share_one_factor`; it moved the share of scenarios whose pace doubles within a year of RSI from 16% to 17%, a measure that undercounts takeoffs exhausting their ceiling inside the year, so prefer the first-year progress card's shares), row 20 `scale_lag_oom` (median 1, lognormal
+`scale_dependent_spread`; drawn with `compute_bound_corr`, default 0.5, against ρ's draw so a substitutable scenario has fewer scale-dependent gains, `test_elasticity_and_scale_dependence_share_one_factor`; it moved the share of scenarios whose pace doubles within a year of RSI from 16% to 17%, a measure that undercounts takeoffs exhausting their ceiling inside the year, so prefer the first-year progress card's shares), row 20 `scale_lag_oom` (median 0.3, 2×, lognormal
 `scale_lag_spread`): of the gains a model gets through training, that share pays off only
 once models train at that many orders of magnitude more compute than the frontier had when
 the gain was found (Gundlach et al. 2025). Fast gains (tooling, kernels) are exempt, as the
@@ -59,7 +59,11 @@ the frontier when the model's run began (`run_start_scale`), adds history's bala
 over one lag, and never holds a model below the frozen-AI reference's trained software, so
 AI-frozen research never waits and AI-driven gains wait, then count in full
 (`test_scale_dependent_gains_pay_off_only_as_compute_scales`,
-`test_scale_dependent_gains_wait_on_compute_rather_than_vanish`). It is about when a
+`test_scale_dependent_gains_wait_on_compute_rather_than_vanish`). Before today the stock is
+history's balanced path, so until compute has grown one lag past today the lag cancels and
+the share is held to history's software-per-compute ratio
+(`test_the_lag_cancels_until_compute_outgrows_it`); at 10× that was most of the years before
+ultraintelligence, which is why 3× to 100× left its median alone. It is about when a
 discovered gain pays off, not how fast gains are found (that is ρ). Successors are adopted,
 and re-checked at deployment, by capability as it pays off, so `capability_log` never
 falls; `software_realized_log` is its algorithmic part, which the ECI reading uses.
@@ -120,7 +124,7 @@ it moves nothing). The pace-factor chart (`_tk_factors_fig`) is capped at
 `_TK_FACTOR_VIEW`; `_tk_multiply_fig` restates it at the median RSI date (else the view's
 end) as log-scale steps from today's pace, ending on the net pace's own median, not the
 steps' product, since medians don't multiply. `_tk_flow_dot` (graphviz) draws evidence → measured rate → conversion →
-setting → factor → net, every step's live number from `_tk_evidence_chain` (an expander, `_tk_evidence_math`, writes the same steps as formulas with the numbers filled in, each input shown as its fit, its source, or a prior named by its sidebar setting (`test_every_input_is_derived_or_named_as_a_prior`); with transfer 0 the readings are shown at full transfer), coloured as the factor lines; the experiment series has its own
+setting → factor → net, every step's live number from `_tk_evidence_chain` (an expander, `_tk_evidence_math`, writes the same steps as formulas with the numbers filled in, each input shown as its fit, its source, or a prior named by its sidebar setting (`test_every_input_is_derived_or_named_as_a_prior`); with transfer 0 the readings are shown at full transfer; step 8, `_tk_pace_labor`, runs the research mean backwards to the labor and raw AI speedup today's pace implies, against the staff surveys, `test_the_labor_todays_pace_implies_runs_step_7_backwards`), coloured as the factor lines; the experiment series has its own
 grey (`_TK_PACE_COLOR`) because it sets today's pace, not Compute, and its evidence panel
 marks where its own trend stands today (`_add_today_diamond`), not Takeoff's set pace. Exact zero-feedback equalities in tests need `baseline_inputs=0`.
 Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth`,

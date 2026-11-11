@@ -7307,6 +7307,18 @@ class TestEvidenceMathCoding:
             assert prior in md, prior
         assert "c['" not in md and "{T:" not in md  # no un-interpolated f-string
 
+    def test_the_labor_todays_pace_implies_runs_step_7_backwards(self):
+        """Step 8's labor, put back through the research mean with experiment
+        compute at 1, gives today's pace; its raw speedup undoes transfer;
+        Cobb-Douglas has its own closed form; past labor's cap there is none."""
+        c = self._chain()
+        L, rho, par = c["labor_need"], c["substitution"], c["parallel"]
+        assert ((L ** (par * rho) + 1) / 2) ** (1 / rho) == pytest.approx(c["pace"])
+        assert 1 - c["T"] + c["T"] * c["raw_need"] == pytest.approx(L)
+        assert f"= {L:.1f}" in vp._tk_evidence_math(c)
+        assert vp._tk_pace_labor(1.54, 0.5, 0.0, 0.6)[0] == pytest.approx(1.54 ** 4)
+        assert vp._tk_pace_labor(40.0, 0.5, -0.2, 0.6) == (None, None)
+
     def test_the_yardstick_multiplies_out_as_shown(self):
         """Step 2's algorithms factor is its own formula to the shown digits,
         and compute times it is the window's effective compute."""

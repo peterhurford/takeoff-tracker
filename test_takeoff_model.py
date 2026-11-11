@@ -302,10 +302,26 @@ def test_scale_dependent_gains_wait_on_compute_rather_than_vanish():
     np.testing.assert_allclose(end(all_fast), end(dict(all_fast, scale_dependent=0.0)))
 
 
+def test_the_lag_cancels_until_compute_outgrows_it():
+    """Before today history is balanced, so while compute has grown less than
+    the lag since today, scale-dependent gains are held to history's software-
+    per-compute ratio whatever the lag: 1 and 2 OOM agree over a year at 2x
+    compute growth (0.3 OOM), and the 0.1 OOM lag, outgrown, lets more through."""
+    onset = np.full(100, 1.0)
+    base = dict(years=1, scale_dependent=50.0, scale_lag_spread=0.0, serial_speedup=0,
+                compute_growth=2.0)
+    end = lambda q: tk.simulate(dict(base, **q), n=100, onset_years=onset)[
+        "workflow_progress"]["capability_log"][:, -1]
+    np.testing.assert_allclose(end(dict(scale_lag_oom=1.0)), end(dict(scale_lag_oom=2.0)))
+    assert (end(dict(scale_lag_oom=0.1)) > end(dict(scale_lag_oom=1.0)) + 1e-6).any()
+
+
 def test_autopilot_drops_every_human_hour_from_rsi():
     """On autopilot, no stage needs people from a draw's RSI on: the charted
     hours reach zero once every draw has reached RSI, and research runs at
-    least as fast as with each stage still shedding hours at its own pace."""
+    least as fast as with each stage still shedding hours at its own pace,
+    read a year past the last RSI: by year 8 both press on the software
+    ceiling, where the slower run catches up."""
     onset = np.full(100, 0.5)
     on = tk.simulate(dict(years=8), n=100, onset_years=onset)
     off = tk.simulate(dict(years=8, rsi_autopilot=0.0), n=100, onset_years=onset)
@@ -314,8 +330,9 @@ def test_autopilot_drops_every_human_hour_from_rsi():
     past = on["workflow_progress"]["years"] >= on["events"]["RSI"].max()
     assert (on["workflow_progress"]["human_quantiles"][past] == 0).all()
     assert (off["workflow_progress"]["human_quantiles"][past][:, 1, 2] > 0).all()
-    cap_on = on["workflow_progress"]["capability_log"][:, -1]
-    cap_off = off["workflow_progress"]["capability_log"][:, -1]
+    later = np.searchsorted(on["workflow_progress"]["years"], on["events"]["RSI"].max() + 1)
+    cap_on = on["workflow_progress"]["capability_log"][:, later]
+    cap_off = off["workflow_progress"]["capability_log"][:, later]
     assert np.median(cap_on) > np.median(cap_off)
 
 
