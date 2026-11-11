@@ -18310,14 +18310,14 @@ def _pc_cut_equivalent(base, cut, start):
     from `start` (years), then not at all, best tracks the cut run's median
     ECI, least squares on the uncut run's clock up to ultraintelligence; None
     when the cut run has under three months to fit."""
-    years = base["years"]
     m0 = np.maximum.accumulate(np.median(base["paths"], axis=0))
     m1 = np.median(cut["paths"], axis=0)
+    years = base["years"][:len(m1)]          # a cut run may stop sooner
     ok = (years >= start) & (m1 <= min(m0[-1], base["ultra"]))
     if ok.sum() < 3:
         return None
     t = years[ok]
-    clock = np.minimum(np.interp(m1[ok], m0, years), t)   # the uncut date at that ECI
+    clock = np.minimum(np.interp(m1[ok], m0, base["years"]), t)   # the uncut date at that ECI
     best = None
     for pace in _PC_PACE_OPTIONS[1:]:
         for months in range(1, 121):
@@ -20105,31 +20105,31 @@ def _tk_run_seeded(day):
 _TK_CUT_MEMO = {}
 
 
-def _tk_run_cut_seeded(day, cut):
-    """`_tk_run_seeded(day)` with R&D compute cut (`_tk_run_cut`), once per
-    rerun, settings and cut."""
+def _tk_run_cut_seeded(day, cut, years=None):
+    """`_tk_run_seeded(day)` with R&D compute cut (`_tk_run_cut`, stopped
+    `years` out), once per rerun, settings and cut."""
     run = _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return run
-    key = (id(run), cut)
+    key = (id(run), cut, years)
     if key not in _TK_CUT_MEMO:
         _TK_CUT_MEMO.clear()
         with _seeded_rng(_tk_seed()):
-            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut))   # holds `run`: its id stays its own
+            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut, years))   # holds `run`: its id stays its own
     return _TK_CUT_MEMO[key][1]
 
 
-def _pc_takeoff_us(today, cut=None):
+def _pc_takeoff_us(today, cut=None, years=None):
     """The Takeoff tab's run, as the Pacing tab reads it (with `cut`, under
-    that R&D compute cut, `_tk_run_cut_seeded`; then 'run' is the run itself,
-    for China to follow): {'day', 'years',
+    that R&D compute cut, `_tk_run_cut_seeded`, stopped `years` out; then
+    'run' is the run itself, for China to follow): {'day', 'years',
     'paths' (draws x months, ECI of the trained US frontier from `day`),
     'ppy', 'coder', 'rsi' (each draw's ECI at its automated-coding and RSI
     dates, NaN if never), 'when' (each milestone's date per draw, years from
     `day`, the very dates Takeoff's cards take medians of)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
-    run = _tk_run_seeded(day) if cut is None else _tk_run_cut_seeded(day, cut)
+    run = _tk_run_seeded(day) if cut is None else _tk_run_cut_seeded(day, cut, years)
     if not isinstance(run, dict) or "error" in run:
         return None
     eci, res = run["eci"], run["result"]
@@ -20142,6 +20142,9 @@ def _pc_takeoff_us(today, cut=None):
             "when": {"automated coder": ca, "RSI": np.asarray(res["events"]["RSI"], float),
                      "ultraintelligence": eci["ultra"]}}
 
+
+# Years past the Pacing chart's end the cut US run still simulates.
+_PC_CUT_RUN_PAST = 1.0
 
 # Top of the Pacing chart's ECI axis, past the ultraintelligence threshold.
 _PC_ECI_VIEW_PAST_ULTRA = 10
@@ -21461,8 +21464,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     tk = tk_free = _pc_takeoff_us(today)
     if tk is not None and cut is not None:
         _c0 = max((pause_d - tk['day']).days, 0) / 365.25
+        # Nothing here reads the cut run past the chart's end: stop it there
+        # plus `_PC_CUT_RUN_PAST` (China's run, the run-length shift).
+        _c_end = (None if horizon is None else float(np.ceil(
+            max((horizon - tk['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
         tk = _pc_takeoff_us(today, (float(cut[0]), _c0,
-                                    _c0 + cut[1] / 12 if cut[1] else None))
+                                    _c0 + cut[1] / 12 if cut[1] else None), _c_end)
         _eq = _pc_cut_equivalent(tk_free, tk, _c0)
         with cut_box if cut_box is not None else st.container():
             if _eq is None:
@@ -25518,20 +25525,21 @@ def _tk_cut_onset(onset, base, cut_run, start):
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
                  baseline_yield=1.0, compute_rates=None, historical_compute_rate=None,
                  coding_capability=None, coding_weights=None, human_curve=None,
-                 capability_at=None, cut=None):
+                 capability_at=None, cut=None, cut_years=None):
     """`takeoff.simulate` plus the tab's quantiles, holding per draw only what
     the tab reads per draw: cached results stay in memory, ~3.4 MB per (draws x
     months) array. With `capability_at` (years), only each draw's capability then
     and the year its research direction is ready (`direction_ready`). `cut` =
     (factor, start, end or None, in years) divides R&D compute by `factor`
-    between the two (`_tk_cut_path`)."""
+    between the two (`_tk_cut_path`, laid out to `cut_years` when the run
+    itself stops sooner, so a shortened run takes the full run's values)."""
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
                              historical_compute_rate=historical_compute_rate,
                              coding_capability=coding_capability,
                              coding_weights=coding_weights, human_curve=human_curve,
-                             compute_cut=_tk_cut_path(cut, params["years"]))
+                             compute_cut=_tk_cut_path(cut, cut_years or params["years"]))
     if capability_at is not None:
         wp = result["workflow_progress"]
         k = min(int(np.searchsorted(wp["years"], capability_at)), len(wp["years"]) - 1)
@@ -25872,11 +25880,18 @@ def _tk_run(today, progress=None):
     return dict(_tk_finish(inputs, onset_years), inputs=inputs, onset=onset_years)
 
 
-def _tk_finish(inputs, onset_years, cut=None):
+def _tk_finish(inputs, onset_years, cut=None, years=None):
     """`_tk_run`'s last step, the simulation on its prepared `inputs` and
-    paired coding dates, read as ECI; `cut` as `_tk_simulate` takes it."""
+    paired coding dates, read as ECI; `cut` as `_tk_simulate` takes it, and
+    with `years` the run stops at the first month that many years out."""
     params, ultra = inputs["params"], inputs["ultra"]
-    result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *inputs["rest"], cut=cut)
+    full = params["years"]
+    # Stopped on one of the full run's own months, so its grid is that run's.
+    months = np.arange(0, full, 1 / 12)
+    if years is not None and years <= months[-1]:
+        params = dict(params, years=float(months[np.searchsorted(months, years)]))
+    result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *inputs["rest"], cut=cut,
+                          cut_years=full if cut is not None and params["years"] < full else None)
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     for key in ("hist_compute", "eci_rates", "eci_lead", "eci_start_dev", "eci_today"):
@@ -25893,14 +25908,18 @@ def _tk_finish(inputs, onset_years, cut=None):
                                "software_pace")}}
 
 
-def _tk_run_cut(run, cut):
+def _tk_run_cut(run, cut, years=None):
     """`run` (a `_tk_run`) again with R&D compute cut (`cut` as `_tk_simulate`
     takes it): once on the same coding dates, then on those dates moved to
     where the cut run reaches the same capability (`_tk_cut_onset`; a second
-    pass moves them by days)."""
+    pass moves them by days). With `years`, the second pass stops that many
+    years out: the simulation is causal, so its months are the full run's
+    (`test_a_cut_run_stopped_early_is_the_full_run_so_far`). The first pass
+    runs whole, since a date it moves past the stop still shapes the months
+    before it."""
     fixed = _tk_finish(run["inputs"], run["onset"], cut)
     onset = _tk_cut_onset(run["onset"], run, fixed, cut[1])
-    return dict(_tk_finish(run["inputs"], onset, cut), inputs=run["inputs"], onset=onset)
+    return dict(_tk_finish(run["inputs"], onset, cut, years), inputs=run["inputs"], onset=onset)
 
 
 # ── Takeoff: China's takeoff (section 5) ─────────────────────────────────

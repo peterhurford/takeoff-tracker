@@ -1040,6 +1040,22 @@ def test_a_flat_compute_path_stays_flat_under_the_rsi_boost():
     np.testing.assert_allclose(run["workflow_progress"]["compute_log"], 0.0, atol=1e-12)
 
 
+def test_a_compute_cut_run_stopped_early_is_the_longer_run_so_far():
+    """Under a cut compute falls, and the record `pays_off` searches as sorted
+    keeps the highest compute so far: a run stopped at 3 years is then the
+    6-year run's first 3, as an uncut one is."""
+    n, grid = 40, np.linspace(0, 6, 577)
+    kw = dict(n=n, onset_years=np.linspace(0.5, 8, n), compute_rates=np.full(n, np.log(2.5)),
+              experiment_slopes=np.full(n, 1.0),
+              compute_cut=(grid, np.log(6.0) * np.clip((grid - 0.5) * 12, 0, 1)))
+    long, short = (tk.simulate(dict(tk.POINT_ESTIMATE, years=y), **kw)["workflow_progress"]
+                   for y in (6, 3))
+    k = len(short["years"])
+    np.testing.assert_array_equal(long["years"][:k], short["years"])
+    for key in ("capability_log", "software_realized_log", "pace"):
+        np.testing.assert_array_equal(long[key][:, :k], short[key])
+
+
 def test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost():
     """`compute_cut` takes its log off training, agent and experiment compute
     (the reported compute falls by it, the research pace by the cut to the

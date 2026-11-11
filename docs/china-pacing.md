@@ -377,7 +377,13 @@ run is rerun with `takeoff.simulate(compute_cut=…)` (`_tk_cut_path`, a month's
 out; `_tk_run_cut`, memoized per rerun by `_tk_run_cut_seeded`), twice, the second on coding
 dates moved to where the cut run trains the same ECI (`_tk_cut_onset`; the inherited dates
 are calendar dates from a projection that knows no cut, and a third pass moves them by days;
-`test_a_cut_moves_coding_dates_to_the_same_capability`). `_pc_takeoff_us(cut=…)` hands that
+`test_a_cut_moves_coding_dates_to_the_same_capability`). The second pass stops a whole
+number of years at least `_PC_CUT_RUN_PAST` past the chart's end, on one of the full run's
+months (`_tk_finish(years=…)`): the simulation is causal, so those months are the full
+run's (`test_a_cut_run_stopped_early_is_the_full_run_so_far`). The first pass cannot stop
+early, since a coding date moved past the stop still ramps coding help before it; a
+milestone's ECI is then the median over the draws reaching it inside the shortened run.
+`_pc_takeoff_us(cut=…)` hands that
 run to the panel as `tk`, so the US line, milestones, paced clock (the two levers stack) and
 China's follower run (`tk['run']` into `_cn_tk_run`) all read it, while the dotted no-lever
 lines and `free` China stay on the uncut `tk_free`

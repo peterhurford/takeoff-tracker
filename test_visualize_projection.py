@@ -5549,6 +5549,27 @@ class TestPacing:
         assert all(d > 0.2 for d in lasting)
         assert all(0 <= e < d for e, d in zip(ended, lasting))
 
+    def test_a_cut_run_stopped_early_is_the_full_run_so_far(self, monkeypatch):
+        """`_tk_run_cut(years=...)`: the months the shortened run has are the
+        full cut run's exactly (ECI paths, and every coding and RSI date
+        inside them), and it stops on one of the full run's months."""
+        monkeypatch.setattr(vp.st, "session_state", {})
+        run = vp._tk_run_seeded(vp._today().replace(hour=0, minute=0, second=0, microsecond=0))
+        cut = (6.0, 0.5, None)
+        full, short = vp._tk_run_cut(run, cut), vp._tk_run_cut(run, cut, 4.05)
+        years = short["result"]["workflow_progress"]["years"]
+        k = len(years)
+        assert k < len(full["result"]["workflow_progress"]["years"]) and years[-1] >= 4.05
+        np.testing.assert_array_equal(full["result"]["workflow_progress"]["years"][:k], years)
+        for key in ("paths", "model"):
+            np.testing.assert_array_equal(full["eci"][key][:, :k], short["eci"][key])
+        np.testing.assert_array_equal(full["onset"], short["onset"])
+        for a, b in ((full["result"]["coding_at"], short["result"]["coding_at"]),
+                     (full["result"]["events"]["RSI"], short["result"]["events"]["RSI"])):
+            inside = a <= years[-1]
+            np.testing.assert_array_equal(a[inside], b[inside])
+            assert not np.any(b[~inside] <= years[-1])
+
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI
         blend's weights and its not-yet conditioning. The pause is an int of

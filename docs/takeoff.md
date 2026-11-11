@@ -54,7 +54,9 @@ which the runaway tests use. Row 19 draws `scale_dependent` (median 50%, logit s
 once models train at that many orders of magnitude more compute than the frontier had when
 the gain was found (Gundlach et al. 2025). Fast gains (tooling, kernels) are exempt, as the
 paper's scale-invariant kind. `pays_off` reads the research stock found by the month the
-frontier (`compute_seen`, `stock_seen`, one sorted search across draws) stood a lag below
+frontier (`compute_seen`, the highest compute so far, so a cut's fall keeps it sorted,
+`test_a_compute_cut_run_stopped_early_is_the_longer_run_so_far`; `stock_seen`; one sorted
+search across draws) stood a lag below
 the frontier when the model's run began (`run_start_scale`), adds history's balanced pace
 over one lag, and never holds a model below the frozen-AI reference's trained software, so
 AI-frozen research never waits and AI-driven gains wait, then count in full

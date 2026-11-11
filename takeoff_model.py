@@ -1429,7 +1429,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         rows = np.flatnonzero(observed)
         pace_history[rows, observation_index[rows]] = pace[rows]
         agent_share_history[rows, observation_index[rows]] = agent_share[rows]
-        seen_now = (frontier_log(end) + boost_log)[rows]
+        # The highest compute so far: under a cut it falls, and `pays_off`
+        # searches each row as sorted.
+        seen_now = np.maximum((frontier_log(end) + boost_log)[rows],
+                              compute_seen[rows, np.maximum(observation_index[rows] - 1, 0)])
         compute_seen[rows, observation_index[rows]] = seen_now
         if seen_flat[0] is not None:     # fill the same cells of the sorted copy
             seen_flat[0][rows * len(workflow_grid) + observation_index[rows]] = (
