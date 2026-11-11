@@ -2961,7 +2961,7 @@ class TestDataCentersRegionShare:
         [line] = [str(m.value) for m in at.markdown
                   if "of the world's AI compute is in the US" in str(m.value)]
         us_guess, cn_guess = (int(x) for x in re.findall(r"(\d+)%", line)[:2])
-        cen = vp._wc_central_shares([0.0])
+        cen = vp._wc_central_shares(datetime.now(), [0.0])
         assert us_guess == round(float(cen[vp._WC_LABELS[0]][0]))
         assert cn_guess == round(float(cen[vp._WC_LABELS[1]][0]))
         spec = json.loads(next(c for c in at.get("plotly_chart")

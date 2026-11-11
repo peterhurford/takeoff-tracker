@@ -351,58 +351,54 @@ world's *installed* AI compute divides between the US, mainland China, SEA, the
 UAE and everywhere else — a bar chart for today, then a stacked area carrying
 it forward to the tab's horizon. The catalogue those other charts read covers a
 minority of the global stock and is far denser for the US (Epoch says so
-itself), so this section is a judgment layer over published country estimates,
+itself), so this section is an outside view built on an accounting identity,
 not a reading of the CSVs. Six things are load-bearing:
 
-1. **The centrals come from cited public estimates, and the band is their
-   disagreement.** `_WC_REGIONS` carries `(label, central, p10, p90)`; the
-   sources are in the block comment above it — Epoch's leading-cluster share by
-   country (US ~75% / China ~15%), Epoch's chip-smuggling report (660k H100e
-   ≈ ⅓ of China's compute and ≈3% of the global stock, i.e. China ≈9%), the
-   AI-2027 tracker (~12%), RAND (~15%) and IFP's chip count (~7% inside China).
-   China's 6–15% spans them, centred at 9% on the chip counts; the US central is
-   76% (IFP ~77%). Retarget the constants when the estimates move rather
-   than nudging them to taste. Every region's provenance is one line in
-   `_WC_NOTES`, shown on its bar's hover rather than written out as prose.
-2. **The regions' growth rates are correlated, and unequally.**
-   `_WC_COMMON_LOAD` is each region's loading on one global shock (chip
-   supply, a capex cycle), so two regions' log-rates correlate at the product
-   of their loadings; marginal rate spreads are untouched, only the joint
-   moves. Independent rates said the plausible low-US worlds were ones where
-   somebody else ran away with the buildout — backwards, since most non-US
-   capacity is US firms building abroad on US-supplied chips. China's loading
-   is the low one (domestic silicon, controls already binding), so it is the
-   region whose share rises when the US stalls: conditional on the US in its
-   bottom decile at the horizon, China absorbs 26% of the shortfall against
-   11% under independence. Guarded by
-   `test_a_low_us_world_is_a_slow_world_not_a_handover`. Note what the
-   published-estimate spread does *not* get: a common factor on the levels
-   would cancel exactly under renormalization, and the disagreement there is
-   genuinely per-region (the sources argue about China specifically).
-   **The per-region CIs are marginals of a composition** — every sample sums
-   to 100, but the p90s do not (150% at the horizon), so both captions say the
-   range is one region at a time.
-
-3. **The projection draws the central-rate scenario, not a percentile.**
-   `_wc_central_shares()` grows each region at its `_WC_GROWTH` central rate
-   and normalizes — so it sums to 100 with no rescaling and is literally the
-   line the caption describes. `_wc_share_paths()` samples the rates for the
-   hover's 80% CI only. The *Today* bars and headline read the same central
-   split at year 0, with the sampled levels only as whiskers, so the headline
+1. **The world total is an identity, and China's share is computed from it.**
+   `_wc_stocks()`: the world at each year-end is Epoch's end-2025 chip-sales
+   total (`_WC_WORLD_END2025`, 20.4M H100e) plus every chip made since,
+   CTS's US-and-allied output (`load_duv_production()["us"]`) and China's
+   domestic output from its compute mix, nothing retired. China is the mix's
+   in-China stock (domestic + legal + smuggled); remote access stays abroad.
+   CTS counts dense FP16 H100e and Epoch dense 8-bit; they are taken as one
+   unit, an assumption stated in the comment and the caption. Stocks are
+   log-linear between year-ends (Dec 31); past the mix's last year China and
+   its domestic stock keep their last-year growth, past CTS's last year the
+   world keeps its, and before end-2025 the world runs back at its 2026
+   growth. Epoch's mid-2026 reading (31.7M, 27.8–36.0M, `_WC_WORLD_MID2026`)
+   is a check, not the anchor: CTS gives calendar-year output only, so pinning
+   mid-2026 would need a guess at its H1/H2 split
+   (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`;
+   `test_world_is_china_plus_the_rest_and_shares_sum_to_100`). The published
+   China estimates (Epoch's cluster share 14–15%, AI-2027 12%, the smuggling
+   report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`.
+2. **Outside China, published shares split the rest.** `_WC_REGIONS` carries
+   `(label, central, p10, p90)` for the US, SEA, the UAE, Europe/UK and Other,
+   as published beside China's ~9%; only their ratios are used
+   (`_wc_central_split`). Retarget the constants when the estimates move
+   rather than nudging them to taste. Every region's provenance is one line in
+   `_WC_NOTES`, shown on its bar's hover.
+3. **The band has three independent sources.** CTS's low and high output
+   (scenarios, not quantiles; read as 10th and 90th, `_wc_skew`), the mix's
+   p5/p95 domestic and smuggled stocks (legal sales carry no range), and the
+   split's spread (`_wc_split_paths`) — the published estimates' disagreement
+   on levels, then each region's growth rate. `_WC_COMMON_LOAD` loads every
+   non-China region on one global shock so a low-US split is a slow world, not
+   a handover to Europe (`test_a_low_us_split_is_a_slow_world_not_a_handover`);
+   marginal spreads are untouched. **The per-region CIs are marginals of a
+   composition** — every sample sums to 100, the p90s do not — so both
+   captions say the range is one region at a time. The projection draws the
+   all-central scenario (`_wc_central_shares`), which sums to 100 with no
+   rescaling; the *Today* bars and headline read it at today, so the headline
    matches the chart's Today edge
-   (`test_the_headline_is_the_split_the_chart_prints_today`). Medians were tried and don't sum to 100 (needing a
-   rescale that then disagrees with the hover); means sum correctly but a
-   lognormal rate's tail doubles the UAE. Growth rates are cross-checked
-   against the catalogue in the comment: the US aggregates to ~1.9×/yr and
-   China's domestic largest-site fit is ~1.8×/yr, against this tab's own
-   `_CC_CN_COMPUTE_LO/HI` cluster band.
+   (`test_the_headline_is_the_split_the_chart_prints_today`).
 4. **It is by location, not owner.** Same convention as the Data Centers tab's
    region chart, so Chinese labs' capacity abroad counts under SEA, and most of
    Europe/UK is US firms building there. The area chart opens at `_CC_X_START`
-   (Jan 2025) like the rest of the tab, so the stretch left of the "Today"
-   divider is the same rates run *backwards* — there is no measured history of
-   these shares. It doubles as a check the caption quotes: back-cast to
-   May 2025 China lands at ~12%, under Epoch's ~15% cluster-share reading. That half is
+   (Jan 2025) like the rest of the tab; left of the "Today" divider China's
+   stock is the mix's and the world before end-2025 is the back-run, so no
+   share there is measured. The caption quotes the May 2025 China share
+   against Epoch's ~15% cluster-share reading. That half is
    washed out by a white `vrect` at `layer='above'` (a shaded band would sit
    *under* the filled areas and never show), and the divider is heavier than
    the other tabs' dotted one on purpose: it is the only thing separating two

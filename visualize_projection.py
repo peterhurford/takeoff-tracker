@@ -12128,35 +12128,40 @@ _DC_NETWORK_OPTIONS = {
 #   • IFP (Oct 2026): China ~4.6M H100e at end-2026 by every channel, ~3.6M
 #     of it in China, against ~41.5M for the US at ~77% of the world: China
 #     ~7% by location.
-# China's 6–15% band is that disagreement, centred on the chip-counting
-# estimates (Epoch's smuggling report, IFP) over the cluster share. SEA and UAE are the weakest numbers here: both regions are
+# China's share is not set from these: it is computed, the compute mix's
+# in-China stock over the world total (`_wc_stocks`), and they are its
+# check. SEA and UAE are the weakest numbers here: both regions are
 # mostly *pipeline* (Johor ~3 GW approved, Stargate UAE's first 200 MW of a
 # planned 1 GW), so today's installed share is small and poorly measured.
 _WC_SOURCE_SUPERCOMPUTERS = "https://epoch.ai/data-insights/ai-supercomputers-performance-share-by-country"
 _WC_SOURCE_SMUGGLING = "https://epoch.ai/publications/chip-smuggling"
 _WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
-# (label, central share %, 10th pct, 90th pct). Centrals sum to 100; each
-# sample is renormalized anyway, so an edited set need not.
+_WC_CN = "China domestic"
+# The regions outside China as (label, central share %, 10th pct, 90th pct):
+# world shares as published, beside China's ~9%. They split whatever the
+# world total leaves outside China, so only their ratios matter.
 _WC_REGIONS = (
     ("US domestic", 76.0, 68.0, 82.0),
-    ("China domestic", 9.0, 6.0, 15.0),
     ("SEA", 3.0, 1.5, 6.0),
     ("UAE", 2.0, 0.8, 4.0),
     ("Europe/UK", 6.0, 3.5, 9.0),
     ("Other", 4.0, 2.0, 7.0),
 )
-_WC_LABELS = tuple(lab for lab, *_ in _WC_REGIONS)
+# Chart order: the US, then China, then the rest.
+_WC_LABELS = (_WC_REGIONS[0][0], _WC_CN) + tuple(
+    lab for lab, *_ in _WC_REGIONS[1:])
 _WC_NOTES = {
     "US domestic":
         "Epoch's leading-cluster share is about 75% (May 2025, ~74.5% "
         "re-quoted for 2026), and IFP puts the US at ~77% of the world's "
         "AI compute at end-2026.",
     "China domestic":
-        "The widest band, because the sources disagree most here: Epoch's "
-        "cluster share says 14\u201315%, the AI-2027 tracker 12%, Epoch's "
-        "own smuggling estimate about 9%, and IFP's chip count about 7% "
-        "for chips inside China. Set at the chip counts, with the cluster "
-        "share kept inside the band.",
+        "Computed, not set: the China tab's compute mix inside China "
+        "(domestic chips, legal sales, smuggling) over the world total. "
+        "The published estimates disagree most here: Epoch's cluster share "
+        "says 14\u201315%, the AI-2027 tracker 12%, Epoch's own smuggling "
+        "estimate about 9% at end-2025, and IFP's chip count about 7% at "
+        "end-2026.",
     "SEA":
         "Johor has roughly 3 GW approved or building, but most of that is "
         "still pipeline, and its tenants are a mix of US hyperscalers and "
@@ -12176,29 +12181,22 @@ _WC_NOTES = {
         "aiming at 1.9 GW by 2030. Sized as the remainder: Epoch puts the US "
         "and China together at about 90%.",
 }
-# Growth of each region's installed compute, ×/yr as (central, p10, p90).
-# Only the ratios matter — shares are renormalized at every date.
+# Growth of each region outside China, ×/yr as (central, p10, p90). They
+# split the non-China total (`_wc_split_paths`), so only their ratios matter;
+# the total itself comes from the world identity below.
 #   • US: Epoch has leading-cluster performance doubling every ~9 months
 #     (~2.5×/yr); the catalogue's US sites aggregate to ~1.9×/yr to end-2028.
 #   • Rates are power growth times compute per watt (derivations in
 #     CHINA_COMPUTE_JUDGMENTS.md). SemiAnalysis's China Datacenter Model
-#     (Sep 2026) is the power check for China and SEA; the
-#     catalogue's US sites put compute per watt at ~1.3–1.6×/yr.
-#   • China (1.9×, 1.4–2.6×): the catalogue's domestic largest-site fit is
-#     ~1.8×/yr, and this tab's own export-control band (_CC_CN_COMPUTE_LO/HI)
-#     is 1.4–2.0×/yr for a single cluster. SemiAnalysis has the five
-#     hyperscalers' power going ~6 GW (2023) → ~13.5 GW (2026) → ~21 GW
-#     (~2028), ~1.3×/yr; times compute per watt that is 1.6–2.1×, which the
-#     1.9× central sits inside. Capex doubling in 2026 (BATB ~$50B → ~$100B,
-#     about half on chips) supports the top of that range for a year, not
-#     beyond it: SemiAnalysis calls China chip-gated, not power-gated.
+#     (Sep 2026) is the power check for SEA; the catalogue's US sites put
+#     compute per watt at ~1.3–1.6×/yr.
 #   • SEA (2.0×, 1.5–3.2×): set below the US on purpose. SemiAnalysis has
 #     Chinese firms' leased power in APAC ex-China, most of it the
 #     Singapore–Johor–Batam hub, at ~0.85 → 1.45 → 2.45 → 2.8 → 2.9 GW over
 #     2025–29: ~1.3×/yr from 2026 and flattening, i.e. 1.6–2.0× in compute.
-#     So SEA's share of world compute drifts down after 2027 instead of
-#     compounding up. The top end stays wide for the US hyperscalers' share
-#     of Johor, which that series omits.
+#     So SEA's share drifts down after 2027 instead of compounding up. The
+#     top end stays wide for the US hyperscalers' share of Johor, which that
+#     series omits.
 #   • The UAE is the fast one, from a small base and mostly announced rather
 #     than built — hence the wide band. The UAE's top end is
 #     held at 5×/yr rather than the 6× a from-near-zero lognormal wants: at 6×
@@ -12212,41 +12210,41 @@ _WC_NOTES = {
 # How much of each region's growth rate rides on one global shock (chip
 # supply, a capex cycle) rather than its own circumstances — the loading on
 # that shock, so two regions' log-rates correlate at the product of theirs.
-# Drawn independently, the model says the plausible low-US worlds are ones
-# where somebody else ran away with the buildout, which has it backwards:
-# most non-US capacity is US firms building abroad on US-supplied chips, so
-# a US slowdown is a slowdown in SEA, Europe and the Gulf too. China, on
-# domestic silicon with export controls already binding, is the one region
-# that decouples — and so the one whose share actually rises when the US
-# stalls. Loadings leave every region's marginal rate spread exactly as
-# stated; only the joint moves.
+# Drawn independently, the split says a low-US world is one where somebody
+# else ran away with the buildout, which has it backwards: most non-US
+# capacity outside China is US firms building abroad on US-supplied chips,
+# so a US slowdown is a slowdown in SEA, Europe and the Gulf too. Loadings
+# leave every region's marginal rate spread exactly as stated; only the
+# joint moves.
 _WC_COMMON_LOAD = {
     "US domestic": 0.90,
     "Europe/UK": 0.85,
     "SEA": 0.80,
     "UAE": 0.80,
     "Other": 0.70,
-    "China domestic": 0.25,
 }
-# The global stock behind those shares, in H100e: Epoch's AI chip sales data
-# (dense 8-bit, cumulative deliveries from every tracked designer: Nvidia,
-# Google, AMD, Amazon, Huawei, Cambricon) at its last complete quarter,
-# 31.7M (5th-95th 27.8-36.0M) by 2026-06-30; 20.4M at end-2025, near the
-# smuggling report's ≈22M. Deliveries, not retired or online, so an upper
-# read of what is installed. `_wc_world_h100e` grows it to any date at the
-# regions' share-weighted central growth (~2.2x/yr, below the data's own
-# 2.6x over the year to June 2026), so the shares read as absolute H100e.
-_WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
-_WC_WORLD_H100E = (datetime(2026, 6, 30), 31.7e6)
-
 _WC_GROWTH = (
     ("US domestic", 2.3, 1.8, 3.0),
-    ("China domestic", 1.9, 1.4, 2.6),
     ("SEA", 2.0, 1.5, 3.2),
     ("UAE", 3.5, 2.4, 5.0),
     ("Europe/UK", 2.3, 1.7, 3.2),
     ("Other", 2.2, 1.6, 3.2),
 )
+# The world's installed AI compute is an accounting identity (`_wc_stocks`):
+# Epoch's AI chip sales total at end-2025 (dense 8-bit, cumulative
+# deliveries from every tracked designer: Nvidia, Google, AMD, Amazon,
+# Huawei, Cambricon), plus each later year's US-and-allied chip output from
+# the CTS report (`load_duv_production()["us"]`) and China's domestic output
+# from its compute mix. Deliveries with nothing retired, so an upper read of
+# what is installed. CTS counts dense FP16 H100e: the two are taken as one
+# unit, an assumption (an H100e reads about the same on both bases,
+# CHINA_COMPUTE_JUDGMENTS.md §5). Epoch's mid-2026 reading is a check, not a
+# pin (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`):
+# CTS gives only calendar-year output, so pinning mid-2026 would need a guess
+# at its H1/H2 split.
+_WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
+_WC_WORLD_END2025 = 20.4e6
+_WC_WORLD_MID2026 = (datetime(2026, 6, 30), 31.7e6, 27.8e6, 36.0e6)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
@@ -12266,7 +12264,7 @@ _DUV_BAN_ALLOC = "push"   # the allocation the Pacing lever reads
 _DUV_CN_2026_H100E = (0.80, 1.26)
 _DUV_POLICY_YEAR = 2027.0             # the ban and the servicing cut both bite
 # Growth of that output in H100e, ×/yr: median, with the 10th–90th spread at
-# ÷/× _DUV_CN_OUTPUT_SPREAD. Chip output, not installed compute (`_WC_GROWTH`):
+# ÷/× _DUV_CN_OUTPUT_SPREAD. Chip output, not installed compute:
 # IFP has ×1.3 for 2026→27 (HBM binds); Epoch's domestic H100e went ×1.8 over
 # 2025→26; SemiAnalysis's 2027 Ascend units run ×1.3 (median) to ×2.7 (high).
 # The import-ban cut is most sensitive to this, so Pacing exposes it
@@ -15940,9 +15938,9 @@ def _wc_catalogued_shares(dcs, today):
     return {lab: 100.0 * tot.get(lab, 0.0) / whole for lab in _WC_LABELS}
 
 
-def _wc_sample_shares(n):
-    """Today's world shares, sampled: {region: array of percent} summing to
-    100 per sample.
+def _wc_sample_split(n):
+    """Today's split of the compute outside China, sampled: {region: array
+    of fractions} summing to 1 per sample.
 
     Each region is lognormal around its central estimate, with the log-spread
     taken from its 80% CI. Samples are renormalized, which pulls the
@@ -15953,24 +15951,22 @@ def _wc_sample_shares(n):
         sigma = np.log(hi / lo) / (2 * 1.2816)
         draws.append(mid * np.exp(np.random.normal(0.0, sigma, n)))
     arr = np.array(draws)
-    arr = 100.0 * arr / arr.sum(axis=0)
-    return {lab: arr[i] for i, lab in enumerate(_WC_LABELS)}
+    arr = arr / arr.sum(axis=0)
+    return {lab: arr[i] for i, (lab, *_) in enumerate(_WC_REGIONS)}
 
 
-def _wc_central_shares(years):
-    """The plain scenario: {region: percent at each of `years`} with every
-    region growing at its central rate. Sums to 100 by construction, and it is
-    the line the caption describes, so it is the line drawn — the sampled
-    paths supply the range around it."""
+def _wc_central_split(years):
+    """{region outside China: fraction of the non-China total at each of
+    `years` (from today)}, every region at its central level and rate."""
     lev = np.array([[mid] for _, mid, _, _ in _WC_REGIONS], dtype=float)
     g = np.array([[mid] for _, mid, _, _ in _WC_GROWTH], dtype=float)
     cur = lev * g ** np.array(years, dtype=float)
-    cur = 100.0 * cur / cur.sum(axis=0)
-    return {lab: cur[i] for i, lab in enumerate(_WC_LABELS)}
+    cur = cur / cur.sum(axis=0)
+    return {lab: cur[i] for i, (lab, *_) in enumerate(_WC_REGIONS)}
 
 
-def _wc_share_paths(years, n, common=None):
-    """Shares over time: {region: (len(years), n) percent}.
+def _wc_split_paths(years, n, common=None):
+    """The non-China split over time: {region: (len(years), n) fractions}.
 
     Every sample grows each region's compute at its own rate from _WC_GROWTH
     and renormalizes, so only the ratios between the rates matter. Rates are
@@ -15982,8 +15978,9 @@ def _wc_share_paths(years, n, common=None):
     decides where a low-US world's compute goes instead.
     """
     w = 1.0 if common is None else common
-    base = _wc_sample_shares(n)
-    lev = np.array([base[lab] for lab in _WC_LABELS])
+    base = _wc_sample_split(n)
+    labs = [lab for lab, *_ in _WC_REGIONS]
+    lev = np.array([base[lab] for lab in labs])
     z0 = np.random.normal(0.0, 1.0, n)
     g = []
     for lab, mid, lo, hi in _WC_GROWTH:
@@ -15992,11 +15989,101 @@ def _wc_share_paths(years, n, common=None):
             load * z0
             + np.sqrt(1.0 - load ** 2) * np.random.normal(0.0, 1.0, n))))
     g = np.array(g)
-    out = np.empty((len(_WC_LABELS), len(years), n))
+    out = np.empty((len(labs), len(years), n))
     for i, t in enumerate(years):
         cur = lev * g ** t
-        out[:, i, :] = 100.0 * cur / cur.sum(axis=0)
-    return {lab: out[i] for i, lab in enumerate(_WC_LABELS)}
+        out[:, i, :] = cur / cur.sum(axis=0)
+    return {lab: out[i] for i, lab in enumerate(labs)}
+
+
+def _wc_skew(row, z, q):
+    """`row`'s (central, low, high) at standard-normal `z`, lognormal on each
+    side with low and high at -q and +q: a central with an uneven range."""
+    mid, lo, hi = (max(float(x), 1.0) for x in row)
+    z = np.asarray(z, dtype=float)
+    return mid * np.where(z >= 0, hi / mid, mid / lo) ** (z / q)
+
+
+def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0):
+    """(world, China in-China) installed AI compute in H100e, `years` from
+    today, each shaped (len(years), n) for n draws of the z's.
+
+    World at each year-end is `_WC_WORLD_END2025` plus cumulative CTS
+    US-and-allied output and China's domestic output since; China is the
+    compute mix's domestic + legal + smuggled stock under `mix`
+    (`_cn_src_with_policy` keywords). CTS's low and high output sit at
+    `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
+    ∓1.64; legal sales carry no range. Past the mix's last year China
+    and its domestic stock continue at their own last-year growth, and the
+    world past CTS's last year at its last; before end-2025 the world runs
+    back at its 2026 growth. Both are log-linear between year-ends (Dec 31).
+    """
+    m = dict(mix or {})
+    m.pop("remote_cut", None)
+    stock = _cn_src_with_policy(today, **m)["stock"]
+    us = {y: (p50, lo, hi) for y, lo, p50, hi
+          in load_duv_production(_duv_mtime())["us"]}
+    z_us, z_dom, z_smug = np.broadcast_arrays(
+        *(np.atleast_1d(np.asarray(z, dtype=float))
+          for z in (z_us, z_dom, z_smug)))
+    first, y0 = 2024, 2025
+    mix_last = max(int(p) for p in stock)
+    last = max(max(us), mix_last)
+    ys = list(range(first, last + 1))
+    dom, cn = {}, {}
+    for y in range(first, mix_last + 1):
+        r = stock[str(y)]
+        dom[y] = _wc_skew(r["domestic"][:3], z_dom, 1.6449)
+        cn[y] = (dom[y] + r["legal"][0]
+                 + _wc_skew(r["smuggled"][:3], z_smug, 1.6449))
+    for y in range(mix_last + 1, last + 1):
+        for s in (dom, cn):
+            s[y] = s[y - 1] * s[mix_last] / s[mix_last - 1]
+    world = {y0: np.full_like(z_us, _WC_WORLD_END2025)}
+    for y in range(y0 + 1, last + 1):
+        world[y] = (world[y - 1] + _wc_skew(us[y], z_us, 1.2816) * 1e6
+                    + dom[y] - dom[y - 1] if y in us
+                    else world[y - 1] ** 2 / world[y - 2])
+    world[first] = world[y0] ** 2 / world[y0 + 1]
+    t = np.array([(datetime(y, 12, 31) - today).days / 365.25 for y in ys])
+    yrs = np.atleast_1d(np.asarray(years, dtype=float))
+    # Each point's segment, the first or last one outside the span, so the
+    # same line extends it.
+    i = np.clip(np.searchsorted(t, yrs) - 1, 0, len(t) - 2)
+    f = ((yrs - t[i]) / (t[i + 1] - t[i]))[:, None]
+
+    def _interp(series):
+        lv = np.log(np.array([series[y] for y in ys]))     # (len(ys), n)
+        return np.exp(lv[i] * (1.0 - f) + lv[i + 1] * f)
+    return _interp(world), _interp(cn)
+
+
+def _wc_shares(world, china, split):
+    """{region: percent of world}: China's stock, then `split` (fractions
+    of the rest)."""
+    rest = 100.0 * (world - china) / world
+    return {lab: (100.0 * china / world if lab == _WC_CN
+                  else rest * split[lab]) for lab in _WC_LABELS}
+
+
+def _wc_central_shares(today, years):
+    """{region: percent at each of `years` from today}, every input at its
+    central: the line drawn, which sums to 100 by construction."""
+    world, china = _wc_stocks(today, years)
+    split = {k: v[:, None] for k, v in _wc_central_split(years).items()}
+    return {lab: v[:, 0]
+            for lab, v in _wc_shares(world, china, split).items()}
+
+
+def _wc_share_paths(today, years, n, common=None):
+    """Sampled shares: {region: (len(years), n) percent}, each sample summing
+    to 100. The world total draws CTS's output, China its domestic and
+    smuggled stocks, the rest its split (`_wc_split_paths`, `common` as
+    there); the three are independent."""
+    z = np.random.normal(0.0, 1.0, (3, n))
+    world, china = _wc_stocks(today, years, z_us=z[0], z_dom=z[1],
+                              z_smug=z[2])
+    return _wc_shares(world, china, _wc_split_paths(years, n, common))
 
 
 # ── Per-company buildout-vs-release timing ────────────────────────────────
@@ -16536,24 +16623,46 @@ def _render_world_shares(today, horizon):
     """Where the world's AI compute is, and where it is heading.
 
     Epoch's data-center catalogue covers a minority of the world's compute
-    and is far denser for the US, so this is the outside view: published
-    country estimates for today (the catalogue's own split as diamonds), then
-    each region carried forward at its own growth rate. Bottom of the Data
+    and is far denser for the US, so this is the outside view: the world
+    identity (`_wc_stocks`) puts China's compute mix over the world total and
+    splits the rest by published country estimates carried forward at each
+    region's rate (the catalogue's own split as diamonds). Bottom of the Data
     Centers tab.
     """
     st.subheader("Share of world AI compute by region")
 
-    shares = _wc_sample_shares(N_SAMPLES)
+    # One grid from the tab's usual start to the horizon, with today in it
+    # explicitly so the divider and the Today bars land on a sampled point.
+    grid = _dc_cty_month_grid(_CC_X_START, horizon)
+    dates = sorted(set([d for d in grid if d < today] + [today]
+                       + [d for d in grid if d > today]))
+    years = [(d - today).days / 365.25 for d in dates]
+    i0 = dates.index(today)
+    paths = _wc_share_paths(today, years, N_SAMPLES)
+    central = _wc_central_shares(today, years)
+    world, _cn_stock = _wc_stocks(today, years)
+    world = world[:, 0] / 1e6
+    shares = {lab: p[i0] for lab, p in paths.items()}
     catalogued = _wc_catalogued_shares(dc_all, today)
     # The bars and headline read the central split, the same numbers the
     # projection's "Today" edge prints; the samples supply only the whiskers.
-    med = {lab: float(v[0]) for lab, v in _wc_central_shares([0.0]).items()}
-    us, cn = _WC_LABELS[0], _WC_LABELS[1]
+    med = {lab: float(v[i0]) for lab, v in central.items()}
+    us, cn = _WC_LABELS[0], _WC_CN
+    _identity = (
+        f"Epoch's end-2025 chip-sales total, "
+        f"{_WC_WORLD_END2025 / 1e6:.1f}M H100e, plus every chip made since: "
+        "US-and-allied output from the CTS lithography report and China's "
+        "domestic output from its compute mix (the China tab), nothing "
+        "retired. CTS counts dense 16-bit H100e and Epoch dense 8-bit; they "
+        "are taken as the same unit, an assumption.")
 
     _fn_line(
         f"About **{med[us]:.0f}% of the world's AI compute is in the US** "
-        f"and **{med[cn]:.0f}% in mainland China**. The tracked sites alone "
-        f"say {catalogued.get(us, 0):.0f}% and {catalogued.get(cn, 0):.0f}%.",
+        f"and **{med[cn]:.0f}% in mainland China**, of about "
+        f"{world[i0]:.0f}M H100e installed worldwide. The tracked sites "
+        f"alone say {catalogued.get(us, 0):.0f}% and "
+        f"{catalogued.get(cn, 0):.0f}%.",
+        ("installed worldwide", _identity),
         ("tracked sites alone", "Epoch's catalogue, which the rest of this "
                                 "tab reads: large frontier sites, mostly "
                                 "American, so it overstates the US."))
@@ -16566,9 +16675,9 @@ def _render_world_shares(today, horizon):
                            for l in _WC_LABELS], opacity=0.85),
         error_x=dict(
             type='data', symmetric=False,
-            array=[float(np.percentile(shares[l], 90)) - med[l]
+            array=[max(float(np.percentile(shares[l], 90)) - med[l], 0.0)
                    for l in _WC_LABELS],
-            arrayminus=[med[l] - float(np.percentile(shares[l], 10))
+            arrayminus=[max(med[l] - float(np.percentile(shares[l], 10)), 0.0)
                         for l in _WC_LABELS],
             color='#444444', thickness=1.2, width=6),
         name="Best guess", hoverinfo='text',
@@ -16598,28 +16707,25 @@ def _render_world_shares(today, horizon):
         "location. Sources: Epoch AI "
         f"([by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
         f"[smuggling]({_WC_SOURCE_SMUGGLING}), "
-        f"[coverage]({_WC_SOURCE_COVERAGE})), the AI-2027 tracker, RAND.",
-        ("80% ranges", "Mostly how much the sources disagree. They don't add "
-                       "to 100: a world with the US at its low end has the "
-                       "others higher. Hover a bar for its sources."),
+        f"[coverage]({_WC_SOURCE_COVERAGE}), "
+        f"[chip sales]({_WC_SOURCE_CHIP_SALES})), "
+        f"[CTS]({_DUV_SOURCE_URL}), IFP, the AI-2027 tracker, RAND.",
+        ("80% ranges", "China's comes from the compute mix's ranges for "
+                       "domestic chips and smuggling; the world total's from "
+                       "CTS's low and high output, which the report gives as "
+                       "scenarios, not quantiles, read here as 10th and "
+                       "90th; the split outside China from how much the "
+                       "published estimates disagree. They don't add to 100. "
+                       "Hover a bar for its sources."),
         ("by location", "Chinese firms' capacity abroad counts under SEA or "
                         "Other."))
 
     # ── The same split, carried forward ──
     st.markdown("**Where it is heading**")
-    # Opens at the tab's usual start. Before today the same rates simply run
-    # backwards — there is no measured history of these shares — and today is
-    # in the grid explicitly so the divider lands on a sampled point.
-    grid = _dc_cty_month_grid(_CC_X_START, horizon)
-    dates = sorted(set([d for d in grid if d < today] + [today]
-                       + [d for d in grid if d > today]))
-    years = [(d - today).days / 365.25 for d in dates]
-    paths = _wc_share_paths(years, N_SAMPLES)
-    central = _wc_central_shares(years)
     fig2 = go.Figure()
     for lab in _WC_LABELS:
         color = _DC_REGION_COLORS.get(lab, "#999999")
-        band = [f"{np.percentile(paths[lab][i], 10):.0f}\u2013"
+        band = [f"{np.percentile(paths[lab][i], 10):.0f}–"
                 f"{np.percentile(paths[lab][i], 90):.0f}%"
                 for i in range(len(dates))]
         fig2.add_trace(go.Scatter(
@@ -16630,23 +16736,24 @@ def _render_world_shares(today, horizon):
             customdata=band,
             hovertemplate="%{y:.1f}% (80% CI %{customdata})"
                           "<extra>" + lab + "</extra>"))
-    # Everything left of today is the rates run backwards, everything right is
-    # the projection, and neither is measured — so the past is washed out
-    # rather than shaded (a shaded band would sit *under* the filled areas and
-    # never show). The divider is heavier than the other tabs' on purpose: it
-    # is the only thing separating two halves that otherwise look alike.
+    # Left of today is partly measured (China's stock to end-2025) and partly
+    # back-run (the world before end-2025), right is the projection, and
+    # neither half is a measured share — so the past is washed out rather
+    # than shaded (a shaded band would sit *under* the filled areas and never
+    # show). The divider is heavier than the other tabs' on purpose: it is the
+    # only thing separating two halves that otherwise look alike.
     fig2.add_vrect(x0=_CC_X_START, x1=today, fillcolor='#FFFFFF', opacity=0.55,
                    line_width=0, layer='above')
     fig2.add_vline(x=today, line=dict(color='#222222', width=2))
     fig2.add_annotation(x=today, yref='paper', y=1.0, text='<b>Today</b>',
                         showarrow=False, xanchor='right', yanchor='bottom',
                         xshift=-4, font=dict(size=12, color='#222222'))
-    fig2.add_annotation(x=dates[-1], yref='paper', y=1.0, text='projected \u2192',
+    fig2.add_annotation(x=dates[-1], yref='paper', y=1.0, text='projected →',
                         showarrow=False, xanchor='right', yanchor='bottom',
                         font=dict(size=10, color='#999999'))
     # Print each end's split in the band itself, so the change is readable
     # without hovering. Thin bands are skipped rather than overlapped.
-    for edge, x, anchor, shift in ((dates.index(today), today, 'left', 5),
+    for edge, x, anchor, shift in ((i0, today, 'left', 5),
                                    (-1, dates[-1], 'right', -6)):
         base = 0.0
         for lab in _WC_LABELS:
@@ -16666,19 +16773,26 @@ def _render_world_shares(today, horizon):
     fig2.update_layout(hovermode='x unified')
     fig2.update_yaxes(ticksuffix='%')
     st.plotly_chart(fig2, width="stretch")
-    _back = _wc_central_shares([(datetime(2025, 5, 1) - today).days / 365.25])
+    _back = _wc_central_shares(
+        today, [(datetime(2025, 5, 1) - today).days / 365.25])[cn][0]
+    _cts_last = load_duv_production(_duv_mtime())["us"][-1][0]
     _fn_caption(
-        "Each region grows at its central rate from today's split; before "
-        "today the same rates run backwards.",
-        ("central rate", "Rates: "
-         + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}\u00d7/yr"
+        f"China is its compute mix inside China over a world total that goes "
+        f"from {world[i0]:,.0f}M H100e today to {world[-1]:,.0f}M by "
+        f"{dates[-1]:%b %Y}; the other regions split the rest at their "
+        "central rates from today's split.",
+        ("world total", _identity + " Log-linear between year-ends; before "
+                        "end-2025 the world runs back at its 2026 growth, "
+                        f"and past CTS's last year ({_cts_last}) at that "
+                        "year's."),
+        ("central rates", "Rates: "
+         + ", ".join(f"{lab.replace(' domestic', '')} {mid:g}×/yr"
                      for lab, mid, _, _ in _WC_GROWTH)
-         + ". Hover the chart for each region's 80% range, one region at a "
-           "time."),
-        ("run backwards", "No measured history of these shares exists. The "
-                          f"back-run puts China at "
-                          f"{_back[_WC_LABELS[1]][0]:.0f}% in May 2025, "
-                          "against Epoch's ~15% reading then."))
+         + ". Only their ratios matter. Hover the chart for each region's 80% "
+           "range, one region at a time."),
+        ("today's split", "No measured history of these shares exists. The "
+                          f"back-run puts China at {_back:.0f}% in May 2025, "
+                          "against Epoch's ~15% cluster-share reading then."))
 
 
 def _render_cc_compute_sources():
@@ -19188,17 +19302,6 @@ def _pc_rate_at(cum, grid, t):
     return np.where(np.isnan(np.asarray(t, dtype=float)), np.nan, out)
 
 
-def _wc_world_h100e(when):
-    """The world's installed AI compute in H100e at `when`: the
-    `_WC_WORLD_H100E` anchor grown at the share-weighted central growth of
-    `_WC_GROWTH`."""
-    d0, h0 = _WC_WORLD_H100E
-    share = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
-    gro = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
-    g = sum(share[k] * gro[k] for k in share) / sum(share.values())
-    return h0 * g ** ((when - d0).days / 365.25)
-
-
 def _pc_cn_installed(today, mix, years):
     """China's total installed AI compute (H100e), `years` from today: the
     compute mix's in-China and remote stocks under `mix`
@@ -19226,16 +19329,18 @@ def _pc_cn_installed(today, mix, years):
     return in_cn + remote
 
 
-def _pc_us_installed(today, years):
+def _pc_us_installed(today, years, mix=None):
     """The US's total installed AI compute (H100e), `years` from today: its
-    world-share central (`_WC_REGIONS`) of `_wc_world_h100e`, grown at its
-    central rate (`_WC_GROWTH`). It keeps installing through a pause, which
-    stops frontier training, not chip deliveries."""
-    lev = {lab: mid for lab, mid, _, _ in _WC_REGIONS}
-    g = {lab: mid for lab, mid, _, _ in _WC_GROWTH}
-    us = _WC_LABELS[0]
-    return (_wc_world_h100e(today) * lev[us] / 100
-            * g[us] ** np.asarray(years, dtype=float))
+    central share of the compute outside China (`_wc_central_split`) of the
+    world total less China's in-China stock, both from the world identity
+    under `mix` (`_wc_stocks`), so chips a lever keeps out of China stay
+    outside it. It keeps installing through a pause, which stops frontier
+    training, not chip deliveries."""
+    yrs = np.asarray(years, dtype=float)
+    world, china = _wc_stocks(today, np.atleast_1d(yrs), mix)
+    us = (world - china)[:, 0] * _wc_central_split(
+        np.atleast_1d(yrs))[_WC_LABELS[0]]
+    return us.reshape(yrs.shape)
 
 
 def _pc_render_compute_mix(ci):
@@ -19384,7 +19489,7 @@ def _pc_compute_lead(ci):
     rp = _pc_ratio_paths(ci)
     if rp is None:
         return None
-    return (float(_pc_us_installed(ci['today'], rp['t_x'])
+    return (float(_pc_us_installed(ci['today'], rp['t_x'], ci.get('mix'))
                   / _pc_cn_installed(ci['today'], ci.get('mix'), rp['t_x'])),
             rp['end_d'], rp['cross'])
 
@@ -19392,7 +19497,7 @@ def _pc_compute_lead(ci):
 def _pc_render_compute_ratios(ci):
     """How far ahead the US is in compute (`_pc_ratio_paths`), the gap
     between its clusters and its trained run being the overhang; and total
-    installed compute, the US from the world shares and China from its
+    installed compute, the US from the world identity and China from its
     compute mix (`_pc_us_installed`, `_pc_cn_installed`). Solid lines
     are these settings, dashed the same with no compute levers. A table
     gives the readings at the pacing date and at the crossing.
@@ -19483,16 +19588,16 @@ def _pc_render_compute_ratios(ci):
     _layout(fig1)
     _cc_logop_yaxis(fig1, "Largest run (log\u2081\u2080 OP)")
 
-    # Chart 2: total installed compute, millions of H100e: the US's world
-    # share grown at its central rate, China's compute mix under the levers
-    # and, dashed, with none.
+    # Chart 2: total installed compute, millions of H100e: the US's share of
+    # the world outside China, China's compute mix under the levers and,
+    # dashed, with none, each against the US of the same world.
     mix = ci.get('mix')
     mix_base = _cn_src_growth_kw(mix)
 
     def _cn_inst(t, m):
         return _pc_cn_installed(today, m, t) / 1e6
 
-    us_tot = _pc_us_installed(today, ts) / 1e6
+    us_tot = _pc_us_installed(today, ts, mix) / 1e6
     cn_tot = _cn_inst(ts, mix)
     fig2 = go.Figure()
     _unit = "M H100e"
@@ -19502,8 +19607,9 @@ def _pc_render_compute_ratios(ci):
           unit=" " + _unit, ratio=list(us_tot / cn_tot))
     cn_base = _cn_inst(ts, mix_base)
     if levers and not np.allclose(cn_base, cn_tot):
+        us_base = _pc_us_installed(today, ts, mix_base) / 1e6
         _line(fig2, "China, no compute levers", '#D62728', list(cn_base),
-              dash='dash', unit=" " + _unit, ratio=list(us_tot / cn_base))
+              dash='dash', unit=" " + _unit, ratio=list(us_base / cn_base))
     _marks(fig2)
     _layout(fig2, height=320)
     _ticks = [1, 3, 10, 30, 100, 300, 1000, 3000, 10000]
@@ -19527,7 +19633,7 @@ def _pc_render_compute_ratios(ci):
         return f"{a:.1f} vs {b:.1f} log OP \u2192 {_ratio(10 ** (a - b), lead)}"
 
     def _inst(t, m):
-        us_v = float(_pc_us_installed(today, t)) / 1e6
+        us_v = float(_pc_us_installed(today, t, m)) / 1e6
         cn_v = float(_cn_inst(t, m))
         return (f"{us_v:,.0f}M vs {cn_v:,.0f}M H100e \u2192 "
                 f"{_ratio(us_v / cn_v)}")
@@ -22038,7 +22144,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
             "US over China in total installed AI compute, "
             + ("at the median crossing date" if _rx else
                f"at the end of {_rd:%Y}, since China has not caught up by then")
-            + ": the US's world-share central grown at its central rate; "
+            + ": the US's central share of the world's compute outside "
+              "China, the world being Epoch's end-2025 stock plus every chip "
+              "made since (CTS's US-and-allied output, China's domestic "
+              "output), so a chip kept out of China stays in the world "
+              "outside it; "
               "China's compute mix under these levers (domestic, legal, "
               "smuggled, and the compute its labs reach abroad until remote "
               "access is cut), log-linear between year-ends and on at its "

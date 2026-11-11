@@ -4877,15 +4877,22 @@ class TestDuvProduction:
 class TestCcWorldShares:
     """The global compute distribution at the bottom of the CC tab."""
 
+    _T = datetime(2026, 11, 10)
+
     def test_priors_are_a_coherent_set(self):
+        """China is computed, so it has no prior; the regions outside it carry
+        published shares (only their ratios are used) and growth rates."""
         assert list(vp._WC_LABELS) == ["US domestic", "China domestic", "SEA",
                                        "UAE", "Europe/UK", "Other"]
-        assert abs(sum(m for _, m, _, _ in vp._WC_REGIONS) - 100.0) < 1e-9
+        labs = [lab for lab, *_ in vp._WC_REGIONS]
+        assert vp._WC_CN not in labs
+        assert set(labs) | {vp._WC_CN} == set(vp._WC_LABELS)
         for lab, mid, lo, hi in vp._WC_REGIONS:
             assert 0 < lo < mid < hi, lab
+        for lab in vp._WC_LABELS:
             assert lab in vp._WC_NOTES and vp._WC_NOTES[lab], lab
-        # Every region is carried forward, and only the ratios matter.
-        assert [lab for lab, *_ in vp._WC_GROWTH] == list(vp._WC_LABELS)
+        assert [lab for lab, *_ in vp._WC_GROWTH] == labs
+        assert set(vp._WC_COMMON_LOAD) == set(labs)
         for lab, mid, lo, hi in vp._WC_GROWTH:
             assert 1.0 < lo < mid < hi, lab
 
@@ -4896,58 +4903,82 @@ class TestCcWorldShares:
                         "Malaysia", "United Arab Emirates", "Australia", ""):
             assert vp._wc_region_of(country) == vp._dc_region_of(country)
 
-    def test_samples_recover_their_centrals_and_spreads(self):
-        sh = vp._wc_sample_shares(20000)
-        assert set(sh) == set(vp._WC_LABELS)
+    def test_split_samples_recover_their_centrals_and_spreads(self):
+        sh = vp._wc_sample_split(20000)
+        tot = sum(m for _, m, _, _ in vp._WC_REGIONS)
+        assert np.allclose(sum(sh.values()), 1.0)
         for lab, mid, lo, hi in vp._WC_REGIONS:
-            med = float(np.percentile(sh[lab], 50))
+            med = 100 * float(np.percentile(sh[lab], 50))
+            want = 100 * mid / tot
             # Renormalizing pulls the medians a little off the inputs.
-            assert abs(med - mid) < max(1.0, 0.1 * mid), (lab, med)
-            p10, p90 = (float(np.percentile(sh[lab], q)) for q in (10, 90))
-            assert p10 < med < p90 and p10 > lo * 0.7 and p90 < hi * 1.3, lab
+            assert abs(med - want) < max(1.0, 0.1 * want), (lab, med)
 
-    def test_paths_start_at_todays_shares_and_stay_shares(self):
-        years = [0.0, 1.0, 2.5]
-        paths = vp._wc_share_paths(years, 4000)
+    def test_world_is_china_plus_the_rest_and_shares_sum_to_100(self):
+        """China's share is the mix's in-China stock over the world total;
+        the others split the remainder, so every sample sums to 100."""
+        years = [-1.0, 0.0, 1.0, 3.0]
+        world, china = vp._wc_stocks(self._T, years)
+        c = vp._wc_central_shares(self._T, years)
+        assert np.allclose(sum(v for v in c.values()), 100.0)
+        assert np.allclose(c[vp._WC_CN], 100 * china[:, 0] / world[:, 0])
+        split = vp._wc_central_split(years)
+        for lab, *_ in vp._WC_REGIONS:
+            assert np.allclose(c[lab], (100 - c[vp._WC_CN]) * split[lab]), lab
+        paths = vp._wc_share_paths(self._T, years, 4000)
         assert set(paths) == set(vp._WC_LABELS)
         for i in range(len(years)):
             assert np.allclose(sum(p[i] for p in paths.values()), 100.0)
-        for lab, mid, _, _ in vp._WC_REGIONS:
-            assert abs(float(np.percentile(paths[lab][0], 50)) - mid) < \
-                max(1.0, 0.1 * mid), lab
+        # Today's split outside China keeps the published ratios.
+        us, eu = vp._WC_REGIONS[0], vp._WC_REGIONS[3]
+        today = vp._wc_central_shares(self._T, [0.0])
+        assert today[us[0]][0] / today[eu[0]][0] == pytest.approx(us[1] / eu[1])
 
-    def test_the_drawn_line_is_the_one_the_caption_describes(self):
-        """The chart draws the central-rate scenario, which sums to 100 with
-        no rescaling; the sampled paths only supply the range."""
-        c = vp._wc_central_shares([0.0, 3.0])
-        assert abs(sum(v[1] for v in c.values()) - 100.0) < 1e-6
-        for lab, mid, _, _ in vp._WC_REGIONS:
-            assert abs(c[lab][0] - mid) < 1e-6, lab
-        assert c["China domestic"][1] < c["China domestic"][0]
-        assert c["UAE"][1] > c["UAE"][0]
+    def test_china_in_china_is_the_mix_s_stock_at_each_year_end(self):
+        st = vp._cn_src_with_policy(self._T)["stock"]
+        for y in (2025, 2027, 2030):
+            t = (datetime(y, 12, 31) - self._T).days / 365.25
+            _w, cn = vp._wc_stocks(self._T, [t])
+            want = sum(st[str(y)][k][0] for k in vp._CN_SRC_IN_CHINA)
+            assert float(cn[0, 0]) == pytest.approx(want), y
+
+    def test_the_band_draws_cts_scenarios_and_the_mix_s_ranges(self):
+        """CTS's low and high read as 10th and 90th; the mix's p5 and p95
+        domestic and smuggled stocks as 5th and 95th."""
+        t = (datetime(2027, 12, 31) - self._T).days / 365.25
+        us = {y: (lo, c, hi) for y, lo, c, hi
+              in vp.load_duv_production(vp._duv_mtime())["us"]}
+        w0, _ = vp._wc_stocks(self._T, [t])
+        lo, _ = vp._wc_stocks(self._T, [t], z_us=-1.2816)
+        hi, _ = vp._wc_stocks(self._T, [t], z_us=1.2816)
+        add = lambda w: (w[0, 0] - vp._WC_WORLD_END2025) / 1e6
+        # Domestic adds are the same at every z_us, so the gap is CTS's.
+        assert add(w0) - add(lo) == pytest.approx(
+            sum(us[y][1] - us[y][0] for y in (2026, 2027)), rel=1e-6)
+        assert add(hi) - add(w0) == pytest.approx(
+            sum(us[y][2] - us[y][1] for y in (2026, 2027)), rel=1e-6)
+        st = vp._cn_src_with_policy(self._T)["stock"]["2027"]
+        _, c_hi = vp._wc_stocks(self._T, [t], z_dom=1.6449, z_smug=1.6449)
+        assert float(c_hi[0, 0]) == pytest.approx(
+            st["domestic"][2] + st["legal"][0] + st["smuggled"][2])
 
     def test_growth_shocks_are_shared_without_touching_the_marginals(self, monkeypatch):
         """A loading per region on one global shock. It must not change any
         region's own rate spread — only the joint — so every stated band
         stays as documented. Pinning "Other" to a fixed rate makes each
         sample's share growth relative to it that region's own rate."""
-        assert set(vp._WC_COMMON_LOAD) == set(vp._WC_LABELS)
         assert all(0.0 <= x <= 1.0 for x in vp._WC_COMMON_LOAD.values())
-        # China is the decoupled one: domestic silicon, controls already on.
-        assert vp._WC_COMMON_LOAD["China domestic"] < \
-            min(v for k, v in vp._WC_COMMON_LOAD.items() if k != "China domestic")
         ref = "Other"
         rows = {lab: (mid, lo, hi) for lab, mid, lo, hi in vp._WC_GROWTH}
         g_ref = rows[ref][0]
         monkeypatch.setattr(vp, "_WC_GROWTH", tuple(
             (lab, g_ref, g_ref, g_ref) if lab == ref else (lab, *rows[lab])
-            for lab in vp._WC_LABELS))
+            for lab in rows))
 
         def rates(common):
-            p = vp._wc_share_paths([0.0, 1.0], 40000, common=common)
+            p = vp._wc_split_paths([0.0, 1.0], 40000, common=common)
             rel = lambda lab: p[lab][1] / p[lab][0]
             return {lab: g_ref * rel(lab) / rel(ref)
-                    for lab in vp._WC_LABELS if lab != ref}
+                    for lab in rows if lab != ref}
         indep, shared = rates(0.0), rates(None)
         for lab, g in shared.items():
             _mid, lo, hi = rows[lab]
@@ -4961,41 +4992,39 @@ class TestCcWorldShares:
     def test_sharing_the_shock_damps_the_share_bands(self):
         """The shared part cancels in the renormalization, so correlated
         rates give tighter shares than independent ones."""
-        wide = vp._wc_share_paths([3.3], 20000, common=0.0)
-        tight = vp._wc_share_paths([3.3], 20000)
+        wide = vp._wc_split_paths([3.3], 20000, common=0.0)
+        tight = vp._wc_split_paths([3.3], 20000)
         for lab in ("US domestic", "UAE"):
             w = np.percentile(wide[lab][0], 90) - np.percentile(wide[lab][0], 10)
             t = np.percentile(tight[lab][0], 90) - np.percentile(tight[lab][0], 10)
             assert t < w, lab
         # The UAE's band is the one that ran away: it grows fastest from the
         # smallest base, so a lognormal rate compounds hardest there.
-        assert np.percentile(tight["UAE"][0], 90) < 30
+        assert np.percentile(100 * tight["UAE"][0], 90) < 30
 
-    def test_a_low_us_world_is_a_slow_world_not_a_handover(self):
-        """Most non-US capacity is US firms on US-supplied chips, so a US
-        slowdown drags them with it; China is the region that decouples. With
-        the rates independent the model says the opposite."""
+    def test_a_low_us_split_is_a_slow_world_not_a_handover(self):
+        """Most non-US capacity outside China is US firms on US-supplied
+        chips, so a US slowdown drags Europe with it; drawn independently,
+        Europe would pick up more of what the US loses."""
         def absorbed(paths):
             us = paths["US domestic"][0]
             m = us <= np.percentile(us, 10)
             gain = {l: paths[l][0][m].mean() - paths[l][0].mean()
-                    for l in vp._WC_LABELS if l != "US domestic"}
+                    for l in paths if l != "US domestic"}
             tot = sum(gain.values())
             return {l: g / tot for l, g in gain.items()}
-        indep = absorbed(vp._wc_share_paths([3.3], 40000, common=0.0))
-        shared = absorbed(vp._wc_share_paths([3.3], 40000))
-        assert shared["China domestic"] > indep["China domestic"] + 0.10
-        assert shared["Europe/UK"] < indep["Europe/UK"]
+        indep = absorbed(vp._wc_split_paths([3.3], 40000, common=0.0))
+        shared = absorbed(vp._wc_split_paths([3.3], 40000))
+        assert shared["Europe/UK"] < indep["Europe/UK"] - 0.05
 
     def test_the_correction_is_the_point_of_the_section(self):
         """The tracked sites alone say the US holds nearly everything; the
         published estimates give the US less and China more."""
         cat = vp._wc_catalogued_shares(vp.dc_all, datetime.now())
         assert abs(sum(cat.values()) - 100.0) < 1e-6
-        sh = vp._wc_sample_shares(4000)
-        assert float(np.percentile(sh["US domestic"], 50)) < cat["US domestic"]
-        assert float(np.percentile(sh["China domestic"], 50)) > \
-            cat["China domestic"]
+        c = vp._wc_central_shares(datetime.now(), [0.0])
+        assert float(c["US domestic"][0]) < cat["US domestic"]
+        assert float(c["China domestic"][0]) > cat["China domestic"]
 
 
 class TestDcMilestoneDates:
@@ -5144,8 +5173,7 @@ class TestPacing:
     def test_compute_lead_reads_china_from_its_compute_mix(self):
         """China's installed compute is the compute mix's stock: its total at
         each year-end, log-linear between them per series, on at the last
-        year's growth after, the remote stock dropped from a remote cut. With
-        no levers the US leads ~35x at end-2030 (~1,020M vs ~28.9M)."""
+        year's growth after, the remote stock dropped from a remote cut."""
         today = datetime(2026, 10, 23)
         st = vp._cn_src_with_policy(today)["stock"]
         ins = sum(st["2030"][k][0] for k in vp._CN_SRC_IN_CHINA)
@@ -5155,8 +5183,6 @@ class TestPacing:
         cn = vp._pc_cn_installed
         assert cn(today, {}, t30) == pytest.approx(ins + rem)
         assert ins + rem == pytest.approx(28.9e6, rel=0.01)
-        lead = vp._pc_us_installed(today, t30) / cn(today, {}, t30)
-        assert lead == pytest.approx(35, rel=0.05)
         # Between year-ends each series is geometric; after, it keeps its
         # 2029->30 growth.
         ins29 = sum(st["2029"][k][0] for k in vp._CN_SRC_IN_CHINA)
@@ -5175,7 +5201,9 @@ class TestPacing:
 
     def test_compute_lead_moves_once_per_lever(self):
         """Every lever in the mix lowers China's installed compute, the
-        growth sliders raise or lower it, and none touches the US side."""
+        growth sliders raise or lower it. A domestic cut leaves the US side
+        alone; a smuggling or legal cut keeps those chips in the world outside
+        China, so the US gains its share of them."""
         today = datetime(2026, 10, 23)
         t = (datetime(2030, 12, 31) - today).days / 365.25
         base = vp._pc_cn_installed(today, {}, t)
@@ -5186,6 +5214,11 @@ class TestPacing:
                   dict(smug_growth=0.0), dict(legal_growth=0.0)):
             assert vp._pc_cn_installed(today, m, t) < base, m
         assert vp._pc_cn_installed(today, dict(legal_growth=0.3), t) > base
+        us = vp._pc_us_installed(today, t)
+        assert vp._pc_us_installed(today, t, dict(dom_cut=0.3)) == \
+            pytest.approx(us)
+        for m in (dict(smug_cut=0.5), dict(stop_legal=True)):
+            assert vp._pc_us_installed(today, t, m) > us, m
 
     def test_race_bar_is_the_us_median_run_at_the_pause(self):
         caps = {vp._DC_CTY_US: (1e26, 3e26, 9e26),
@@ -5212,16 +5245,44 @@ class TestPacing:
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
         assert "rsi_notyet_ramp" in keys
 
-    def test_world_stock_is_epochs_anchor_grown_at_the_regions_pace(self):
-        """Installed compute is charted in H100e off Epoch's chip-sales total
-        (31.7M by June 2026), grown at the share-weighted central growth
-        (~2.2x a year), which lands end-2025 near the data's own 20.4M."""
-        d0, h0 = vp._WC_WORLD_H100E
-        assert vp._wc_world_h100e(d0) == pytest.approx(h0)
-        yr = vp._wc_world_h100e(d0 + timedelta(days=365.25)) / h0
-        assert 2.0 < yr < 2.5
-        end25 = vp._wc_world_h100e(datetime(2025, 12, 31))
-        assert 19e6 < end25 < 23e6
+    def test_world_stock_is_epochs_anchor_plus_every_chip_made_since(self):
+        """The world at each year-end is Epoch's end-2025 chip-sales total
+        plus CTS's US-and-allied output and China's domestic output since,
+        nothing retired. Epoch's mid-2026 reading (31.7M, 27.8-36.0M) is a
+        check on it, not a pin."""
+        today = datetime(2026, 11, 10)
+        yt = lambda d: (d - today).days / 365.25
+        ends = [yt(datetime(y, 12, 31)) for y in (2025, 2026, 2027)]
+        world, _ = vp._wc_stocks(today, ends)
+        w = world[:, 0]
+        assert w[0] == pytest.approx(vp._WC_WORLD_END2025)
+        us = {y: c for y, _lo, c, _hi
+              in vp.load_duv_production(vp._duv_mtime())["us"]}
+        dom = vp._cn_src_with_policy(today)["stock"]
+        for k, y in ((1, 2026), (2, 2027)):
+            assert w[k] - w[k - 1] == pytest.approx(
+                us[y] * 1e6 + dom[str(y)]["domestic"][0]
+                - dom[str(y - 1)]["domestic"][0]), y
+        d, _mid, lo, hi = vp._WC_WORLD_MID2026
+        mid26, _ = vp._wc_stocks(today, [yt(d)])
+        assert lo < float(mid26[0, 0]) < hi
+
+    def test_compute_lead_is_the_us_over_china_from_one_world(self):
+        """The US side is its central share of the world outside China, so
+        the US plus China in China plus the other regions is the world, and
+        cutting smuggling hands the chips to the world outside China."""
+        today = datetime(2026, 11, 10)
+        t = (datetime(2030, 12, 31) - today).days / 365.25
+        world, china = vp._wc_stocks(today, [t])
+        us = float(vp._pc_us_installed(today, t))
+        c = vp._wc_central_shares(today, [t])
+        assert us == pytest.approx(
+            float(world[0, 0]) * c[vp._WC_LABELS[0]][0] / 100)
+        assert us < float(world[0, 0] - china[0, 0])
+        cut = dict(smug_cut=0.5)
+        assert float(vp._pc_us_installed(today, t, cut)) > us
+        w_cut, _ = vp._wc_stocks(today, [t], cut)
+        assert float(w_cut[0, 0]) == pytest.approx(float(world[0, 0]))
 
     def test_spans_past_two_years_read_in_years(self):
         assert vp._pc_span(11.6) == "11.6 mo"
