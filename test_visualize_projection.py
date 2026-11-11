@@ -4970,16 +4970,25 @@ class TestCcWorldShares:
             assert float(cn[0, 0]) == pytest.approx(want), y
 
     def test_the_band_draws_cts_scenarios_and_the_mix_s_ranges(self):
-        """CTS's low and high read as 10th and 90th; the mix's p5 and p95
-        domestic and smuggled stocks as 5th and 95th."""
+        """CTS's low and high read as 10th and 90th, from 2027 widened to
+        the forecasts' ratios to its central where those are wider; the
+        mix's p5 and p95 domestic and smuggled stocks as 5th and 95th."""
         t = (datetime(2027, 12, 31) - self._T).days / 365.25
         us = {y: (lo, c, hi) for y, lo, c, hi
               in vp.load_duv_production(vp._duv_mtime())["us"]}
+        # 2026 keeps CTS's range; 2027's is the forecasts', CTS's being
+        # narrower.
+        assert vp._WC_US_WIDE_FROM == 2027
+        c27 = us[2027][1]
+        assert us[2027][0] > c27 * vp._WC_US_LOW_RATIO
+        assert us[2027][2] < c27 * vp._WC_US_HIGH_RATIO
+        us[2027] = (c27 * vp._WC_US_LOW_RATIO, c27,
+                    c27 * vp._WC_US_HIGH_RATIO)
         w0, _ = vp._wc_stocks(self._T, [t], lag=0.0)
         lo, _ = vp._wc_stocks(self._T, [t], z_us=-1.2816, lag=0.0)
         hi, _ = vp._wc_stocks(self._T, [t], z_us=1.2816, lag=0.0)
         add = lambda w: (w[0, 0] - vp._WC_WORLD_END2025) / 1e6
-        # Domestic adds are the same at every z_us, so the gap is CTS's.
+        # Domestic adds are the same at every z_us, so the gap is the band's.
         assert add(w0) - add(lo) == pytest.approx(
             sum(us[y][1] - us[y][0] for y in (2026, 2027)), rel=1e-6)
         assert add(hi) - add(w0) == pytest.approx(

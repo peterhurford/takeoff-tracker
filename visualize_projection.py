@@ -12288,6 +12288,16 @@ _WC_WORLD_MID2026 = (datetime(2026, 6, 30), 31.7e6, 27.8e6, 36.0e6)
 # `_WC_WORLD_MID2026` checks the unlagged series, this the lagged one
 # (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`).
 _WC_ARRIVAL_LAG_YEARS = 2 / 12
+# CTS's low-to-high US-and-allied output for 2027 (67-81M H100e around 74M)
+# is narrower than the spread between forecasts: AI-2027's compute forecast
+# has 60M made in 2027, and Epoch's measured 3.3×/yr carried from >10M sold
+# in 2025 gives ~109M. From `_WC_US_WIDE_FROM` on, the band's low and high
+# are the wider of CTS's own ratio to central and these two
+# (`test_the_band_draws_cts_scenarios_and_the_mix_s_ranges`); 2026 keeps
+# CTS's range.
+_WC_US_WIDE_FROM = 2027
+_WC_US_LOW_RATIO = 60 / 74
+_WC_US_HIGH_RATIO = 109 / 74
 _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
@@ -16059,8 +16069,9 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     Chips arrived: everything but China's domestic stock is read `lag`
     years earlier (`_WC_ARRIVAL_LAG_YEARS`; 0 gives chips made). China is the
     compute mix's domestic + legal + smuggled stock under `mix`
-    (`_cn_src_with_policy` keywords). CTS's low and high output sit at
-    `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
+    (`_cn_src_with_policy` keywords). CTS's low and high output (from
+    `_WC_US_WIDE_FROM`, widened to `_WC_US_LOW_RATIO` / `_WC_US_HIGH_RATIO`
+    of central where those are wider) sit at `z_us` = ∓1.28, the mix's 5th and 95th domestic and smuggled stocks at
     ∓1.64; legal sales stay central, their range small beside smuggling's.
     Past the mix's last year China and its domestic stock continue at their
     own last-year growth, and the world past CTS's last year at its last;
@@ -16069,8 +16080,10 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     m = dict(mix or {})
     m.pop("remote_cut", None)
     stock = _cn_src_with_policy(today, **m)["stock"]
-    us = {y: (p50, lo, hi) for y, lo, p50, hi
-          in load_duv_production(_duv_mtime())["us"]}
+    us = {y: (p50, lo, hi) if y < _WC_US_WIDE_FROM
+          else (p50, min(lo, p50 * _WC_US_LOW_RATIO),
+                max(hi, p50 * _WC_US_HIGH_RATIO))
+          for y, lo, p50, hi in load_duv_production(_duv_mtime())["us"]}
     z_us, z_dom, z_smug = np.broadcast_arrays(
         *(np.atleast_1d(np.asarray(z, dtype=float))
           for z in (z_us, z_dom, z_smug)))
@@ -16772,7 +16785,12 @@ def _render_world_shares(today, horizon):
                        "domestic chips and smuggling; the world total's from "
                        "CTS's low and high output, which the report gives as "
                        "scenarios, not quantiles, read here as 10th and "
-                       "90th; the split outside China from how much the "
+                       f"90th, and from {_WC_US_WIDE_FROM} on widened to "
+                       "the spread between forecasts where that is wider: "
+                       f"{_WC_US_LOW_RATIO:.0%} of CTS's central (AI-2027's "
+                       f"compute forecast) to {_WC_US_HIGH_RATIO:.0%} "
+                       "(Epoch's measured chip-sales growth carried "
+                       "forward); the split outside China from how much the "
                        "published estimates disagree. They don't add to 100. "
                        "Hover a bar for its sources."),
         ("by location", "Chinese firms' capacity abroad counts under SEA or "

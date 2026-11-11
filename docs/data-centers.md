@@ -381,7 +381,7 @@ not a reading of the CSVs. Six things are load-bearing:
    `test_world_is_china_plus_the_rest_and_shares_sum_to_100`). The published
    China estimates (Epoch's cluster share 14–15%, AI-2027 12%, the smuggling
    report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`. Two other
-   forecasts bracket CTS's output and are not read by the code: AI-2027's
+   forecasts bracket CTS's output and set its band from 2027 (item 3): AI-2027's
    compute forecast has 25M H100e made in 2026 and 60M in 2027 (CTS 35M and
    74M; its world stock is 100M at end-2027 against the identity's 132M, on a
    TPP basis with a ~4-year chip life), and Epoch's measured 3.3×/yr
@@ -399,7 +399,11 @@ not a reading of the CSVs. Six things are load-bearing:
    so its share holds near its level rather than compounding
    (`CHINA_COMPUTE_JUDGMENTS.md` §3, `test_the_uae_share_holds_rather_than_compounding`).
 3. **The band has three independent sources.** CTS's low and high output
-   (scenarios, not quantiles; read as 10th and 90th, `_wc_skew`), the mix's
+   (scenarios, not quantiles; read as 10th and 90th, `_wc_skew`), from
+   `_WC_US_WIDE_FROM` (2027) widened to the forecasts' ratios to CTS's central
+   where those are wider (`_WC_US_LOW_RATIO` = 60/74, AI-2027;
+   `_WC_US_HIGH_RATIO` = 109/74, Epoch's trend), 2026 at CTS's own range
+   (`test_the_band_draws_cts_scenarios_and_the_mix_s_ranges`), the mix's
    p5/p95 domestic and smuggled stocks (legal sales stay central: their range is small beside smuggling's), and the
    split's spread (`_wc_split_paths`) — the published estimates' disagreement
    on levels, then each region's growth rate. `_WC_COMMON_LOAD` loads every
