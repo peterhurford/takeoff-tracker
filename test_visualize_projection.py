@@ -5582,6 +5582,27 @@ class TestPacing:
             np.testing.assert_array_equal(a[inside], b[inside])
             assert not np.any(b[~inside] <= years[-1])
 
+    def test_an_rsi_ban_delays_ultraintelligence_more_for_longer_reviews(self, monkeypatch):
+        """Pacing's US under the RSI ban (`_pc_takeoff_us(review=...)`):
+        ultraintelligence's median comes later, and later still with longer
+        reviews; nothing comes sooner; stacked on a cut it is later than
+        the cut alone."""
+        monkeypatch.setattr(vp.st, "session_state", {})
+        today = vp._today()
+        base = vp._pc_takeoff_us(today)
+
+        def delay(cut=None, review=None, k="ultraintelligence"):
+            tk = vp._pc_takeoff_us(today, cut, review=review)
+            assert tk["run"] is not None
+            v = base["when"][k]
+            ok = np.isfinite(v) & (v > 0.5)
+            with np.errstate(invalid="ignore"):
+                return float(np.median((tk["when"][k] - v)[ok]))
+        one, three = delay(review=(0.5, 1.0)), delay(review=(0.5, 3.0))
+        assert 0.05 < one < three
+        assert all(delay(review=(0.5, 3.0), k=k) >= 0 for k in base["when"])
+        assert delay((3.0, 0.5, None), (0.5, 3.0)) > delay((3.0, 0.5, None))
+
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI
         blend's weights and its not-yet conditioning. The pause is an int of

@@ -18206,7 +18206,7 @@ _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_legal_when", "pc_hbm", "pc_hbm_when", "pc_payoff",
                   "pc_cn_run",
                   "pc_leak_cut", "pc_leak_when", "pc_leak_absorb",
-                  "pc_pace", "pc_cut", "pc_cut_mo",
+                  "pc_pace", "pc_cut", "pc_cut_mo", "pc_ban", "pc_ban_review",
                   "pc_sec_sched", "pc_sec_when", "pc_sec_sprint",
                   "pc_sec_halve", "pc_sec_on",
                   "pc_theft_when", "pc_theft_share",
@@ -18319,6 +18319,10 @@ _PC_PACE_OPTIONS = list(range(100, -1, -5))
 # the cut lasts, 0 = for good.
 _PC_CUT_OPTIONS = [1, 2, 3, 6, 10]
 _PC_CUT_MONTHS = [0, 6, 12, 18, 24, 36]
+# The *Ban runaway RSI* lever: the least human review, in months, each
+# capability gain waits for before research builds on it (a successor model's
+# validation and each batch of fast improvements).
+_PC_BAN_REVIEW_MONTHS = [1, 2, 3, 6]
 
 
 def _pc_cut_equivalent(base, cut, start):
@@ -18348,22 +18352,25 @@ def _pc_cut_equivalent(base, cut, start):
 
 
 def _pc_cut_plan_note(today, pause_d, cut, eq, pace):
-    """Under the cut lever: the pacing plan the cut is nearest, and for a
-    cut that lasts, alone, a button that swaps it for that plan."""
+    """Under the cut and ban levers: the pacing plan they are nearest, and
+    for a cut or ban that lasts, alone, a button that swaps it for that plan.
+    `cut` as `render_pacing` builds it, None with only the ban on."""
     pct, months = eq
+    what = ("the cut and the ban" if cut and st.session_state.get("pc_ban")
+            else "the cut" if cut else "the ban")
     start = ((pause_d.year - today.year) * 12 + pause_d.month - today.month)
     end = min(start + months, _PC_PAUSE_MO_MAX)
     _fn_caption(
         f"About the same as pacing at {pct}% for {months} months, then no pacing.",
-        ("About the same", "The pacing plan whose US path best tracks the cut "
-         "run's median ECI, on the cut alone whatever the pace lever says. A "
+        ("About the same", f"The pacing plan whose US path best tracks the "
+         f"median ECI under {what}, whatever the pace lever says. A "
          "plan cannot run faster than no pacing, so it misses the rebound "
          "when a cut ends."))
-    if (not cut[1] and pace >= 1 and not _pc_pace_windows(today)
+    if ((not cut or not cut[1]) and pace >= 1 and not _pc_pace_windows(today)
             and end > start):
         st.button("Use as a pacing plan", key="pc_cut_use",
                   on_click=_pc_cut_to_windows, args=(pct, start, end),
-                  help="Turns the cut off and sets pacing window 1 (under "
+                  help="Turns the cut and the ban off and sets pacing window 1 (under "
                        "Advanced) to this plan, for the levers that read a "
                        "pacing plan.")
 
@@ -18371,7 +18378,7 @@ def _pc_cut_plan_note(today, pause_d, cut, eq, pace):
 def _pc_cut_to_windows(pace, start, end):
     """The *Use as a pacing plan* button: the cut off, its equivalent in
     pacing window 1."""
-    st.session_state.update(pc_cut=1, pc_win_n=1, pc_win1_pace=pace,
+    st.session_state.update(pc_cut=1, pc_ban=False, pc_win_n=1, pc_win1_pace=pace,
                             pc_win1_start=start, pc_win1_end=end)
 
 
@@ -18396,6 +18403,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_pause_mo": _pc_pause_default_mo(),
                 "pc_pace": 100,
                 "pc_cut": 1, "pc_cut_mo": 0,
+                "pc_ban": False, "pc_ban_review": 1,
                 "pc_stop_dist": False, "pc_stop_remote": False,
                 "pc_withhold": False, "pc_dom_slow": 0, "pc_duv_ban": False,
                 "pc_internal": True,
@@ -20119,31 +20127,34 @@ def _tk_run_seeded(day):
 _TK_CUT_MEMO = {}
 
 
-def _tk_run_cut_seeded(day, cut, years=None):
-    """`_tk_run_seeded(day)` with R&D compute cut (`_tk_run_cut`, stopped
-    `years` out), once per rerun, settings and cut."""
+def _tk_run_cut_seeded(day, cut, years=None, review=None):
+    """`_tk_run_seeded(day)` under an R&D compute cut and/or a ban on runaway
+    RSI (`_tk_run_cut`, stopped `years` out), once per rerun, settings, cut
+    and ban."""
     run = _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return run
-    key = (id(run), cut, years)
+    key = (id(run), cut, years, review)
     if key not in _TK_CUT_MEMO:
         _TK_CUT_MEMO.clear()
         with _seeded_rng(_tk_seed()):
-            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut, years))   # holds `run`: its id stays its own
+            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut, years, review))   # holds `run`: its id stays its own
     return _TK_CUT_MEMO[key][1]
 
 
-def _pc_takeoff_us(today, cut=None, years=None):
-    """The Takeoff tab's run, as the Pacing tab reads it (with `cut`, under
-    that R&D compute cut, `_tk_run_cut_seeded`, stopped `years` out; then
-    'run' is the run itself, for China to follow): {'day', 'years',
+def _pc_takeoff_us(today, cut=None, years=None, review=None):
+    """The Takeoff tab's run, as the Pacing tab reads it (with `cut` or
+    `review`, under that R&D compute cut or ban on runaway RSI,
+    `_tk_run_cut_seeded`, stopped `years` out; then 'run' is the run itself,
+    for China to follow): {'day', 'years',
     'paths' (draws x months, ECI of the trained US frontier from `day`),
     'ppy', 'coder', 'rsi' (each draw's ECI at its automated-coding and RSI
     dates, NaN if never), 'when' (each milestone's date per draw, years from
     `day`, the very dates Takeoff's cards take medians of)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
-    run = _tk_run_seeded(day) if cut is None else _tk_run_cut_seeded(day, cut, years)
+    slowed = cut is not None or review is not None
+    run = _tk_run_cut_seeded(day, cut, years, review) if slowed else _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return None
     eci, res = run["eci"], run["result"]
@@ -20152,7 +20163,7 @@ def _pc_takeoff_us(today, cut=None, years=None):
     coder = np.where(np.isfinite(ca) & (ca <= years[-1]),
                      _tk_path_at(paths, years, ca), np.nan)
     return {"day": day, "years": years, "paths": paths, "ppy": eci["ppy"],
-            "run": None if cut is None else run, "coder": coder, "rsi": eci["at_rsi"], "ultra": eci["ultra_level"],
+            "run": run if slowed else None, "coder": coder, "rsi": eci["at_rsi"], "ultra": eci["ultra_level"],
             "when": {"automated coder": ca, "RSI": np.asarray(res["events"]["RSI"], float),
                      "ultraintelligence": eci["ultra"]}}
 
@@ -20793,12 +20804,13 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
                         horizon=None, caps_now=None, state_out=None,
                         levers_box=None, pace=0.0, advanced_box=None,
-                        cut=None, cut_box=None):
+                        cut=None, cut_box=None, review=None):
     """If the US paused or paced: China's catch-up to the US frontier, in ECI.
 
     `cut` = (factor, months or 0 for good) cuts US R&D compute from the pacing
     date: the US and China's takeoff rerun under it, and `cut_box` takes its
-    equivalent pacing plan.
+    equivalent pacing plan. `review` (months, or None) bans runaway RSI from
+    the same date (`takeoff.simulate`'s `review`), and stacks with the cut.
 
     The pause is a **date the user names** (`pc_pause_mo`, rendered by
     `render_pacing` so the bar it implies is available to both halves of
@@ -20869,7 +20881,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     d_pause_v = pause_d + off_us
     if levers_box is None:
         levers_box = st.sidebar.container()
-    _no_pace = pace >= 1 and not _pc_pace_windows(today) and cut is None
+    _no_pace = (pace >= 1 and not _pc_pace_windows(today) and cut is None
+                and review is None)
+    # What the Takeoff rerun is under, for the labels: "compute cut", "RSI
+    # ban", both, or None.
+    _lever = (" and ".join(n for n, on in (("compute cut", cut), ("RSI ban", review)) if on)
+              or None)
     with levers_box:
         withhold = st.checkbox(
             "US does not give access to strongest models from pacing start",
@@ -21473,21 +21490,22 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # scenarios' ECI paths (trained frontier, years from today), so
     # automated coding and RSI speed the US up exactly as they do there.
     # Without a Takeoff run, the compute-derived straight climb stands in.
-    # Under an R&D compute cut, `tk` is the cut run and `tk_free` the uncut
-    # one the no-lever lines read.
+    # Under an R&D compute cut or a ban on runaway RSI, `tk` is that run and
+    # `tk_free` the one with neither, which the no-lever lines read.
     tk = tk_free = _pc_takeoff_us(today)
-    if tk is not None and cut is not None:
+    if tk is not None and (cut is not None or review is not None):
         _c0 = max((pause_d - tk['day']).days, 0) / 365.25
-        # Nothing here reads the cut run past the chart's end: stop it there
-        # plus `_PC_CUT_RUN_PAST` (China's run, the run-length shift).
+        # Nothing here reads the slowed run past the chart's end: stop it
+        # there plus `_PC_CUT_RUN_PAST` (China's run, the run-length shift).
         _c_end = (None if horizon is None else float(np.ceil(
             max((horizon - tk['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
-        tk = _pc_takeoff_us(today, (float(cut[0]), _c0,
-                                    _c0 + cut[1] / 12 if cut[1] else None), _c_end)
+        tk = _pc_takeoff_us(
+            today, cut and (float(cut[0]), _c0, _c0 + cut[1] / 12 if cut[1] else None),
+            _c_end, review and (_c0, float(review)))
         _eq = _pc_cut_equivalent(tk_free, tk, _c0)
         with cut_box if cut_box is not None else st.container():
             if _eq is None:
-                st.caption("Too little of the run is left after the cut to "
+                st.caption("Too little of the run is left after the date to "
                            "fit a pacing plan to it.")
             else:
                 _pc_cut_plan_note(today, pause_d, cut, _eq, pace)
@@ -21867,7 +21885,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         return {
             ("At pause start" if pace <= 0 and not pace_wins
              else "Today" if _no_pace
-             else "At the compute cut" if pace >= 1 and not pace_wins
+             else f"At the {_lever}" if pace >= 1 and not pace_wins
              else "At pacing start"): label,
             "Largest trainable run (capacity)": (
                 f"{_log_op(c[1])} log OP ({_log_op(c[0])}–{_log_op(c[2])})"
@@ -21982,7 +22000,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
              "the sidebar."))
     _unpaced = pace >= 1 and not pace_wins
     _card1 = ("China reaches paused US frontier" if _paused
-              else "China catches the US (compute cut)" if _unpaced and cut
+              else f"China catches the US ({_lever})" if _unpaced and _lever
               else "China catches the US (no pacing)" if _unpaced
               else "China catches the paced US")
     # The pacing settings ride the first card's hover, ahead of its clock.
@@ -22286,16 +22304,18 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                              f'<extra>US paced at {pace:.0%}' if pace < 1
                              else '<extra>US, no pacing')
                           + (f', R&D compute ÷{cut[0]}' if cut else '')
+                          + (f', RSI banned ({review} mo reviews)' if review else '')
                           + f', avg {_prate:.1f} ECI/yr</extra>'))
     # Where the US would be with no pacing, dotted like China's no-levers
     # line, from the first change in its pace.
     _chg = _pc_pace_changes(pause_d, pace, _pc_pace_windows(today))
     # The unpaced US, which China's no-levers line measures its gap against.
     _us_free = _us_line
-    _free_name = ('US, no pacing' if cut is None else 'US, no compute cut'
-                  if not _chg else 'US, no pacing or compute cut')
-    if _chg or cut:
-        _d0 = min([d for d, _ in _chg[:1]] + ([pause_d] if cut else [])) + off_us
+    _lever_or = _lever and _lever.replace(" and ", " or ")
+    _free_name = ('US, no pacing' if _lever is None else f'US, no {_lever_or}'
+                  if not _chg else f'US, no pacing or {_lever_or}')
+    if _chg or _lever:
+        _d0 = min([d for d, _ in _chg[:1]] + ([pause_d] if _lever else [])) + off_us
         _uk = [i for i, t in enumerate(grid_yrs)
                if _d0 <= _date_of(t) <= x_end]
         if len(_uk) > 1:
@@ -22934,11 +22954,33 @@ def render_pacing():
                  "it would have had, so research rebounds and part of the "
                  "delay is made up.")
         pc_cut = None if cut_k == 1 else (cut_k, cut_mo)
+        if st.session_state.get("pc_ban_review") not in _PC_BAN_REVIEW_MONTHS:
+            st.session_state.pop("pc_ban_review", None)
+        ban = st.checkbox(
+            "Ban runaway RSI", value=_PC_DEFAULTS["pc_ban"], key="pc_ban",
+            help="From the date below, US labs may automate AI research but "
+                 "not let it run on its own: people must review each gain in "
+                 "capability before research builds on it, as in the Humans "
+                 "in Control Act's ban on runaway recursive self-improvement. "
+                 "This reruns the Takeoff model with no autopilot at RSI "
+                 "and with every new model and every batch of fast "
+                 "improvements waiting at least the review time below. It "
+                 "stacks with the levers above.")
+        review_mo = st.select_slider(
+            "Human review per capability gain", options=_PC_BAN_REVIEW_MONTHS,
+            value=_PC_DEFAULTS["pc_ban_review"], key="pc_ban_review",
+            disabled=not ban,
+            format_func=lambda m: f"{m} month" + ("s" if m > 1 else ""),
+            help="The least time people take to review a new model, or a "
+                 "batch of smaller improvements, before research builds on "
+                 "it. One month is today's validation; without the ban, AI "
+                 "doing the checking shrinks it toward a day.")
+        pc_review = review_mo if ban else None
         cut_box = st.container()
         _no_pace = (pace_pct == 100 and not _pc_pace_windows(_today)
-                    and pc_cut is None)
+                    and pc_cut is None and pc_review is None)
         _help = ("From this date the US grows at the pace above, and any "
-                 "R&D compute cut begins. It also "
+                 "R&D compute cut or RSI ban begins. It also "
                  "sets the compute and capability each side has then, the "
                  "date the model-access lever bites, and the bar "
                  "the *Compute Thresholds* race runs to. With no pacing it is "
@@ -22953,7 +22995,8 @@ def render_pacing():
         else:
             pause_mo = st.select_slider(
                 "US pauses on" if not pace_pct else "Pacing starts on"
-                if pace_pct < 100 or _pc_pace_windows(_today) else "Cut starts on",
+                if pace_pct < 100 or _pc_pace_windows(_today)
+                else "Cut starts on" if pc_cut else "Ban starts on",
                 options=_months,
                 value=_PC_DEFAULTS["pc_pause_mo"], key="pc_pause_mo",
                 format_func=lambda m: f"{_pc_add_months(_today, m):%b %Y}",
@@ -22986,7 +23029,8 @@ def render_pacing():
                         horizon=pc_horizon, caps_now=caps_now,
                         state_out=state_rows, levers_box=levers_top,
                         advanced_box=advanced_box,
-                        pace=pace_pct / 100.0, cut=pc_cut, cut_box=cut_box)
+                        pace=pace_pct / 100.0, cut=pc_cut, cut_box=cut_box,
+                        review=pc_review)
 
     # ── Entities and projections ──
     series_all = series_unshifted
@@ -25548,21 +25592,24 @@ def _tk_cut_onset(onset, base, cut_run, start):
 def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, experiment_slopes,
                  baseline_yield=1.0, compute_rates=None, historical_compute_rate=None,
                  coding_capability=None, coding_weights=None, human_curve=None,
-                 capability_at=None, cut=None, cut_years=None):
+                 capability_at=None, cut=None, cut_years=None, review=None):
     """`takeoff.simulate` plus the tab's quantiles, holding per draw only what
     the tab reads per draw: cached results stay in memory, ~3.4 MB per (draws x
     months) array. With `capability_at` (years), only each draw's capability then
     and the year its research direction is ready (`direction_ready`). `cut` =
     (factor, start, end or None, in years) divides R&D compute by `factor`
     between the two (`_tk_cut_path`, laid out to `cut_years` when the run
-    itself stops sooner, so a shortened run takes the full run's values)."""
+    itself stops sooner, so a shortened run takes the full run's values);
+    `review` = (start, months) bans runaway RSI from `start`
+    (`takeoff.simulate`'s `review`)."""
     # The source digest invalidates results when the imported simulator changes.
     result = takeoff.simulate(params, n=len(onset_years), onset_years=onset_years,
                              experiment_slopes=experiment_slopes, compute_rates=compute_rates,
                              historical_compute_rate=historical_compute_rate,
                              coding_capability=coding_capability,
                              coding_weights=coding_weights, human_curve=human_curve,
-                             compute_cut=_tk_cut_path(cut, cut_years or params["years"]))
+                             compute_cut=_tk_cut_path(cut, cut_years or params["years"]),
+                             review=review)
     if capability_at is not None:
         wp = result["workflow_progress"]
         k = min(int(np.searchsorted(wp["years"], capability_at)), len(wp["years"]) - 1)
@@ -25903,10 +25950,11 @@ def _tk_run(today, progress=None):
     return dict(_tk_finish(inputs, onset_years), inputs=inputs, onset=onset_years)
 
 
-def _tk_finish(inputs, onset_years, cut=None, years=None):
+def _tk_finish(inputs, onset_years, cut=None, years=None, review=None):
     """`_tk_run`'s last step, the simulation on its prepared `inputs` and
-    paired coding dates, read as ECI; `cut` as `_tk_simulate` takes it, and
-    with `years` the run stops at the first month that many years out."""
+    paired coding dates, read as ECI; `cut` and `review` as `_tk_simulate`
+    takes them, and with `years` the run stops at the first month that many
+    years out."""
     params, ultra = inputs["params"], inputs["ultra"]
     full = params["years"]
     # Stopped on one of the full run's own months, so its grid is that run's.
@@ -25914,7 +25962,8 @@ def _tk_finish(inputs, onset_years, cut=None, years=None):
     if years is not None and years <= months[-1]:
         params = dict(params, years=float(months[np.searchsorted(months, years)]))
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *inputs["rest"], cut=cut,
-                          cut_years=full if cut is not None and params["years"] < full else None)
+                          cut_years=full if cut is not None and params["years"] < full else None,
+                          review=review)
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     for key in ("hist_compute", "eci_rates", "eci_lead", "eci_start_dev", "eci_today"):
@@ -25931,18 +25980,21 @@ def _tk_finish(inputs, onset_years, cut=None, years=None):
                                "software_pace")}}
 
 
-def _tk_run_cut(run, cut, years=None):
-    """`run` (a `_tk_run`) again with R&D compute cut (`cut` as `_tk_simulate`
-    takes it): once on the same coding dates, then on those dates moved to
-    where the cut run reaches the same capability (`_tk_cut_onset`; a second
-    pass moves them by days). With `years`, the second pass stops that many
+def _tk_run_cut(run, cut, years=None, review=None):
+    """`run` (a `_tk_run`) again under an R&D compute cut and/or a ban on
+    runaway RSI (`cut`, `review` as `_tk_simulate` takes them, either None):
+    once on the same coding dates, then on those dates moved to where the
+    slowed run reaches the same capability (`_tk_cut_onset`; a second pass
+    moves them by days). With `years`, the second pass stops that many
     years out: the simulation is causal, so its months are the full run's
     (`test_a_cut_run_stopped_early_is_the_full_run_so_far`). The first pass
     runs whole, since a date it moves past the stop still shapes the months
     before it."""
-    fixed = _tk_finish(run["inputs"], run["onset"], cut)
-    onset = _tk_cut_onset(run["onset"], run, fixed, cut[1])
-    return dict(_tk_finish(run["inputs"], onset, cut, years), inputs=run["inputs"], onset=onset)
+    start = min(([cut[1]] if cut else []) + ([review[0]] if review else []))
+    fixed = _tk_finish(run["inputs"], run["onset"], cut, review=review)
+    onset = _tk_cut_onset(run["onset"], run, fixed, start)
+    return dict(_tk_finish(run["inputs"], onset, cut, years, review), inputs=run["inputs"],
+                onset=onset)
 
 
 # ── Takeoff: China's takeoff (section 5) ─────────────────────────────────

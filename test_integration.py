@@ -3666,6 +3666,50 @@ class TestPacingTab:
             start + months, vp._PC_PAUSE_MO_MAX)
         assert "US, no pacing" in traces(at)
 
+    def test_an_rsi_ban_slows_the_us_and_converts_to_a_pacing_plan(self):
+        """Off by default, its review slider greyed. On, the US falls below a
+        dotted no-ban line, the cards and table name the ban, a pacing plan
+        is quoted, and a longer review slows the US more; with the cut too,
+        the dotted line names both; the button swaps both for the plan."""
+        def traces(at):
+            for el in at.get("plotly_chart"):
+                d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                if "China, projected" in d:
+                    return d
+            raise AssertionError("no pause chart")
+
+        def plan(at):
+            return [c for c in at.caption if "About the same" in str(c.value)]
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert not at.checkbox(key="pc_ban").value
+        assert at.select_slider(key="pc_ban_review").disabled and not plan(at)
+
+        at.checkbox(key="pc_ban").check().run()
+        _assert_no_error(at, "Pacing / RSI ban")
+        d = traces(at)
+        assert d["US, no RSI ban"]["line"]["dash"] == "dot"
+        assert any("(RSI ban)" in str(m.label) for m in at.metric)
+        assert any("At the RSI ban" in t.value.columns for t in at.table)
+        assert plan(at) and at.select_slider(key="pc_pause_mo").label == "Ban starts on"
+        one = d["US, projected"]["y"][-1]
+        assert one < d["US, no RSI ban"]["y"][-1]
+
+        at.select_slider(key="pc_ban_review").set_value(6).run()
+        _assert_no_error(at, "Pacing / RSI ban, 6-month reviews")
+        assert traces(at)["US, projected"]["y"][-1] < one - 5
+
+        at.select_slider(key="pc_cut").set_value(2).run()
+        _assert_no_error(at, "Pacing / RSI ban and compute cut")
+        assert "US, no compute cut or RSI ban" in traces(at)
+        at.select_slider(key="pc_cut").set_value(1).run()
+        at.button(key="pc_cut_use").click().run()
+        _assert_no_error(at, "Pacing / ban used as a pacing plan")
+        assert not at.checkbox(key="pc_ban").value and not plan(at)
+        assert at.selectbox(key="pc_win_n").value == 1
+
     @staticmethod
     def _paired(el):
         """Run `el` (the app or a widget) on a fixed seed, so two Monte Carlo

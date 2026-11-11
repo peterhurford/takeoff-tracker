@@ -397,6 +397,19 @@ plan cannot outrun no pacing, so a cut that ends (rebound) gets the caption but 
 The compute race and the state-of-play capacities below do not move with the cut: they
 count installed compute, which the cut puts to other uses rather than removes
 (`test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan`).
+*Ban runaway RSI* (`pc_ban`, default off; `pc_ban_review`, `_PC_BAN_REVIEW_MONTHS`,
+default 1) is the Humans in Control Act's section 4 on the same rerun path: from the
+pacing date, `takeoff.simulate(review=(start, months))` ends autopilot and holds every
+successor model and fast batch for at least that much human review (1 month is today's
+validation, which AI verification otherwise shrinks toward a day). `_pc_takeoff_us(cut,
+review)` and `_tk_run_cut(run, cut, review)` take both, so the two stack; the labels
+name whichever is on (`_lever`: "US, no RSI ban", "At the RSI ban"), and the plan
+button turns both off. Seed 42, 2,000 samples, ban from Jul 2027: the ultraintelligence
+median moves late Sep 2028 to late Nov 2028 at 1 month (about 85% pace for 12 months),
+Feb 2029 at 2, Apr 2029 at 3, Dec 2029 at 6 (30% for 17 months): a review is a delay per step,
+not a cap on how big a step is. Section 3's instance caps are not modeled
+(`test_an_rsi_ban_slows_the_us_and_converts_to_a_pacing_plan`,
+`test_an_rsi_ban_delays_ultraintelligence_more_for_longer_reviews`).
 Crossing dates are percentiles over every sample, a never-crossed one counting as
 past the window; under half crossing, the cards read *After <year>* with the share that
 does and the breakdown is skipped. Which milestone the dates mean is in the crossing card's

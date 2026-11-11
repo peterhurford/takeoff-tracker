@@ -179,7 +179,10 @@ From RSI on, autopilot (the default) drops every stage's remaining human hours: 
 experiment design still needs about 5% of its hours and verification about 11%, and from
 then on none do. That lifts research pace about 15% just after RSI (2.35x today's against
 2.05x), a gain difficulty erases within a year; ultraintelligence does not move. Every draw
-runs to the horizon, so its capability path continues past RSI.
+runs to the horizon, so its capability path continues past RSI. A review rule
+(`simulate(review=(start, months))`, Pacing's RSI ban) turns autopilot off from `start` and
+holds each successor's validation and each fast cycle to at least `months`
+(`test_a_review_rule_ends_autopilot_and_holds_each_gain_for_review`).
 The stages are direction, experiment design/interpretation, and verification/integration.
 Human hours follow the R&D automation index's own projection rather than an exponential:
 the share of tasks at each level over the coming years (AL4 at the milestone card's median

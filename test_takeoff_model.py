@@ -1140,3 +1140,25 @@ def test_fast_share_is_drawn_per_scenario_around_its_setting():
     for share, spread in ((25.0, 0.0), (0.0, 100.0), (100.0, 100.0)):
         d = tk.simulate(dict(base, fast_share=share, fast_share_spread=spread), n=50)["draws"]["fast_share"]
         assert np.allclose(d, share)
+
+
+def test_a_review_rule_ends_autopilot_and_holds_each_gain_for_review():
+    """`review` = (start, months): from `start` no autopilot (people keep
+    hours past RSI) and every model and fast batch waits `months` before
+    research builds on it, so capability trails the free run, more for
+    longer reviews; a rule past the horizon changes nothing, and a start
+    before today is refused."""
+    kw = dict(n=60, onset_years=np.full(60, 0.5))
+    free = tk.simulate(dict(years=5), **kw)
+    late = tk.simulate(dict(years=5), review=(9.0, 3.0), **kw)
+    np.testing.assert_array_equal(late["workflow_progress"]["capability_log"],
+                                  free["workflow_progress"]["capability_log"])
+    banned = {mo: tk.simulate(dict(years=5), review=(0.0, mo), **kw) for mo in (0.0, 1.0, 3.0)}
+    past = free["workflow_progress"]["years"] >= free["events"]["RSI"].max()
+    assert (free["workflow_progress"]["human_quantiles"][past] == 0).all()
+    assert (banned[0.0]["workflow_progress"]["human_quantiles"][past][:, 1, 2] > 0).all()
+    cap = {mo: np.median(r["workflow_progress"]["capability_log"][:, -1])
+           for mo, r in banned.items()}
+    assert np.median(free["workflow_progress"]["capability_log"][:, -1]) > cap[1.0] > cap[3.0]
+    with pytest.raises(ValueError, match="review rule"):
+        tk.simulate(dict(years=5), review=(-1.0, 1.0), **kw)
