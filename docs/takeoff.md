@@ -225,8 +225,13 @@ evidence, simulation, re-pairing and drawing; `render_takeoff` clears it in a `f
 once the last chart is drawn, so it outlasts every number. Each step also draws `_TK_FREEZE_CSS` into the bar's slot, so while the bar is up the page and sidebar dim and take no clicks (the main column still scrolls); clearing the slot lifts it. The cards' slot is `st.container(key="tk_headline")`; the
 global `<style>` block enlarges metrics and captions under `.st-key-tk_headline` only. Each
 90% CI line goes in its own `tk_ci90_*` container (`_tk_ci`), which that block dims.
-App-wide, `_BOOT_BAR` (right after the style block) shows a loading bar on a session's
-first run only (`_vp_booted`), cleared by the dispatch before any tab draws.
+App-wide, `_BOOT_BAR` (after the tab constants, before the data load, so it knows the
+landing tab) shows a loading bar on a session's first run only (`_vp_booted`). Opening on
+Takeoff it is this tall box, cleared by the dispatch before the tab draws so Takeoff's own
+bar takes its place. On any other tab it is `_BOOT_PILL`, a small pill pinned over the page
+(`.st-key-_boot_pill`, out of the flow so nothing moves), which the dispatch clears in a
+`finally` after the tab has drawn
+(`test_a_first_load_of_another_tab_clears_its_loading_pill`).
 `tk_dc_compute` (default on) feeds compute growth from the Data Centers tab:
 `_tk_dc_compute` samples the US largest-run projection (`_pc_projection`, as Pacing does)
 and averages each path over a fixed `_TK_DC_AVG_YEARS` (not the chart horizon, which

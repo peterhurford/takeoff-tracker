@@ -227,6 +227,19 @@ def _in_order(node):
     else:
         yield node
 
+    def test_a_first_load_of_another_tab_clears_its_loading_pill(self):
+        """A deep link to any other tab leaves no loading bar behind, on the
+        first run (the pill) or the next (no bar at all)."""
+        for slug in ("china", "thresholds"):
+            at = _fresh_app()
+            at.query_params["tab"] = slug
+            at.run()
+            _assert_no_error(at, f"first load ?tab={slug}")
+            assert not at.get("progress"), slug
+            assert at.session_state["_vp_booted"]
+            at.run()
+            assert not at.get("progress"), slug
+
 
 class TestTabTopOrder:
     """Every tab but Takeoff and Pacing (whose orders are deliberate, see their

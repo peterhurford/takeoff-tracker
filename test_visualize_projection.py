@@ -2104,6 +2104,22 @@ class TestCcCnDrivers:
         u = rows[1][1]
         assert u["own"] / sum(u[k] for k in chans) == pytest.approx(3.0, rel=1e-9)
 
+    def test_a_chip_cut_today_is_the_same_all_day(self, monkeypatch):
+        """The counterfactual's inputs to China's takeoff do not move with the
+        clock time, so a rerun hits `_cn_tk_simulate`'s cache."""
+        years = np.linspace(0.0, 4.0, 49)
+        run = {"result": {"workflow_progress": {"years": years}}}
+        monkeypatch.setattr(vp, "_cn_tk_run", lambda today, run, pacing: pacing)
+        oom = np.array([0.5, 0.25])
+        seen = []
+        for hour in (9, 17):
+            pc = vp._cc_cn_chip_counterfactual(datetime(2026, 11, 11, hour, 3, 7), run,
+                                               {"smug_cut": 1.0})
+            seen.append((pc["experiment_offset"], pc["compute_rate"](years, oom)))
+        assert np.array_equal(seen[0][0], seen[1][0])
+        assert np.array_equal(seen[0][1], seen[1][1])
+        assert seen[0][0].min() < 0          # the cut does lower China's compute
+
     def test_a_lost_stock_stalls_training_growth_until_made_up(self):
         years = np.linspace(0.0, 4.0, 49)
         log_r = np.where(years >= 0.5, np.log(0.1), 0.0)     # lose 1 OOM at 6 months

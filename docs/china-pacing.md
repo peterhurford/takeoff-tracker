@@ -103,7 +103,8 @@ cut / without) (`_cn_src_compute_ratio`, remote access included) held from falli
 stock stalls growth until the trend makes it up (`_cc_cn_setback_rate`, as Pacing's
 remote-access setback); experiment compute takes the same ratio. The table gives the median
 ECI lost and its 80% range beside the split's credit. Two extra China runs, so
-`_cn_tk_simulate` keeps 8 entries.
+`_cn_tk_simulate` keeps 8 entries; the cut starts at midnight, so a rerun's inputs match
+and both hit the cache (`test_a_chip_cut_today_is_the_same_all_day`).
 
 ## China tab — China beside the US, absolute
 

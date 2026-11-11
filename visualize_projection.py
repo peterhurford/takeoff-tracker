@@ -73,8 +73,9 @@ st.markdown("""<style>
         background: rgba(255,75,75,0.12); border-color: rgba(255,75,75,0.7); }
     .st-key-_active_tab [data-testid="stRadioOption"][data-selected="true"] p {
         font-weight: 600; }
-    /* The Takeoff tab's loading bar (`_tk_loading`), the app's only progress
-       bar: boxed, tall and in large type so a multi-second wait reads as one. */
+    /* The Takeoff tab's loading bar (`_tk_loading`, and the first-run bar when
+       the app opens on Takeoff): boxed, tall and in large type so a
+       multi-second wait reads as one. */
     /* Takeoff's headline cards (the `tk_headline` slot): big dates, labels and CIs. */
     .st-key-tk_headline [data-testid="stMetricValue"] { font-size: 3.4rem !important;
         line-height: 1.15; font-weight: 700; }
@@ -101,6 +102,20 @@ st.markdown("""<style>
         font-weight: 500; text-align: center; margin-bottom: 1.5rem; }
     [data-testid="stProgress"] div[role="progressbar"] div {
         height: 7rem !important; border-radius: 3.5rem !important; }
+    /* A first load of any other tab (`_BOOT_PILL`): the same bar as a small
+       pill pinned over the page, out of the flow, so the tab draws under it
+       and nothing moves when it goes. */
+    .st-key-_boot_pill { position: fixed; top: 0.6rem; left: 50%;
+        transform: translateX(-50%); z-index: 1000000; width: min(24rem, 80vw);
+        padding: 0.5rem 0.9rem 0.65rem; border-radius: 0.6rem; background: #fff;
+        border: 1px solid rgba(41,128,185,0.45);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+    .st-key-_boot_pill [data-testid="stProgress"] { min-height: 0; padding: 0;
+        display: block; border: 0; border-radius: 0; background: none; }
+    .st-key-_boot_pill [data-testid="stProgress"] p { font-size: 0.9rem !important;
+        font-weight: 400; text-align: left; margin-bottom: 0.3rem; }
+    .st-key-_boot_pill [data-testid="stProgress"] div[role="progressbar"] div {
+        height: 0.35rem !important; border-radius: 0.2rem !important; }
     [data-testid="stTable"] table { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
     .vp-fn, .vp-fn-a { position: relative; cursor: help; }
     /* Anchored: the note hangs off the words it qualifies. */
@@ -141,15 +156,6 @@ st.markdown("""<style>
     .vp-loop-box small { display: block; opacity: 0.7; font-size: 0.78rem; }
     .vp-loop-arrow { opacity: 0.6; font-size: 0.82rem; }
 </style>""", unsafe_allow_html=True)
-
-# On a session's first run only, a loading bar holds the page while the data
-# loads; the dispatch clears it before a tab draws. Every later rerun skips it,
-# since a bar flashing in at the top on each click would shove the page down.
-_BOOT_BAR = None
-if "_vp_booted" not in st.session_state:
-    _BOOT_BAR = st.empty()
-    _BOOT_BAR.progress(0.05, text="**Loading the dashboard:** reading the METR, Epoch, "
-                                  "data-center and RSI data\u2026")
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -3643,6 +3649,44 @@ def _dc_cty_lag_months(follower, leader, grid):
     return out, unresolved
 
 
+# ── Tabs, and the first-run loading bar ──────────────────────────────────
+
+# The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
+# that set the same radio, whose own chips for them the style block hides.
+_TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
+                "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds",
+                "Release Lag"]
+_TAB_MAIN_N = 6
+_TAB_LABEL = {"ECI": "Epoch ECI"}
+_SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing", "Release Lag": "releaselag"}
+# Current slugs only: an unknown ?tab= opens the default tab
+# (`test_retired_links_get_no_special_handling`).
+_TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
+
+# Read ?tab= from URL for deep-linking; with none, the app opens on `_DEFAULT_TAB`.
+_DEFAULT_TAB = "Takeoff"
+_url_tab = st.query_params.get("tab", "").lower()
+_default_tab_idx = _TAB_SLUG.get(_url_tab, _TAB_OPTIONS.index(_DEFAULT_TAB))
+
+
+# On a session's first run only, a loading bar shows while the data loads and
+# the tab draws. Every later rerun skips it, since a bar flashing in on each
+# click would distract. Opening on Takeoff it is the tall box Takeoff's own bar
+# (`_tk_loading`) then takes over from, cleared before the tab draws; on any
+# other tab a pill pinned over the page (`.st-key-_boot_pill`), up until the
+# tab has drawn (`test_a_first_load_of_another_tab_clears_its_loading_pill`).
+_BOOT_BAR = _BOOT_PILL = None
+_BOOT_TAB = _TAB_OPTIONS[_default_tab_idx]
+if "_vp_booted" not in st.session_state:
+    _BOOT_BAR = st.empty()
+    if _BOOT_TAB == _DEFAULT_TAB:
+        _BOOT_BAR.progress(0.05, text="**Loading the dashboard:** reading the METR, "
+                                      "Epoch, data-center and RSI data\u2026")
+    else:
+        _BOOT_PILL = _BOOT_BAR.container(key="_boot_pill").progress(
+            0.2, text=f"**Loading {_TAB_LABEL.get(_BOOT_TAB, _BOOT_TAB)}:** "
+                      "reading the data\u2026")
+
 # ── Load data (before sidebar, so model names are available) ─────────────
 
 metr_all = load_metr_all(mtime=_yaml_mtime())
@@ -3670,23 +3714,6 @@ ukc_frontier_names = [m['name'] for m in ukc_frontier_all]
 
 
 # ── Sidebar: tab selector ────────────────────────────────────────────────
-
-# The first `_TAB_MAIN_N` show as chips; the rest sit under *More*, as buttons
-# that set the same radio, whose own chips for them the style block hides.
-_TAB_OPTIONS = ["ECI", "Remote Labor Index", "Data Centers", "China", "Takeoff", "Pacing",
-                "METR Horizon", "Revenue", "UK Cyber", "Employment", "Frontier Thresholds",
-                "Release Lag"]
-_TAB_MAIN_N = 6
-_TAB_LABEL = {"ECI": "Epoch ECI"}
-_SLUG_FOR_TAB = {"METR Horizon": "metr", "ECI": "eci", "Remote Labor Index": "rli", "Takeoff": "takeoff", "UK Cyber": "ukcyber", "Frontier Thresholds": "thresholds", "Revenue": "revenue", "Employment": "employment", "Data Centers": "datacenters", "China": "china", "Pacing": "pacing", "Release Lag": "releaselag"}
-# Current slugs only: an unknown ?tab= opens the default tab
-# (`test_retired_links_get_no_special_handling`).
-_TAB_SLUG = {_SLUG_FOR_TAB[t]: i for i, t in enumerate(_TAB_OPTIONS)}
-
-# Read ?tab= from URL for deep-linking; with none, the app opens on `_DEFAULT_TAB`.
-_DEFAULT_TAB = "Takeoff"
-_url_tab = st.query_params.get("tab", "").lower()
-_default_tab_idx = _TAB_SLUG.get(_url_tab, _TAB_OPTIONS.index(_DEFAULT_TAB))
 
 with st.sidebar:
     active_tab = st.radio("Tab", _TAB_OPTIONS, index=_default_tab_idx, horizontal=True,
@@ -15485,10 +15512,13 @@ def _cc_cn_chip_counterfactual(today, run, mix):
     China's total compute (in China and rented abroad) with the levers over
     without (`_cn_src_compute_ratio`), held from falling, so a lost stock
     stalls growth until the trend makes it up, as Pacing's remote-access
-    setback does; experiment compute takes the same ratio."""
+    setback does; experiment compute takes the same ratio. The cut starts at
+    midnight, not the clock time, or each rerun's inputs differ and
+    `_cn_tk_simulate` never hits its cache
+    (`test_a_chip_cut_today_is_the_same_all_day`)."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
     years = run["result"]["workflow_progress"]["years"]
-    ratio = _cn_src_compute_ratio(today, day, mix, 1.0)
+    ratio = _cn_src_compute_ratio(day, day, mix, 1.0)
     log_r = np.log(np.maximum([ratio(t) for t in years], 1e-12))
     return _cn_tk_run(today, run, pacing={"compute_rate": _cc_cn_setback_rate(years, log_r),
                                           "experiment_offset": log_r})
@@ -27857,34 +27887,41 @@ if not os.environ.get("_VP_TESTING"):
         if _k in st.session_state:
             st.session_state[_k] = st.session_state[_k]
     st.session_state["_vp_booted"] = True
-    if _BOOT_BAR is not None:
+    if _BOOT_PILL is not None:
+        _BOOT_PILL.progress(0.6, text=f"**Loading {_TAB_LABEL.get(_BOOT_TAB, _BOOT_TAB)}:** "
+                                      "drawing the charts\u2026")
+    elif _BOOT_BAR is not None:
         _BOOT_BAR.empty()
 
-    with _seeded_rng(_APP_SEED):
-        if active_tab == "METR Horizon":
-            render_metr()
-        elif active_tab == "ECI":
-            render_eci()
-        elif active_tab == "Remote Labor Index":
-            render_rli()
-        elif active_tab == "Takeoff":
-            render_takeoff()
-        elif active_tab == "UK Cyber":
-            render_ukcyber()
-        elif active_tab == "Frontier Thresholds":
-            thresholds.render(st)
-        elif active_tab == "Revenue":
-            render_revenue()
-        elif active_tab == "Employment":
-            render_employment()
-        elif active_tab == "Data Centers":
-            render_data_centers()
-        elif active_tab == "China":
-            render_compute_capabilities()
-        elif active_tab == "Pacing":
-            render_pacing()
-        elif active_tab == "Release Lag":
-            render_release_lag()
+    try:
+        with _seeded_rng(_APP_SEED):
+            if active_tab == "METR Horizon":
+                render_metr()
+            elif active_tab == "ECI":
+                render_eci()
+            elif active_tab == "Remote Labor Index":
+                render_rli()
+            elif active_tab == "Takeoff":
+                render_takeoff()
+            elif active_tab == "UK Cyber":
+                render_ukcyber()
+            elif active_tab == "Frontier Thresholds":
+                thresholds.render(st)
+            elif active_tab == "Revenue":
+                render_revenue()
+            elif active_tab == "Employment":
+                render_employment()
+            elif active_tab == "Data Centers":
+                render_data_centers()
+            elif active_tab == "China":
+                render_compute_capabilities()
+            elif active_tab == "Pacing":
+                render_pacing()
+            elif active_tab == "Release Lag":
+                render_release_lag()
+    finally:
+        if _BOOT_BAR is not None:
+            _BOOT_BAR.empty()
 
     # Rendered after the tab's own controls, at the foot of the sidebar. The
     # charts above read the key from session state, which a click updates
