@@ -428,7 +428,8 @@ not a reading of the CSVs. Six things are load-bearing:
    (Jan 2025) like the rest of the tab; left of the "Today" divider China's
    stock is the mix's and the world before end-2025 is the back-run, so no
    share there is measured. The caption quotes the May 2025 China share
-   against Epoch's ~15% cluster-share reading. That half is
+   against Epoch's ~15% cluster-share reading (`_WC_EPOCH_CLUSTER_SHARE`, which the
+   China tab's cross-check also reads). That half is
    washed out by a white `vrect` at `layer='above'` (a shaded band would sit
    *under* the filled areas and never show), and the divider is heavier than
    the other tabs' dotted one on purpose: it is the only thing separating two

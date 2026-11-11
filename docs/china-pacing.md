@@ -2,7 +2,7 @@
 
 The lithography ceiling, China's crossing simulation, and the Pacing tab. Read before changing `_duv_*`, `_cn_src_*`, `_cc_cn_*` or `_pc_*` pause/race code. Hand-set judgments are recorded in `CHINA_COMPUTE_JUDGMENTS.md`.
 
-## China tab — lithography ceiling (last section)
+## China tab — lithography ceiling (before US vs. China)
 
 `_render_cc_duv_ceiling()` charts `cts_duv_production.csv` as published: US-and-allied
 AI chips made per year against China's **lithography-bounded ceiling**, with DUVi imports
@@ -64,6 +64,22 @@ each with an 80% range. The share and stock ranges draw `_wc_stocks`' z under
 Centers draws its whiskers mid-stream, so the share range matches its headline in
 distribution, not draw for draw; at defaults the strings agree
 (`test_headline_cards_are_the_other_tabs_numbers`, `TestCcHeadline`).
+
+## China tab — section order and the cross-check
+
+The tab runs headline cards, *How this compares with published estimates*
+(`_render_cc_crosscheck`), *Where China's compute comes from*, the glossary expander, the
+lithography ceiling, then *US vs. China*: the evidence on China's compute before the
+run-and-capability comparison that reads it (`TestCcComputeSourcesTab`). None of the moved
+sections draw, so the reorder moves no number.
+
+The cross-check reads the world identity at Epoch's chip imports explorer's date
+(`_WC_WORLD_ARRIVED_MID2026`) against Epoch's China, world, share and US (`_WC_EPOCH_*`),
+with 5th-95th ranges from the headline's seeded draws. Its sentence splits log(our share /
+Epoch's) exactly into the China-count term and minus the world-total term and names the
+larger. Epoch's cluster share (`_WC_EPOCH_CLUSTER_SHARE`) sits beside our back-run share at
+its date, flagged as a share of tracked clusters holding an estimated 10-20% of world
+compute (`TestCcCrossCheck`, `test_cross_check_sets_the_app_beside_epoch`).
 
 ## China tab text
 

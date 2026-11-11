@@ -1650,6 +1650,27 @@ class TestCcExplains:
         assert lead.value == ratio
         assert round(float(total.value.split("M")[0])) == int(cn.replace(",", ""))
 
+    def test_cross_check_sets_the_app_beside_epoch(self):
+        """The cross-check table carries Epoch's published figures and its
+        sentence the app's own share, naming where the gap sits."""
+        import visualize_projection as vp
+        at = self._app()
+        i = [str(h.value) for h in at.subheader].index(
+            "How this compares with published estimates")
+        tab = at.table[0].value
+        assert list(tab["Measure"])[0].startswith("China, in China, end-Jun 2026")
+        epoch = " ".join(tab["Epoch (90%)"])
+        for v in ("2.64M (2.26M\u20132.96M)", "1.90M\u20134.19M",
+                  "27.39M (24.64M\u201330.21M)", "9.6%", "19.80M", "~15%"):
+            assert v in epoch, v
+        x = vp._cc_crosscheck(datetime.now())
+        caps = " ".join(str(c.value) for c in at.caption)
+        assert f"China's share here is {x['share'][0]:.1f}% against" in caps
+        assert re.search(r"gap is in the (China count|world total)|"
+                         r"makes the gap", caps)
+        assert "10\u201320% of the world" in caps
+        assert i == 0
+
     def test_gap_cards_share_one_months_conversion(self):
         at = self._app()
         cards = {m.label: m for m in at.metric}
@@ -1690,16 +1711,18 @@ class TestCcExplains:
 
 
 class TestCcDuvCeilingTab:
-    """The CTS lithography ceiling, last section of the CC tab."""
+    """The CTS lithography ceiling, the China tab's last evidence section,
+    just before the US-vs-China comparison."""
 
     _HEAD = "Lithography ceiling on China's chip output"
 
-    def test_renders_last_and_says_it_is_a_ceiling(self):
+    def test_renders_before_us_vs_china_and_says_it_is_a_ceiling(self):
         at = _fresh_app()
         at.run()
         _switch_tab(at, "China")
         _assert_no_error(at, "CC / DUV ceiling")
-        assert [str(h.value) for h in at.subheader][-1] == self._HEAD
+        assert [str(h.value) for h in at.subheader][-2:] == [self._HEAD,
+                                                             "US vs. China"]
         text = " ".join(str(m.value) for m in at.markdown)
         assert "not a forecast" in text
         caps = " ".join(str(c.value) for c in at.caption)
@@ -1707,16 +1730,21 @@ class TestCcDuvCeilingTab:
 
 
 class TestCcComputeSourcesTab:
-    """China's compute by source, just above the lithography ceiling."""
+    """The China tab's sections in order: the published cross-check, China's
+    compute by source, the lithography ceiling, then US vs. China."""
 
-    def test_renders_before_the_ceiling_and_cites_epoch(self):
+    _ORDER = ["How this compares with published estimates",
+              "Where China's compute comes from",
+              TestCcDuvCeilingTab._HEAD, "US vs. China"]
+
+    def test_renders_in_order_and_cites_epoch(self):
         at = _fresh_app()
         at.run()
         _switch_tab(at, "China")
         _assert_no_error(at, "CC / compute sources")
         heads = [str(h.value) for h in at.subheader]
-        assert heads[-2:] == ["Where China's compute comes from",
-                              TestCcDuvCeilingTab._HEAD]
+        assert [h for h in heads if h in self._ORDER] == self._ORDER
+        assert heads[0] == self._ORDER[0]
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
         assert "Faded bars are projections" in caps

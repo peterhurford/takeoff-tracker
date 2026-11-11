@@ -12398,6 +12398,20 @@ _WC_US_WIDE_FROM = 2027
 _WC_US_LOW_RATIO = 60 / 74
 _WC_US_HIGH_RATIO = 109 / 74
 _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
+# The same explorer's China and US at that date (methodology at
+# `_WC_SOURCE_CHIP_IMPORTS`): China, domestic production included, 2.637M
+# H100e (conditional 90% 2.26-2.96M; 1.90-4.19M across its structural
+# assumptions on what the trade contains), 9.63% of the world; the US 19.8M.
+# The China tab's cross-check sets them beside `_wc_stocks` (`TestCcCrossCheck`).
+_WC_EPOCH_CN_MID2026 = (2.637e6, 2.26e6, 2.96e6)
+_WC_EPOCH_CN_ENVELOPE = (1.90e6, 4.19e6)
+_WC_EPOCH_CN_SHARE_PCT = 9.63
+_WC_EPOCH_US_MID2026 = 19.8e6
+# Epoch's "Trends in AI supercomputers" (`_WC_SOURCE_SUPERCOMPUTERS`): China
+# ~15% of the performance of the GPU clusters it tracks in May 2025, clusters
+# estimated to hold 10-20% of the world's AI compute, so a share of a sample.
+_WC_EPOCH_CLUSTER_SHARE = (datetime(2025, 5, 1), 15.0)
+_WC_EPOCH_CLUSTER_COVERAGE_PCT = (10, 20)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
@@ -17004,7 +17018,7 @@ def _render_world_shares(today, horizon):
     fig2.update_yaxes(ticksuffix='%')
     st.plotly_chart(fig2, width="stretch")
     _back = _wc_central_shares(
-        today, [(datetime(2025, 5, 1) - today).days / 365.25])[cn][0]
+        today, [(_WC_EPOCH_CLUSTER_SHARE[0] - today).days / 365.25])[cn][0]
     _cts_last = load_duv_production(_duv_mtime())["us"][-1][0]
     _fn_caption(
         f"China is its compute mix inside China over a world total that goes "
@@ -17021,8 +17035,120 @@ def _render_world_shares(today, horizon):
          + ". Only their ratios matter. Hover the chart for each region's 80% "
            "range, one region at a time."),
         ("today's split", "No measured history of these shares exists. The "
-                          f"back-run puts China at {_back:.0f}% in May 2025, "
-                          "against Epoch's ~15% cluster-share reading then."))
+                          f"back-run puts China at {_back:.0f}% in "
+                          f"{_WC_EPOCH_CLUSTER_SHARE[0]:%B %Y}, against "
+                          f"Epoch's ~{_WC_EPOCH_CLUSTER_SHARE[1]:.0f}% "
+                          "cluster-share reading then."))
+
+
+def _cc_crosscheck(today, n=None):
+    """This app's China, world and US stocks at Epoch's chip imports
+    explorer's date (`_WC_WORLD_ARRIVED_MID2026`), each (central, p5, p95):
+    the world identity at central inputs (`_wc_stocks`, `_pc_us_installed`)
+    and at drawn ones, seeded with the generator's state put back, so no
+    draw around it moves (`TestCcCrossCheck`). Plus China's central share
+    at Epoch's cluster-share date (`_WC_EPOCH_CLUSTER_SHARE`)."""
+    n = n or N_SAMPLES
+    when = _WC_WORLD_ARRIVED_MID2026[0]
+    t = [(when - today).days / 365.25]
+    with _seeded_rng(_APP_SEED):
+        z = np.random.normal(0.0, 1.0, (3, n))
+        split = _wc_split_paths(t, n)[_WC_LABELS[0]][0]
+    wd, cd = (a[0] for a in _wc_stocks(today, t, z_us=z[0], z_dom=z[1],
+                                       z_smug=z[2]))
+    world, china = (float(a[0, 0]) for a in _wc_stocks(today, t))
+
+    def _r(mid, draws):
+        return (mid, float(np.percentile(draws, 5)),
+                float(np.percentile(draws, 95)))
+    return dict(
+        when=when, china=_r(china, cd), world=_r(world, wd),
+        share=_r(100.0 * china / world, 100.0 * cd / wd),
+        us=_r(float(_pc_us_installed(today, t[0])), (wd - cd) * split),
+        cluster_share=float(_wc_central_shares(today, [
+            (_WC_EPOCH_CLUSTER_SHARE[0] - today).days / 365.25])[_WC_CN][0]))
+
+
+def _render_cc_crosscheck(today):
+    """This app's China, world and US beside Epoch's published estimates at
+    the explorer's date (`_cc_crosscheck`), and the sentence saying whether
+    the share's gap sits in the China count or the world total."""
+    st.subheader("How this compares with published estimates")
+    x = _cc_crosscheck(today)
+    when = x['when']
+
+    def _m(v):
+        return f"{v / 1e6:.2f}M"
+
+    def _rng(r, f):
+        return f"{f(r[0])} ({f(r[1])}–{f(r[2])})"
+    _pct = (lambda v: f"{v:.1f}%")
+    ep_cn, (env_lo, env_hi) = _WC_EPOCH_CN_MID2026, _WC_EPOCH_CN_ENVELOPE
+    _, ep_w, ep_wlo, ep_whi = _WC_WORLD_ARRIVED_MID2026
+    cl_when, cl_share = _WC_EPOCH_CLUSTER_SHARE
+    cov_lo, cov_hi = _WC_EPOCH_CLUSTER_COVERAGE_PCT
+    rows = [
+        {"Measure": f"China, in China, end-{when:%b %Y} (H100e)",
+         "This app (90%)": _rng(x['china'], _m),
+         "Epoch (90%)": f"{_rng(ep_cn, _m)}; {_m(env_lo)}–{_m(env_hi)} "
+                        "across trade assumptions",
+         "Ratio": f"{x['china'][0] / ep_cn[0]:.2f}×"},
+        {"Measure": f"World, arrived, end-{when:%b %Y} (H100e)",
+         "This app (90%)": _rng(x['world'], _m),
+         "Epoch (90%)": _rng((ep_w, ep_wlo, ep_whi), _m),
+         "Ratio": f"{x['world'][0] / ep_w:.2f}×"},
+        {"Measure": f"China's share, end-{when:%b %Y}",
+         "This app (90%)": _rng(x['share'], _pct),
+         "Epoch (90%)": _pct(_WC_EPOCH_CN_SHARE_PCT),
+         "Ratio": f"{x['share'][0] / _WC_EPOCH_CN_SHARE_PCT:.2f}×"},
+        {"Measure": f"US, end-{when:%b %Y} (H100e)",
+         "This app (90%)": _rng(x['us'], _m),
+         "Epoch (90%)": _m(_WC_EPOCH_US_MID2026),
+         "Ratio": f"{x['us'][0] / _WC_EPOCH_US_MID2026:.2f}×"},
+        {"Measure": f"China's share of tracked GPU clusters, {cl_when:%b %Y}",
+         "This app (90%)": f"{_pct(x['cluster_share'])} of all compute",
+         "Epoch (90%)": f"~{cl_share:.0f}% of tracked clusters",
+         "Ratio": "—"},
+    ]
+    st.table(pandas.DataFrame(rows).style.hide(axis="index"))
+    # The share's ratio is China's ratio over the world's, so its log splits
+    # exactly into the China term and minus the world term.
+    c_cn = float(np.log(x['china'][0] / ep_cn[0]))
+    c_w = -float(np.log(x['world'][0] / ep_w))
+    big, small = ((("China count", c_cn), ("world total", c_w))
+                  if abs(c_cn) >= abs(c_w)
+                  else (("world total", c_w), ("China count", c_cn)))
+    if big[1] * small[1] >= 0 and abs(big[1]) + abs(small[1]) > 0:
+        where = (f"{abs(big[1]) / (abs(big[1]) + abs(small[1])):.0%} of the "
+                 f"gap is in the {big[0]}, the rest in the {small[0]}")
+    else:
+        where = (f"the {big[0]} makes the gap and the {small[0]} offsets "
+                 "part of it")
+    _fn_caption(
+        f"China's share here is {x['share'][0]:.1f}% against Epoch's "
+        f"{_WC_EPOCH_CN_SHARE_PCT:.1f}%: our China count is "
+        f"{x['china'][0] / ep_cn[0] - 1:+.0%} on Epoch's and our world total "
+        f"{x['world'][0] / ep_w - 1:+.0%}, so {where}.",
+        ("Epoch's", f"Epoch's AI chip imports explorer ({_WC_SOURCE_CHIP_IMPORTS}"
+                    "): customs data plus China's domestic production, each "
+                    "chip counted about two months after it is sold. Its 90% "
+                    "range is conditional on its model of what the trade "
+                    "contains; the wider span varies that model."),
+        ("world total", "Ours is Epoch's end-2025 chip-sales total plus every "
+                        "chip made since (CTS's US-and-allied output, lagged "
+                        "to arrival, and China's domestic output), retired "
+                        f"after {_CHIP_LIFE_YEARS} years; the US is its "
+                        "central share of the rest. Ranges are 5th to 95th "
+                        "percentiles of the same draws as the cards above."))
+    _fn_caption(
+        f"Epoch's cluster share is not a share of the world: the GPU clusters "
+        f"it tracks hold an estimated {cov_lo}–{cov_hi}% of the world's "
+        "AI compute.",
+        ("cluster share", f"Epoch, Trends in AI supercomputers "
+                          f"({_WC_SOURCE_SUPERCOMPUTERS}): China's share of "
+                          "the aggregate performance of the clusters it "
+                          f"tracks, {cl_when:%B %Y}. Our figure is the back-run "
+                          "of the world identity to that date."))
 
 
 def _render_cc_compute_sources():
@@ -17841,21 +17967,17 @@ def render_compute_capabilities():
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
     cc_rows = load_eci_compute(mtime=_eci_mtime())
 
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 1: US vs. China — the exchange-rate decomposition read by country
-    # ══════════════════════════════════════════════════════════════════════
-    _cc_us_vs_china(cc_rows, _today, horizon=horizon,
-                    run_key=run_key, run_days=run_days, how_to_read=_units)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 2: where China's compute comes from, by source
-    # ══════════════════════════════════════════════════════════════════════
+    # Evidence first: how much compute China has, checked against published
+    # estimates, then where it comes from and what bounds it; the US-vs-China
+    # comparison of largest runs and capability last. The glossary sits under
+    # the first chart (`TestTabTopOrder`).
+    _render_cc_crosscheck(_today)
     _render_cc_compute_sources()
-
-    # ══════════════════════════════════════════════════════════════════════
-    # Section 3: the lithography ceiling on China's chip output (CTS)
-    # ══════════════════════════════════════════════════════════════════════
+    with st.expander("How to read this"):
+        _units()
     _render_cc_duv_ceiling(_today)
+    _cc_us_vs_china(cc_rows, _today, horizon=horizon,
+                    run_key=run_key, run_days=run_days)
 
 
 # ── URL parameter persistence ────────────────────────────────────────────

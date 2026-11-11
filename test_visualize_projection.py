@@ -5202,6 +5202,39 @@ class TestCcHeadline:
                                    {}, n=500)
 
 
+class TestCcCrossCheck:
+    """The China tab's cross-check (`_cc_crosscheck`) reads the world
+    identity at Epoch's explorer date, draws without moving the generator,
+    and Epoch's own figures agree with each other."""
+
+    def test_centrals_are_the_world_identity_at_the_explorers_date(self):
+        today = datetime(2026, 10, 23)
+        np.random.seed(7)
+        before = np.random.get_state()[1].copy()
+        x = vp._cc_crosscheck(today, n=2000)
+        assert (np.random.get_state()[1] == before).all()
+        t = [(vp._WC_WORLD_ARRIVED_MID2026[0] - today).days / 365.25]
+        world, china = vp._wc_stocks(today, t)
+        assert x["world"][0] == pytest.approx(float(world[0, 0]), rel=1e-12)
+        assert x["china"][0] == pytest.approx(float(china[0, 0]), rel=1e-12)
+        assert x["share"][0] == pytest.approx(
+            100 * x["china"][0] / x["world"][0], rel=1e-12)
+        assert x["us"][0] == pytest.approx(
+            float(vp._pc_us_installed(today, t[0])), rel=1e-12)
+        for k in ("china", "world", "share", "us"):
+            assert x[k][1] < x[k][0] < x[k][2], k
+        assert vp._cc_crosscheck(today, n=2000) == x
+
+    def test_epochs_share_is_its_china_over_its_world(self):
+        cn = vp._WC_EPOCH_CN_MID2026[0]
+        world = vp._WC_WORLD_ARRIVED_MID2026[1]
+        assert 100 * cn / world == pytest.approx(vp._WC_EPOCH_CN_SHARE_PCT,
+                                                 abs=0.01)
+        lo, hi = vp._WC_EPOCH_CN_ENVELOPE
+        assert lo < vp._WC_EPOCH_CN_MID2026[1] < cn \
+            < vp._WC_EPOCH_CN_MID2026[2] < hi
+
+
 class TestDcMilestoneDates:
     """Hover milestones name a training run only for the train-OP metrics,
     and then the run length that metric assumes."""
