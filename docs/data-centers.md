@@ -379,6 +379,9 @@ not a reading of the CSVs. Six things are load-bearing:
    TPP basis with a ~4-year chip life), and Epoch's measured 3.3×/yr
    (2.7–4.1×) carried forward from >10M sold in 2025 gives ~33M and ~109M.
    CTS's own low-to-high for 2027 (67–81M) is narrower than that spread.
+   Nothing is retired: a 5-year chip life on both the world and China would
+   lower the end-2031 world 5% (1,102M to 1,046M) and China's share 0.1
+   point, a 4-year life 12% and 0.1 point.
 2. **Outside China, published shares split the rest.** `_WC_REGIONS` carries
    `(label, central, p10, p90)` for the US, SEA, the UAE, Europe/UK and Other,
    as published beside China's ~9%; only their ratios are used
