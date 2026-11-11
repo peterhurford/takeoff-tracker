@@ -1040,6 +1040,46 @@ def test_a_flat_compute_path_stays_flat_under_the_rsi_boost():
     np.testing.assert_allclose(run["workflow_progress"]["compute_log"], 0.0, atol=1e-12)
 
 
+def test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost():
+    """`compute_cut` takes its log off training, agent and experiment compute
+    (the reported compute falls by it, the research pace by the cut to the
+    parallelization power, trend proxy included), a zero
+    cut changes nothing, and a cut that ends hands back the uncut level, no
+    higher, after RSI as before it."""
+    params = dict(tk.POINT_ESTIMATE, years=5, rsi_compute_boost=3.0)
+    n, grid = 6, np.linspace(0, 5, 481)
+    kw = dict(n=n, onset_years=np.full(n, 1.5), compute_rates=np.full(n, np.log(2.5)),
+              experiment_slopes=np.full(n, 1.0))
+    step = np.log(6.0) * np.clip((grid - 1.0) * 12, 0, 1)
+    plain = tk.simulate(params, **kw)
+    zero = tk.simulate(params, compute_cut=(grid, 0 * grid), **kw)
+    cut = tk.simulate(params, compute_cut=(grid, step), **kw)
+    ended = tk.simulate(params, compute_cut=(grid, step * (1 - np.clip((grid - 2.0) * 12, 0, 1))),
+                        **kw)
+    wp = [r["workflow_progress"] for r in (plain, zero, cut, ended)]
+    for key in ("capability_log", "compute_log", "pace"):
+        np.testing.assert_array_equal(wp[1][key], wp[0][key])
+    years = wp[0]["years"]
+    k = int(np.searchsorted(years, 1.25))
+    np.testing.assert_allclose((wp[0]["compute_log"] - wp[2]["compute_log"])[:, k], np.log(6.0))
+    # Labor and experiments both lose 6^parallelization, so their CES does.
+    drop = np.log(wp[2]["pace"][:, k] / wp[0]["pace"][:, k])
+    np.testing.assert_allclose(drop, -plain["params"]["parallelization"] * np.log(6.0),
+                               atol=0.05)
+    assert np.all(wp[2]["capability_log"][:, -1] < wp[0]["capability_log"][:, -1])
+    with pytest.raises(ValueError, match="log reduction"):
+        tk.simulate(params, compute_cut=(grid, -step), **kw)
+    # Ended: RSI on the same date here, so the same boost over the same
+    # compute growth, and the uncut level again (to the steps' timing).
+    late = years > 2.2
+    np.testing.assert_array_equal(ended["events"]["RSI"], plain["events"]["RSI"])
+    assert np.isfinite(ended["events"]["RSI"]).all()
+    np.testing.assert_allclose(wp[3]["compute_log"][:, late], wp[0]["compute_log"][:, late],
+                               atol=1e-3)
+    final = [np.median(w["capability_log"][:, -1]) for w in wp]
+    assert final[2] < final[3] - 2 and abs(final[3] - final[0]) < 1
+
+
 def test_a_leak_cut_fades_over_the_absorption_window():
     """Cutting the leak today stops ideas leaving the leader from today: those
     already on their way keep arriving, spread over the absorption years, so

@@ -148,7 +148,8 @@ from rules out. No sweep result is quoted in the app, since it would go stale si
 Rerun the sweep, and retarget the group, after a model or default change. The boost
 (`rsi_compute_boost`) multiplies each draw's log compute growth after its own
 RSI date (a supplied `compute_path`'s own rise, none where it is flat:
-`test_a_flat_compute_path_stays_flat_under_the_rsi_boost`), waiting `rsi_compute_delay` (18 months) then
+`test_a_flat_compute_path_stays_flat_under_the_rsi_boost`; a `compute_cut` ending is no rise
+either), waiting `rsi_compute_delay` (18 months) then
 ramping in over `rsi_compute_ramp` (12), never in the frozen-AI reference
 (`test_compute_boost_starts_at_each_draws_rsi_and_spares_the_reference`,
 `test_compute_boost_waits_its_delay_then_ramps_in`): delayed, it moves the

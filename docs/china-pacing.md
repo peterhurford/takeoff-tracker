@@ -369,7 +369,28 @@ The levers open with *Pace the US* (`pc_pace`, `_PC_PACE_OPTIONS` 100→0, defau
 pacing, 0 = the pause): from the pacing date the US runs its path on `_pc_paced_clock`, `pace`
 years a year (plus up to `_PC_WIN_MAX` *Pacing windows* under *Advanced*, `pc_win{i}_pace/start/end`, each its own pace from start to end, overriding the main lever while it runs (so a pause can resume), the slowest winning where windows overlap; they move only the US path, while the pacing date still sets the snapshot, the race bar and the from-pacing-start levers; `test_pacing_windows_slow_the_us_then_return_it_to_normal`, `test_a_pacing_window_slows_the_us_until_it_ends`), each change drawn as a thin purple rule labelled "pause", "N× slower" or "no pacing" (`_pc_pace_changes`, `_pc_pace_rule_label`) beside a dashed unpaced-US line; the pacing date sliders run to `_PC_PAUSE_LAST_YM` (Dec 2035)), so the bar China crosses moves (`_cc_cn_crossing_sim(us_path=…)` returns trained
 and released paths; released trails trained by the ship lag, which reproduces the old capped
-climb at 0). Crossing dates are percentiles over every sample, a never-crossed one counting as
+climb at 0). Under it, *Cut US R&D compute* (`pc_cut`, `_PC_CUT_OPTIONS`, 1 = off, the default; `pc_cut_mo`,
+0 = for good) divides the compute behind US research by that factor from the pacing date
+(which then stays live at 100% pace, `_no_pace` being false). It is not a clock: the Takeoff
+run is rerun with `takeoff.simulate(compute_cut=…)` (`_tk_cut_path`, a month's ramp in and
+out; `_tk_run_cut`, memoized per rerun by `_tk_run_cut_seeded`), twice, the second on coding
+dates moved to where the cut run trains the same ECI (`_tk_cut_onset`; the inherited dates
+are calendar dates from a projection that knows no cut, and a third pass moves them by days;
+`test_a_cut_moves_coding_dates_to_the_same_capability`). `_pc_takeoff_us(cut=…)` hands that
+run to the panel as `tk`, so the US line, milestones, paced clock (the two levers stack) and
+China's follower run (`tk['run']` into `_cn_tk_run`) all read it, while the dotted no-lever
+lines and `free` China stay on the uncut `tk_free`
+(`test_an_rd_compute_cut_delays_every_us_milestone`). Off, no extra run happens and nothing
+is drawn. The caption under it (`_pc_cut_plan_note`) quotes the nearest pacing plan,
+`_pc_cut_equivalent`: the 5%-step pace and month count whose paced uncut median best tracks
+the cut run's median ECI up to ultraintelligence
+(`test_a_cut_reads_back_the_pacing_plan_that_makes_its_path`); for a lasting cut with no
+other pacing, *Use as a pacing plan* turns the cut off and writes that plan to window 1. A
+plan cannot outrun no pacing, so a cut that ends (rebound) gets the caption but no button.
+The compute race and the state-of-play capacities below do not move with the cut: they
+count installed compute, which the cut puts to other uses rather than removes
+(`test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan`).
+Crossing dates are percentiles over every sample, a never-crossed one counting as
 past the window; under half crossing, the cards read *After <year>* with the share that
 does and the breakdown is skipped. Which milestone the dates mean is in the crossing card's
 hover (`test_pacing_slows_the_us_and_delays_china`). Pause-scenario tests set

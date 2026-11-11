@@ -3592,6 +3592,66 @@ class TestPacingTab:
         assert rate["Innovation"][1] == pytest.approx(rate["Innovation"][0],
                                                       abs=0.2)
 
+    def test_an_rd_compute_cut_slows_the_us_and_converts_to_a_pacing_plan(self):
+        """Off by default and then nothing is drawn for it. On, the US line
+        falls below a dotted no-cut line, China's below its own, the cut
+        quotes a pacing plan, and the button swaps the cut for that plan in
+        window 1; a cut that ends offers no button and loses less."""
+        import visualize_projection as vp
+
+        def traces(at):
+            for el in at.get("plotly_chart"):
+                d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                if "China, projected" in d:
+                    return d
+            raise AssertionError("no pause chart")
+
+        def plan(at):
+            return [re.search(r"pacing at (\d+)% for (\d+) months", str(c.value))
+                    for c in at.caption if "About the same" in str(c.value)]
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert at.select_slider(key="pc_cut").value == 1
+        assert at.select_slider(key="pc_cut_mo").disabled
+        assert not plan(at) and not [b for b in at.button if b.key == "pc_cut_use"]
+        free_cn = traces(at)["China, projected"]["y"]
+
+        at.select_slider(key="pc_cut").set_value(6).run()
+        _assert_no_error(at, "Pacing / R&D compute cut")
+        d = traces(at)
+        assert "US, no pacing" not in d
+        assert d["US, no compute cut"]["line"]["dash"] == "dot"
+        # It takes the unpaced line's legend slot, on the US row.
+        assert d["US, no compute cut"]["legendrank"] == 30 and " " not in d
+        assert any("(compute cut)" in str(m.label) for m in at.metric)
+        cut_us = d["US, projected"]["y"][-1]
+        assert cut_us < d["US, no compute cut"]["y"][-1] - 5
+        assert d["China if the US kept going"]["y"] == pytest.approx(free_cn)
+        assert d["China, projected"]["y"][-1] < free_cn[-1]
+        assert any("At the compute cut" in t.value.columns for t in at.table)
+        (m,) = plan(at)
+        pct, months = int(m.group(1)), int(m.group(2))
+        assert 0 <= pct < 100 and pct % 5 == 0 and months >= 1
+        start = at.select_slider(key="pc_pause_mo").value
+
+        at.select_slider(key="pc_cut_mo").set_value(12).run()
+        _assert_no_error(at, "Pacing / R&D compute cut for a year")
+        assert plan(at) and not [b for b in at.button if b.key == "pc_cut_use"]
+        assert traces(at)["US, projected"]["y"][-1] > cut_us
+
+        at.select_slider(key="pc_cut_mo").set_value(0).run()
+        at.button(key="pc_cut_use").click().run()
+        _assert_no_error(at, "Pacing / cut used as a pacing plan")
+        assert at.select_slider(key="pc_cut").value == 1 and not plan(at)
+        assert at.selectbox(key="pc_win_n").value == 1
+        assert at.select_slider(key="pc_win1_pace").value == pct
+        assert at.select_slider(key="pc_win1_start").value == start
+        assert at.select_slider(key="pc_win1_end").value == min(
+            start + months, vp._PC_PAUSE_MO_MAX)
+        assert "US, no pacing" in traces(at)
+
     @staticmethod
     def _paired(el):
         """Run `el` (the app or a widget) on a fixed seed, so two Monte Carlo

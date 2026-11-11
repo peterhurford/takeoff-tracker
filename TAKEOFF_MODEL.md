@@ -403,6 +403,14 @@ policy that bends a country's compute over time (the post-RSI boost then multipl
 path's own rise, so a frozen path stays frozen); `draw_rows` runs a subset of a full run's
 scenarios with their exact draws, so a follower can pair with every k-th leader scenario.
 
+`compute_cut` is a log cut over time in the compute the run's R&D gets, off whichever
+frontier the rates or `compute_path` give: training, agent and experiment compute each lose
+it whole (experiments are measured off the uncut frontier, so their fitted share does not
+soften it), as do the trend proxy's resource growth and the reported compute and budget. The
+post-RSI boost multiplies only the uncut frontier's rise, so a cut that ends returns the
+uncut level, not a boosted one
+(`test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost`).
+
 Because distillation is proportional to the gap, the lag is held near the gap's time
 constant: a racing leader pulls the follower along, a paused one dries it up. At the app's
 defaults China's three milestones trail the US's by about a year; without distillation by

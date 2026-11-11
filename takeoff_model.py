@@ -592,7 +592,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
              compute_rates=None, historical_compute_rate=None, coding_capability=None,
              coding_weights=None, human_curve=None, software_scale=None,
              experiment_rates=None, historical_experiment_rate=None, follower=None,
-             compute_path=None, experiment_path=None, draw_rows=None):
+             compute_path=None, experiment_path=None, draw_rows=None, compute_cut=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under `full_human`% of
@@ -626,6 +626,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     rates). Neither slows from `compute_slow_years`: a path carries its own.
     The post-RSI `rsi_compute_boost` multiplies a compute path's own rise,
     so a flat or falling path gets no boost.
+
+    `compute_cut`, (years, logs: one row, or one per draw), is a log cut (0 =
+    none) in the compute this run's R&D gets, off whatever frontier the rates
+    or `compute_path` give: training, agents and experiments each lose it
+    whole, as does the trend proxy's resource growth, and a cut that ends is
+    not a rise the RSI boost multiplies.
 
     `follower` runs a country behind the frontier (see `FOLLOWER_KEYS`): its
     human hours are those of the leader's scenario at the same ECI (run back
@@ -941,12 +947,26 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     epath = (_check_path(experiment_path, n, "experiment compute")
              if experiment_path is not None else None)
     all_rows = np.arange(n)
+    cut = None
+    if compute_cut is not None:
+        cut_years, cut_logs = (np.asarray(v, dtype=float) for v in compute_cut)
+        cut = _check_path((cut_years, np.broadcast_to(
+            cut_logs, (n, cut_logs.shape[-1]))), n, "compute cut")
+        if cut[1].min() < 0:
+            raise ValueError("A compute cut is a log reduction, zero or more.")
 
-    def frontier_log(u, rows=all_rows):
-        """Frontier compute (log, vs today) for draws `rows` at their times `u`."""
+    def cut_log(u, rows=all_rows):
+        return 0.0 if cut is None else _paths_at(cut[1], cut[0], u, rows)
+
+    def uncut_log(u, rows=all_rows):
         if cpath is None:
             return log_level(u, compute_rate[rows], compute_late[rows], slow_at)
         return _paths_at(cpath[1], cpath[0], u, rows)
+
+    def frontier_log(u, rows=all_rows):
+        """R&D compute (log, vs today) for draws `rows` at their times `u`:
+        the frontier less any `compute_cut`."""
+        return uncut_log(u, rows) - cut_log(u, rows)
     # Amdahl: AI labor on research speeds up as the human share h falls, by
     # (h0 + (1 - h0)/s) / (h + (1 - h)/s), normalized to today's share h0.
     ai_speed = p["ai_speed"]
@@ -1057,18 +1077,21 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # constant rate, or a supplied path's rise (none where it is flat or
         # falls; `test_a_flat_compute_path_stays_flat_under_the_rsi_boost`).
         growth = (np.where(t + dt / 2 < slow_at, compute_rate, compute_late) * dt
-                  if cpath is None else np.maximum(frontier_log(end) - frontier_log(t), 0.0))
+                  if cpath is None else np.maximum(uncut_log(end) - uncut_log(t), 0.0))
         boost_step = np.where(boosting, boost * in_force * growth, 0.0)
         compute_log = base_compute_log + boost_log + boost_step / 2
         # Experiment compute's shortfall from the frontier, and staff headcount
         # (vs today) on the draw's own RSI clock.
+        # The shortfall is measured off the uncut frontier, so experiments
+        # take a `compute_cut` whole.
+        uncut_base = base_compute_log + cut_log(t + dt / 2)
         if own_experiments:
             exp_level = (log_level(t + dt / 2, exp_rate, exp_late, slow_at) if epath is None
                          else _paths_at(epath[1], epath[0], t + dt / 2, all_rows))
-            exp_log = np.where(has_history, exp_share * exp_level - base_compute_log,
+            exp_log = np.where(has_history, exp_share * exp_level - uncut_base,
                 exp_growth * (t + dt / 2))
         else:
-            exp_log = np.where(has_history, (exp_share - 1) * base_compute_log,
+            exp_log = np.where(has_history, (exp_share - 1) * uncut_base,
                                exp_growth * (t + dt / 2))
         mid_t = t + dt / 2
         # Without AI transfer nothing changes at RSI, as in the reference.
@@ -1168,7 +1191,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                               exp_in, rho) - bare
         if experiment_slopes is not None and transfer:
             mid = t + dt / 2
-            resource_log = np.log(initial_throughput) + parallel * input_rate * mid
+            resource_log = (np.log(initial_throughput) + parallel * input_rate * mid
+                            - parallel * cut_log(mid))
             residual = (experiment_slopes - parallel * compute_rate) * mid
             proxy_log = resource_log + p["rsi_useful_growth"] / 100 * residual
             weight = p["rsi_trend_weight"] / 100 * np.exp(
@@ -1283,8 +1307,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         software = np.minimum(updated, 1e6)
         train_budget = (grown(t + dt, compute_rate, compute_late, slow_at)
                         - grown(t, compute_rate, compute_late, slow_at)
-                        if cpath is None else np.exp(base_compute_log) * dt) \
-            * np.exp(boost_log + boost_step / 2)
+                        if cpath is None else np.exp(uncut_base) * dt) \
+            * np.exp(boost_log + boost_step / 2 - cut_log(t + dt / 2))
         boost_log = boost_log + boost_step
         used = np.where(finished, 0, shares[0] * train_budget)
         run_compute += used
@@ -1444,6 +1468,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                  compute_late[:, None], slow_at) if cpath is None
                        else np.array([np.interp(workflow_grid, cpath[0], row)
                                       for row in cpath[1]])) + held
+    if cut is not None:
+        cut_grid = np.array([np.interp(workflow_grid, cut[0], row) for row in cut[1]])
+        compute_history = compute_history - cut_grid
+        # The budget reported is the cut one, by months of the grid.
+        level = np.exp(compute_history - held)
+        total_budget = np.sum(np.diff(workflow_grid) * 0.5 * (level[:, 1:] + level[:, :-1]),
+                              axis=1)
     # Retain all draws in each percentile, including slow/non-arriving paths.
     # `direction_ready`: the first grid month direction would be under the bar
     # were coding no gate, which the app pairs coding dates against.

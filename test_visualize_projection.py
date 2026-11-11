@@ -5483,6 +5483,56 @@ class TestPacing:
         assert vp._pc_race_threshold({vp._DC_CTY_CN_ACCESS: (1, 2, 3)}) == \
             vp._PC_FALLBACK_THRESHOLD
 
+    def test_a_cut_reads_back_the_pacing_plan_that_makes_its_path(self):
+        """`_pc_cut_equivalent` recovers a plan from the path it produces: a
+        US paced at 40% for 18 months from year 1, then freely, reads as
+        (40, 18); with under three months after the start there is no fit."""
+        years = np.arange(0, 8 + 1e-9, 1 / 12)
+        base = {"years": years, "ultra": 400.0,
+                "paths": np.tile(150 + 12 * years + years ** 2, (5, 1))}
+        clock = vp._pc_paced_clock(years, 1.0, 1.0, [(1.0, 2.5, 0.4)])
+        cut = dict(base, paths=np.tile(150 + 12 * clock + clock ** 2, (5, 1)))
+        assert vp._pc_cut_equivalent(base, cut, 1.0) == (40, 18)
+        assert vp._pc_cut_equivalent(base, cut, 7.9) is None
+
+    def test_a_cut_moves_coding_dates_to_the_same_capability(self):
+        """`_tk_cut_onset`: a coding date after the cut's start moves by how
+        much later the cut run trains the uncut run's ECI on that date (never
+        earlier, never if the cut run does not get there); earlier and
+        never-arriving dates stand."""
+        years = np.arange(0, 6 + 1e-9, 1 / 12)
+
+        def run(scale):
+            return {"result": {"workflow_progress": {"years": years}},
+                    "eci": {"model": np.tile(150 + 10 * scale * years, (5, 1))}}
+        onset = np.array([0.5, 2.0, 3.5, np.inf, 9.0])
+        out = vp._tk_cut_onset(onset, run(1.0), run(0.5), 1.0)
+        np.testing.assert_allclose(out[:2], [0.5, 4.0], atol=1e-9)
+        assert np.isinf(out[2]) and np.isinf(out[3]) and out[4] == 9.0
+        np.testing.assert_allclose(vp._tk_cut_onset(onset, run(1.0), run(2.0), 1.0), onset)
+
+    def test_an_rd_compute_cut_delays_every_us_milestone(self, monkeypatch):
+        """Pacing's US under a cut (`_pc_takeoff_us(cut=...)`): a factor of 1
+        is the uncut run, a lasting cut puts every milestone's median later,
+        a cut that ends later by less, and coding dates move with it."""
+        monkeypatch.setattr(vp.st, "session_state", {})
+        today = vp._today()
+        base = vp._pc_takeoff_us(today)
+        assert vp._tk_cut_path((1.0, 0.5, None), 5.0) is None
+
+        def delays(cut):
+            tk = vp._pc_takeoff_us(today, cut)
+            assert tk["run"] is not None and base["run"] is None
+            out = []
+            for k, v in base["when"].items():
+                ok = np.isfinite(v) & (v > cut[1])
+                with np.errstate(invalid="ignore"):
+                    out.append(float(np.median((tk["when"][k] - v)[ok])))
+            return out
+        lasting, ended = delays((6.0, 0.5, None)), delays((6.0, 0.5, 1.0))
+        assert all(d > 0.2 for d in lasting)
+        assert all(0 <= e < d for e, d in zip(ended, lasting))
+
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI
         blend's weights and its not-yet conditioning. The pause is an int of
