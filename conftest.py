@@ -29,3 +29,5 @@ _local_script_runner.ScriptCache = lambda: _SHARED_SCRIPT_CACHE
 
 # ── 2. Smaller Monte Carlo under test ────────────────────────────────────
 os.environ.setdefault("_VP_SAMPLES", "400")
+# xdist already fills the cores; one numba thread per worker avoids oversubscribing them.
+os.environ.setdefault("NUMBA_NUM_THREADS", "1")

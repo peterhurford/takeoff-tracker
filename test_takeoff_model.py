@@ -1217,3 +1217,99 @@ def test_a_review_rule_with_an_end_lifts_at_the_end():
     assert final["free"] > final["ends"] > final["ban"]
     with pytest.raises(ValueError, match="review rule"):
         tk.simulate(dict(years=5), review=(1.0, 1.0, 1.0), **kw)
+
+
+# ── The compiled step loop (`_k_draw`) against the numpy loop ──
+
+def _loops_agree(monkeypatch, params, n, **kw):
+    """Both loops on the same call: per-draw arrays agree to float reordering
+    in all but 2% of draws (a near-tie can flip one draw's step); summaries
+    across draws agree to 1e-3."""
+    pytest.importorskip("numba")
+    monkeypatch.setattr(tk, "COMPILED", False)
+    ref = tk.simulate(params, n=n, **kw)
+    monkeypatch.setattr(tk, "COMPILED", True)
+    new = tk.simulate(params, n=n, **kw)
+    budget = max(1, n // 50)
+
+    def walk(a, b, path):
+        if isinstance(a, dict):
+            assert set(a) == set(b), path
+            for k in a:
+                walk(a[k], b[k], f"{path}.{k}")
+        elif isinstance(a, np.ndarray) and a.dtype.kind in "fb":
+            assert a.shape == b.shape, path
+            close = np.isclose(a, b, rtol=1e-7, atol=1e-9, equal_nan=True) if a.dtype.kind == "f" \
+                else a == b
+            if a.ndim and a.shape[0] == n:
+                bad = (~close).reshape(n, -1).any(axis=1).sum()
+                assert bad <= budget, f"{path}: {bad} of {n} draws differ"
+            else:
+                np.testing.assert_allclose(a, b, rtol=1e-3, atol=1e-6, err_msg=path)
+    walk({k: v for k, v in ref.items() if k not in ("params", "version")},
+         {k: v for k, v in new.items() if k not in ("params", "version")}, "")
+    return new
+
+
+def _per_draw_curves(n, rng):
+    years = np.linspace(0, 20, 241)
+    rows = lambda: np.vstack([np.exp(-years / rng.uniform(0.5, 4)) for _ in range(n)])
+    return years, rows(), rows(), rows(), rows()
+
+
+@pytest.mark.parametrize("case", [
+    "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
+    "cut_and_review", "paths", "follower", "follower_scales"])
+def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
+    rng = np.random.default_rng(11)
+    n = 120
+    onset = rng.uniform(0, 3, n)
+    onset[:10] = np.inf
+    app = dict(onset_years=onset, human_curve=_per_draw_curves(n, rng),
+               compute_rates=rng.uniform(0.6, 1.4, n), historical_compute_rate=1.1,
+               coding_capability=rng.uniform(4, 8, n), coding_weights=(3.2, 13.7),
+               experiment_slopes=rng.uniform(0.5, 1.5, n))
+    grid = np.linspace(0, 6, 73)
+    if case == "defaults":
+        _loops_agree(monkeypatch, dict(years=6), n)
+    elif case == "app":
+        _loops_agree(monkeypatch, dict(years=6), n, **app)
+    elif case == "shared_curve":
+        years = np.linspace(0, 20, 241)
+        _loops_agree(monkeypatch, dict(years=6), n, onset_years=onset,
+                     human_curve=(years, np.exp(-years / 2)))
+    elif case == "switches_off":
+        _loops_agree(monkeypatch, dict(years=6, ceiling_high_oom=0, substitution=0,
+                                       substitution_spread=0, serial_speedup=0,
+                                       rsi_autopilot=0, reallocate_compute=0,
+                                       direction_adoption=0, rsi_compute_ramp=0), n, **app)
+    elif case == "no_difficulty":
+        _loops_agree(monkeypatch, dict(years=4, difficulty=0, transfer=0), n,
+                     onset_years=onset)
+    elif case == "runaway":
+        r = _loops_agree(monkeypatch, dict(years=6, ceiling_high_oom=0, returns_spread=150,
+                                           substitution=0.5), n, onset_years=onset)
+        assert np.isfinite(r["stopped_at"]).any()
+    elif case == "cut_and_review":
+        ramp = np.clip((grid - 1) * 4, 0, 1)
+        cut = {"training": np.log(3) * ramp, "experiments": np.log(2) * ramp,
+               "agents": -0.3 * ramp}
+        _loops_agree(monkeypatch, dict(years=6), n, compute_cut=(grid, cut),
+                     review=(1.0, 2.0, 4.0), **app)
+    elif case == "paths":
+        cp = np.cumsum(rng.uniform(0, 0.2, (n, len(grid))), axis=1)
+        _loops_agree(monkeypatch, dict(years=6), n, compute_path=(grid, cp),
+                     experiment_path=(grid, 0.6 * cp), compute_cut=(grid, 0.2 * (grid > 2)),
+                     **app)
+    else:
+        params, lead, eci, fol = _leader_and_follower(n=n, theft=0.05)
+        fol["trained"] = eci + 3.0
+        if case == "follower_scales":
+            m = len(fol["years"])
+            fol.update(distill_scale=np.linspace(1, 0.2, m), leak_scale=np.full(m, 0.5),
+                       theft_scale=np.linspace(0, 1, m))
+        coder = np.full(n, 230.0)
+        _loops_agree(monkeypatch, params, n, onset_years=np.full(n, np.inf),
+                     software_scale=np.full(n, 0.15), coding_capability=coder - fol["eci_now"],
+                     coding_weights=fol["weights"], follower=fol,
+                     experiment_rates=np.full(n, 0.8), historical_experiment_rate=0.9)

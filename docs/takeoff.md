@@ -257,6 +257,20 @@ changing the simulator schema. Local seeded RNG and common draws support paired 
 A diverged draw records nothing further
 (`test_a_runaway_reaches_rsi_unless_the_floor_blocks_it`); the pace chart's view stops
 at `_TK_PACE_VIEW`, since a runaway's pace reaches ~1e300.
+
+**Two copies of the step loop.** `simulate` runs its weekly loop compiled
+(`_k_draw`, numba, one draw at a time, draws in parallel up to the cgroup CPU quota,
+`_cpu_quota`) whenever numba is installed; the numpy loop in `simulate` stays as the
+reference and runs for `theft_jump` / `weight_theft`, which fire when *every* draw has passed
+a date and so need the lockstep loop, or with `COMPILED = False`. Any change to the step's
+equations goes into both; `test_the_compiled_loop_matches_the_numpy_loop` runs ten
+configurations through each and allows float reordering in at most 2% of draws (results do
+not depend on the thread count). Everything before and after the loop is shared. The
+compiled code caches to `__pycache__` keyed on the file's mtime, so the first call after
+the file changes (each deploy) compiles for ~15s locally; later processes load in ~0.4s.
+Pass `_k_simulate` C-ordered, writable arrays only: a read-only one is a different numba
+type and costs a second compile. `conftest.py` sets `NUMBA_NUM_THREADS=1`, as xdist
+already fills the cores.
 Unit tests cover accounting, snapshots, fast feedback, calibration, ordering, censoring,
 convergence, and RNG isolation. AppTests cover the layout, calibration, matched hours,
 URL sharing, stale imports, and exact inheritance from RSI.

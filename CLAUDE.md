@@ -46,7 +46,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`metr_aeci.csv`** — METR's AECI points for Anthropic and the all-developer frontier, chart-digitized; read by Takeoff's *METR's acceleration assessment* section, beside Epoch's ECI
 - **`aisi_cyber_narrow.csv`** / **`aisi_cyber_tlo.csv`** — AISI narrow cyber success rates (12 models); AISI/CAISI cyber-range "The Last Ones" avg steps of 32 (10 models). Both **chart-digitized, not published feeds** — see each file's `#` header
 
-No build system, no CI/CD, no package manager beyond requirements.txt (`streamlit`, `numpy`, `plotly`, `pyyaml`).
+No build system, no CI/CD, no package manager beyond requirements.txt (`streamlit`, `numpy`, `plotly`, `pyyaml`, `numba`: it compiles the Takeoff step loop, `docs/takeoff.md`).
 
 ## Architecture
 

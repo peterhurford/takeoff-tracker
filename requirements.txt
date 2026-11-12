@@ -2,3 +2,4 @@ streamlit
 numpy>=2.3   # 2.2.x on Python 3.14 silently miscomputes in-function arithmetic
 plotly
 pyyaml
+numba>=0.61   # compiles takeoff_model's step loop; without it the numpy loop runs

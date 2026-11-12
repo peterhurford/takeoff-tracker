@@ -107,11 +107,15 @@ multiple, not a fixed time, since machines differ about 2×. `perf/bench_simulat
 what the app runs: time the app's real calls instead (capture them by wrapping
 `takeoff_model.simulate` under `AppTest`).
 
-**Status (2026-11-11, laptop):** the in-place cleanup is in, bit-for-bit identical on
-the five calls a cold Takeoff and China make: US run 2.02 → 1.20s, China's follower runs
-2.44 → 1.63s, a browser setting change 6.2 → 4.8s locally. About 1.5–1.7×; what is left
-is per-op numpy overhead spread over ~300 loop lines, so the next multiple needs numba
-(or similar) on the step loop.
+**Status (2026-11-11, laptop):** done locally. The step loop is compiled with numba
+(`docs/takeoff.md`, *Two copies of the step loop*), on top of an in-place cleanup that was
+bit-identical. At 2 threads, the live host's most: US run 2.02 → 0.33s, China's follower
+runs 2.44 → 0.23s; a browser setting change 6.2 → ~2.1s; cold Takeoff server-side
+6.95 → 3.1s, China 10.9 → 3.0s. Numbers moved only by float reordering (a draw or two per
+run, relative 1e-8). Still open: the live re-measure, and the one-time compile (~15s here,
+likely 2-3× that on the live host) the first visitor after each deploy pays, which step 2's
+server-start warm-up should absorb. Whether numba's cache survives a Community Cloud
+sleep is unknown.
 
 ### 2. Warm the default-settings cache
 

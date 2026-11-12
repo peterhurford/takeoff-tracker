@@ -6,6 +6,7 @@ All randomness is local and seeded; every setting uses the same base draws.
 """
 
 import hashlib
+from collections import namedtuple
 from statistics import NormalDist
 from pathlib import Path
 
@@ -451,13 +452,19 @@ def _follower_inputs(follower, n, step=1.0, span=600.0):
     def eci(capability, software):
         return per_draw["eci_now"] + w[0] * (capability - software) + w[1] * software
 
+    raw = {"table": table, "grid": grid, "lo": lo, "step": step, "slope": slope,
+           "years": years, "teacher": shaped["teacher"], "software": shaped["software_eci"],
+           "ppy": ppy, "software_ppy": float(follower["software_ppy"])}
+
     def scale(key):
         v = follower.get(key)
         if v is None:
+            raw[key] = None
             return lambda u: 1.0
         v = np.broadcast_to(np.asarray(v, dtype=float), (n, len(years)))
         if not np.isfinite(v).all() or (v < 0).any():
             raise ValueError(f"Follower {key} must be finite and non-negative.")
+        raw[key] = np.ascontiguousarray(v)
         inside = _row_interp(np.ascontiguousarray(v), years, 0.0)
         # Policy starts today: before it (an idea that left the leader
         # earlier) nothing is scaled.
@@ -471,7 +478,8 @@ def _follower_inputs(follower, n, step=1.0, span=600.0):
     jump, weights = follower.get("theft_jump"), follower.get("weight_theft")
     if (jump is not None or weights is not None) and trained is None:
         raise ValueError("Theft needs the leader's trained path.")
-    return {"eci": eci, "equivalent": equivalent, "rate": per_draw["rate"],
+    raw["trained"] = trained
+    return {"eci": eci, "equivalent": equivalent, "rate": per_draw["rate"], "raw": raw,
             "distill_scale": scale("distill_scale"), "leak_scale": scale("leak_scale"),
             "theft_scale": scale("theft_scale"),
             "trained": _row_interp(trained, years, ppy) if trained is not None else None,
@@ -599,6 +607,879 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
         log_x = ceiling_step(np.zeros_like(np.asarray(amount, dtype=float)), np.log(amount),
                              difficulty * ceiling, ceiling)
     return -ceiling * np.expm1(log_x)
+
+
+# ---------------------------------------------------------------------------
+# Compiled step loop. `simulate`'s weekly loop, one draw at a time in scalar
+# code (draws never interact, except through the lockstep-only `theft_jump` /
+# `weight_theft`, which keep the numpy loop). The numpy loop below stays the
+# reference: `test_the_compiled_loop_matches_the_numpy_loop` holds the two
+# together, so a change to one is made in both.
+# ---------------------------------------------------------------------------
+try:
+    import numba as _numba
+except ImportError:          # the numpy loop runs instead
+    _numba = None
+
+
+def _jit(f):
+    if _numba is None:
+        return f
+    return _numba.njit(cache=True, error_model="numpy")(f)
+
+
+_LN2 = 0.6931471805599453
+_W0, _W1, _W2 = (float(w) for w in WORKFLOW_WEIGHTS)
+
+
+@_jit
+def _k_lae(x, y):
+    """np.logaddexp, scalar, by numpy's own branches."""
+    if x == y:
+        return x + _LN2
+    tmp = x - y
+    if tmp > 0:
+        return x + np.log1p(np.exp(-tmp))
+    if tmp <= 0:
+        return y + np.log1p(np.exp(tmp))
+    return tmp
+
+
+@_jit
+def _k_min(a, b):            # np.minimum: NaN propagates
+    return a if (a < b or a != a) else b
+
+
+@_jit
+def _k_max(a, b):
+    return a if (a > b or a != a) else b
+
+
+@_jit
+def _k_clip(x, lo, hi):
+    return _k_min(_k_max(x, lo), hi)
+
+
+@_jit
+def _k_ss_right(xs, x):
+    """np.searchsorted(xs, x, side="right")."""
+    lo, hi = 0, len(xs)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if xs[mid] <= x:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
+@_jit
+def _k_paths_at(row, years, u):
+    """`_paths_at` for one row."""
+    x = _k_clip(u, years[0], years[-1])
+    j = min(max(_k_ss_right(years, x) - 1, 0), len(years) - 2)
+    f = (x - years[j]) / (years[j + 1] - years[j])
+    return row[j] * (1 - f) + row[j + 1] * f
+
+
+@_jit
+def _k_row_interp(row, years, back, u):
+    """`_row_interp`'s `at` for one row."""
+    if u < 0:
+        return row[0] + back * u
+    x = _k_clip(u, 0.0, years[-1]) / (years[1] - years[0])
+    j = min(int(x), len(years) - 2)
+    f = x - j
+    return row[j] * (1 - f) + row[j + 1] * f
+
+
+@_jit
+def _k_interp(x, xp, fp, norm):
+    """np.interp(x, xp, fp / norm)."""
+    m = len(xp)
+    if x != x:
+        return x
+    if x < xp[0]:
+        return fp[0] / norm
+    if x > xp[m - 1]:
+        return fp[m - 1] / norm
+    j = _k_ss_right(xp, x) - 1
+    if j >= m - 1:
+        return fp[m - 1] / norm
+    if xp[j] == x:
+        return fp[j] / norm
+    lo, hi = fp[j] / norm, fp[j + 1] / norm
+    return (hi - lo) / (xp[j + 1] - xp[j]) * (x - xp[j]) + lo
+
+
+@_jit
+def _k_follow(curve, row, two_d, years, at):
+    """`workflow_state`'s `follow` for one draw's stage."""
+    if not two_d:
+        return _k_interp(at, years, curve[0], curve[0, 0])
+    last = len(years) - 1
+    pos = _k_clip(at / (years[1] - years[0]), 0.0, float(last))
+    i0 = min(int(pos), last - 1)
+    w = pos - i0
+    return (curve[row, i0] * (1 - w) + curve[row, i0 + 1] * w) / curve[row, 0]
+
+
+@_jit
+def _k_ces_log(x, y, rho):
+    if abs(rho) < 1e-9:
+        return (x + y) / 2
+    return (_k_lae(rho * x, rho * y) - _LN2) / rho
+
+
+@_jit
+def _k_judgment_log(effective, slope, drift, transfer, cap):
+    """`ai_judgment_log` for one draw."""
+    if not transfer:
+        return 0.0
+    k = np.log1p(drift) / np.log(10.0)
+    if abs(k) < 1e-12:
+        gain = slope * effective
+    else:
+        gain = slope * np.expm1(_k_min(k * effective, 700.0)) / k
+    out = _k_lae(np.log1p(-transfer) if transfer < 1 else -np.inf, np.log(transfer) + gain)
+    return _k_min(out, np.log(cap)) if cap else out
+
+
+@_jit
+def _k_ceiling_step(log_x, log_amount, k, ceiling):
+    if abs(k - 1) < 1e-9:
+        return log_x - np.exp(_k_min(log_amount, 700.0)) / ceiling
+    if k > 1:
+        return -_k_lae(-(k - 1) * log_x, np.log(abs(k - 1)) + log_amount
+                       - np.log(ceiling)) / (k - 1)
+    m = 1 - k
+    left = np.exp(m * log_x) - m * np.exp(_k_min(log_amount, 700.0)) / ceiling
+    return np.log(_k_max(left, 1e-300)) / m if left > 0 else -np.inf
+
+
+@_jit
+def _k_grown(t, early, late, at):
+    head = _k_min(t, at)
+    tail = _k_max(t - at, 0.0)
+    a = np.expm1(early * head) / early if early != 0 else head
+    b = np.expm1(late * tail) / late if late != 0 else tail
+    return a + np.exp(early * head) * b
+
+
+@_jit
+def _k_hours(cap, rate, start, half, floor, use_pace, pace, s, a, i, out):
+    """Forward `workflow_state` for one draw into `out` (3 stages)."""
+    eq = _k_max(cap, 0.0) / rate
+    for k in range(3):
+        sy = eq * pace if (k == 0 and use_pace) else eq
+        if s.has_curve:
+            cv = a.cv0 if k == 0 else (a.cv1 if k == 1 else a.cv2)
+            dec = _k_follow(cv, i if cv.shape[0] > 1 else 0, a.cv_2d[k], a.cyears,
+                            sy * s.reference_half / half[k])
+        else:
+            dec = np.exp(-_LN2 * sy * 12 / half[k])
+        out[k] = floor + (start[k] - floor) * dec
+
+
+@_jit
+def _k_draw(i, d, s, a, o):
+    """One draw of `simulate`'s step loop; reads `d` (per draw), `s`
+    (settings), `a` (paths); writes row i of `o`."""
+    G = len(a.grid)
+    big = 1e6
+    start = d.starts[i]
+    half = d.halves[i]
+    today2 = d.today_hours[i, 2]
+    sr, cr, cl = d.software_rate[i], d.compute_rate[i], d.compute_late[i]
+    ff, init = d.fast_fraction[i], d.initial_stock[i]
+    beta, ceil, rho = d.beta[i], d.ceiling[i], d.rho[i]
+    capped = np.isfinite(ceil)
+    par = s.parallel
+    sh0, sh1, sh2 = s.sh0, s.sh1, s.sh2
+    log_sh2, log_sh1 = np.log(sh2 / 0.2), np.log(sh1 / 0.4)
+    h = np.empty(3)
+    hb = np.empty(3)
+    seen = np.full(G, np.inf)
+    seen[0] = 0.0
+    stock = np.zeros(G)
+    stock[0] = init
+    fol = s.follower
+
+    def frontier(u):
+        if s.has_cpath:
+            v = _k_paths_at(a.cpath_logs[i], a.cpath_years, u)
+        else:
+            v = cr * _k_min(u, s.slow_at) + cl * _k_max(u - s.slow_at, 0.0)
+        if s.has_cut:
+            v -= _k_paths_at(a.cut_logs[i], a.cut_years, u)
+        return v
+
+    def uncut(u):
+        if s.has_cpath:
+            return _k_paths_at(a.cpath_logs[i], a.cpath_years, u)
+        return cr * _k_min(u, s.slow_at) + cl * _k_max(u - s.slow_at, 0.0)
+
+    def cut_at(u):
+        return _k_paths_at(a.cut_logs[i], a.cut_years, u) if s.has_cut else 0.0
+
+    def shift(logs, u):
+        if not s.has_use_cut:
+            return 0.0
+        return cut_at(u) - _k_paths_at(logs[i], a.cut_years, u)
+
+    def review(x):
+        return (x >= s.review_from - 1e-12) and (x < s.review_to - 1e-12)
+
+    def humans(cap, sw, t, has_t, rsi_t, out):
+        rate = d.bcr[i]
+        if fol:
+            e = d.fol_eci_now[i] + s.fol_w0 * (cap - sw) + s.fol_w1 * sw
+            tg = a.fol_grid
+            nt = len(tg)
+            pos = (e - s.fol_lo) / s.fol_step
+            j = int(_k_clip(pos, 0.0, nt - 2.0))
+            f = _k_clip(pos - j, 0.0, 1.0)
+            if pos > nt - 1:
+                cap = a.fol_table[i, nt - 1] + (e - tg[nt - 1]) * d.fol_slope[i]
+            elif pos < 0:
+                cap = a.fol_table[i, 0] + (e - tg[0]) * d.fol_slope[i]
+            else:
+                cap = a.fol_table[i, j] * (1 - f) + a.fol_table[i, j + 1] * f
+            rate = d.fol_rate[i]
+        use_pace = s.adoption != 0
+        pace = 1.0
+        if use_pace:
+            pace = np.exp(_k_min(s.adoption * _k_judgment_log(
+                cap, d.taste_slope[i], d.drift[i], s.transfer, s.judgment_cap), 30.0))
+        _k_hours(cap, rate, start, half, s.floor, use_pace, pace, s, a, i, out)
+        if fol:      # behind today's level, hours run back up
+            eqb = cap / rate
+            for k in range(3):
+                sy = eqb * pace if (k == 0 and use_pace) else eqb
+                behind = np.exp(-_LN2 * _k_min(sy, 0.0) * 12 / half[k])
+                out[k] = _k_min(s.floor + (out[k] - s.floor) * behind, 1.0)
+        if has_t and o.coding[i] > t + 1e-12:
+            out[0] = _k_max(out[0], s.full_human)
+
+    def pays_off(t, software, boost_log, scale_now, trained, fast, reference_trained):
+        lag = d.scale_lag[i]
+        target = scale_now - lag
+        x = _k_min(target, big - 1)
+        lo, hi = 0, G          # last index with seen (inf read as 1e6) <= x
+        while lo < hi:
+            mid = (lo + hi) // 2
+            v = seen[mid] if np.isfinite(seen[mid]) else big
+            if v <= x:
+                lo = mid + 1
+            else:
+                hi = mid
+        idx = lo - 1
+        last = G - 1
+        c0 = seen[max(idx, 0)]
+        s0 = stock[max(idx, 0)]
+        c1 = seen[min(idx + 1, last)]
+        s1 = stock[min(idx + 1, last)]
+        if (not np.isfinite(c1)) or idx >= last:
+            c1 = frontier(t) + boost_log
+            s1 = software
+        ratio = d.scale_ratio[i]
+        frac = _k_clip((target - c0) / (c1 - c0) if c1 > c0 else 0.0, 0.0, 1.0)
+        earlier = s0 + frac * (s1 - s0) if idx >= 0 else init + ratio * target
+        if np.isinf(ratio):
+            due = np.inf
+        else:
+            due = _k_max((1 - ff) * (earlier + ratio * lag), reference_trained)
+        return fast + trained - d.scale_share[i] * _k_max(trained - due, 0.0)
+
+    def difficulty(progress):
+        if capped:
+            lx = np.log1p(-_k_min(progress / ceil, 1.0))
+            return lx, -beta * ceil * lx
+        return 0.0, beta * progress
+
+    def advance(progress, plx, amount):
+        if s.difficulty_on:
+            if capped:
+                return -ceil * np.expm1(_k_ceiling_step(plx, amount, beta * ceil, ceil))
+            return _k_lae(beta * progress, np.log(beta) + amount) / beta
+        return progress + np.exp(_k_min(amount, 100.0))
+
+    # State, as the numpy loop's arrays hold it for this draw.
+    software = init
+    deployed = 0.0
+    fast_next = s.fast_time
+    fast_snapshot = init
+    fast_deployed = 0.0
+    reference_fast = 0.0
+    last_validated = 0.0
+    last_reference = 0.0
+    snapshot = init
+    run_compute = 0.0
+    training_used = 0.0
+    run_start = 0.0
+    reference_gained = 0.0
+    reference_at_run_start = 0.0
+    reference_at_fast_start = 0.0
+    run_len = d.train_time[i]
+    eval_len = d.eval_time[i]
+    pending = 0.0
+    pending_software = 0.0
+    deployed_software = 0.0
+    last_deploy = 0.0
+    delivered_rate = 0.0
+    reference_delivered = 0.0
+    reference_deployed = 0.0
+    reference_pending_software = 0.0
+    reference_pending_capability = 0.0
+    advantage = 0.0
+    finished = False
+    last_labor = 1.0
+    last_experiments = 1.0
+    run_start_scale = 0.0
+    pending_scale = 0.0
+    deployed_scale = 0.0
+    obs = 1
+    last_pace = d.initial_throughput[i]
+    last_reference_pace = d.initial_throughput[i]
+    lf0, lf1, lf2 = o.factor[0, i, 0], o.factor[1, i, 0], o.factor[2, i, 0]
+    lf3, lf4, lf5 = o.factor[3, i, 0], o.factor[4, i, 0], o.factor[5, i, 0]
+    t = 0.0
+    stopped_at = np.inf
+    boost_log = 0.0
+    follow_log = 0.0
+    fe0 = fe1 = fe2 = fe3 = 0.0
+    held0 = held1 = held2 = held3 = 0.0
+    coding_recorded = o.coding[i] <= 0
+    rsi = o.rsi[i]
+    tr = s.transfer
+    # The deployed model (`realized`).
+    now0 = deployed - deployed_software
+    now1 = pays_off(t, software, boost_log, deployed_scale, deployed_software, fast_deployed,
+                    reference_delivered)
+    now2 = now0 + now1
+    years = s.years
+    carried = False
+    while t < years - 1e-12:
+        coding = o.coding[i]
+        train_end = run_start + run_len
+        deploy_end = train_end + eval_len
+        ne = _k_min(deploy_end if finished else train_end, fast_next)
+        ne = _k_min(ne, coding if coding > t + 1e-12 else np.inf)
+        next_obs = a.grid[min(obs, G - 1)]
+        ne = _k_min(ne, next_obs)
+        end = _k_min(_k_min(t + s.step, ne), years)
+        dt = _k_max(end - t, 0.0)
+        mid = t + dt / 2
+        base = frontier(mid)
+        since = mid - rsi - s.rsi_delay
+        boosting = np.isfinite(rsi) and t >= rsi - 1e-12
+        in_force = 0.0
+        if boosting:
+            if s.rsi_ramp > 0:
+                in_force = _k_clip(since / s.rsi_ramp, 0.0, 1.0)
+            else:
+                in_force = 1.0 if since >= 0 else 0.0
+        if s.has_cpath:
+            growth = _k_max(uncut(end) - uncut(t), 0.0)
+        else:
+            growth = (cr if mid < s.slow_at else cl) * dt
+        boost_step = s.boost * in_force * growth if boosting else 0.0
+        compute_log = base + boost_log + boost_step / 2
+        uncut_base = base + cut_at(mid)
+        if s.own_experiments:
+            if s.has_epath:
+                level = _k_paths_at(a.epath_logs[i], a.epath_years, mid)
+            else:
+                level = (d.exp_rate[i] * _k_min(mid, s.slow_at)
+                         + d.exp_late[i] * _k_max(mid - s.slow_at, 0.0))
+            exp_log = (d.exp_share[i] * level - uncut_base if d.has_history[i]
+                       else d.exp_growth[i] * mid)
+        else:
+            exp_log = ((d.exp_share[i] - 1) * uncut_base if d.has_history[i]
+                       else d.exp_growth[i] * mid)
+        staff_rsi = rsi if tr else np.inf
+        head_log = (s.hire_rate * _k_min(mid, staff_rsi)
+                    + s.after_rate * _k_max(mid - staff_rsi, 0.0))
+        effective = now2 + follow_log
+        if carried:          # the last step's closing hours, read at this same point
+            h[0], h[1], h[2] = hb[0], hb[1], hb[2]
+        else:
+            humans(effective, now1 + follow_log, t, True, rsi, h)
+        if s.autopilot and np.isfinite(rsi) and t >= rsi - 1e-12 and not review(t):
+            h[0] = 0.0
+            h[1] = 0.0
+            h[2] = 0.0
+        share_now = h[0] * _W0 + h[1] * _W1 + h[2] * _W2
+        log_speed = np.log(s.ai_speed) + s.ai_copies * _k_max(now1 + follow_log, 0.0)
+        amdahl_log = d.amdahl0[i] - _k_lae(np.log(share_now), np.log1p(-share_now) - log_speed)
+        staff_share = share_now if tr else d.human0[i]
+        staff_speed = log_speed if tr else np.log(s.ai_speed)
+        headcount_log = (_k_lae(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
+                         - _k_lae(np.log(staff_share) - head_log,
+                                  np.log1p(-staff_share) - staff_speed))
+        direction = h[0]
+        cf = _k_clip(mid / coding if coding > 0 else 1.0, 0.0, 1.0)
+        if coding <= 0:
+            cf = 0.0
+        if fol:
+            level_now = (effective if not s.has_coding_weights else
+                         s.cw0 * now0 + s.cw1 * (now1 + follow_log))
+            cl_i = d.coding_level[i]
+            cf = 1.0 if coding <= t + 1e-12 else _k_clip(
+                level_now / cl_i if cl_i > 0 else 1.0, 0.0, 1.0)
+        rsi_coding_log = np.log((1 - s.coding_today / 100) / .05) * cf
+        coding_gain = _k_max(rsi_coding_log, s.coding_slope * effective)
+        if tr:
+            keep_log = np.log1p(-tr) if tr < 1 else -np.inf
+            coding_log = _k_lae(keep_log, np.log(tr) + coding_gain)
+            ai_taste_log = np.log(s.judgment_today) + _k_judgment_log(
+                effective, d.taste_slope[i], d.drift[i], tr, s.judgment_cap)
+            quality_log = (_k_lae(np.log(direction), np.log1p(-direction) + ai_taste_log)
+                           - d.quality0_log[i])
+            automation_log = _k_lae(keep_log, np.log(tr) + amdahl_log)
+        else:
+            coding_log = quality_log = automation_log = 0.0
+        labor_log = par * (compute_log + log_sh2 + coding_log + automation_log + headcount_log)
+        experiment_log = par * (compute_log + exp_log + log_sh1)
+        ref_headcount = (d.amdahl0[i] - _k_lae(np.log(d.human0[i]) - s.hire_rate * mid,
+                                               np.log1p(-d.human0[i]) - np.log(s.ai_speed)))
+        agent_shift = shift(a.agents_logs, mid)
+        exp_shift = shift(a.experiments_logs, mid)
+        agent_share = sh2
+        if s.reallocate:
+            gap = (labor_log - experiment_log) - par * (
+                log_sh2 + ref_headcount - exp_log - log_sh1)
+            log_ratio = np.log(sh2 / sh1) + rho / (1 - par * rho) * gap
+            pool = sh1 + sh2
+            agent_share = pool / (1 + np.exp(-_k_clip(log_ratio, -700.0, 700.0)))
+            agent_share = _k_clip(agent_share, 1e-9 * pool, pool * (1 - 1e-9))
+            labor_log = labor_log + par * np.log(agent_share / sh2)
+            experiment_log = experiment_log + par * np.log((pool - agent_share) / sh1)
+        labor_log = labor_log + par * agent_shift
+        experiment_log = experiment_log + par * exp_shift
+        research_log = _k_ces_log(labor_log, experiment_log, rho) + quality_log
+        judgment_log = quality_log
+        exp_in = par * (compute_log + exp_shift + exp_log + log_sh1)
+        agent_in = par * (compute_log + agent_shift + log_sh2)
+        bare = _k_ces_log(agent_in, exp_in, rho)
+        compute_part = bare
+        labor_part = _k_ces_log(agent_in + par * headcount_log, exp_in, rho) - bare
+        if s.has_slopes:
+            it = d.initial_throughput[i]
+            resource_log = (np.log(it) + par * d.input_rate[i] * mid
+                            - par * (cut_at(mid) - (agent_shift + exp_shift) / 2))
+            residual = (d.exp_slope[i] - par * cr) * mid
+            proxy_log = resource_log + s.useful / 100 * residual
+            weight = s.trend_weight / 100 * np.exp(-_LN2 * mid * 12 / s.trend_months)
+            research_log = (1 - weight) * research_log + weight * proxy_log
+            judgment_log = (1 - weight) * quality_log
+            compute_part = ((1 - weight) * compute_part + weight * (
+                np.log(it) + par * mid * (
+                    (cr + d.exp_share[i] * d.exp_rate[i]) / 2 if d.has_history[i]
+                    else cr + d.exp_growth[i] / 2)))
+            labor_part = (1 - weight) * labor_part + weight * par * d.hire_effect[i] / 2 * mid
+        gained = software - init
+        log_x, penalty = difficulty(gained)
+        ref_log_x, ref_penalty = difficulty(reference_gained)
+        ref_research = _k_ces_log(
+            par * (base + agent_shift + log_sh2 + ref_headcount),
+            par * (base + exp_shift + exp_log + log_sh1), rho)
+        reference_pace = np.exp(_k_min(ref_research - ref_penalty, 700.0))
+        log_dt = np.log(dt) if dt > 0 else -np.inf
+        ref_log_amount = np.log(sr) + ref_research + log_dt
+        log_amount = np.log(sr) + research_log + log_dt
+        pace = np.exp(_k_min(research_log - penalty, 700.0))
+        updated = init + advance(gained, log_x, log_amount)
+        if fol:
+            standing = d.fol_eci_now[i] + s.fol_w0 * now0 + s.fol_w1 * (
+                updated - init + follow_log)
+            fy = a.fol_years
+            gap_f = _k_max(_k_row_interp(a.fol_teacher[i], fy, s.fol_ppy, mid) - standing, 0.0)
+            ts = (1.0 if not s.has_theft_scale or mid < 0
+                  else _k_row_interp(a.fol_theft_scale[i], fy, 0.0, mid))
+            stolen = _k_min(s.fol_theft * ts, 1.0)
+            ds = (1.0 if not s.has_distill_scale or mid < 0
+                  else _k_row_interp(a.fol_distill_scale[i], fy, 0.0, mid))
+            f_dist = d.fol_distill[i] * ds * gap_f * dt
+            total = 0.0
+            for q in range(LEAK_POINTS):
+                lag = s.fol_absorb * (q + 0.5) / LEAK_POINTS
+                u = mid - lag
+                ls = (1.0 if not s.has_leak_scale or u < 0
+                      else _k_row_interp(a.fol_leak_scale[i], fy, 0.0, u))
+                total = total + ls * _k_max(
+                    _k_row_interp(a.fol_software[i], fy, s.fol_software_ppy, end - lag)
+                    - _k_row_interp(a.fol_software[i], fy, s.fol_software_ppy, t - lag), 0.0)
+            f_leak = d.fol_leak[i] * (1 - stolen) * total / LEAK_POINTS
+            f_theft = stolen * _k_max(
+                _k_row_interp(a.fol_software[i], fy, s.fol_software_ppy, end)
+                - _k_row_interp(a.fol_software[i], fy, s.fol_software_ppy, t), 0.0)
+            f_dist = _k_min(f_dist, gap_f)
+            if s.has_trained:
+                room = _k_max(_k_row_interp(a.fol_trained[i], fy, s.fol_ppy, mid)
+                              - standing, 0.0) - f_dist
+            else:
+                room = gap_f - f_dist
+            ideas = f_leak + f_theft
+            keep = _k_min(ideas, _k_max(room, 0.0)) / ideas if ideas > 0 else 0.0
+            f_leak, f_theft = f_leak * keep, f_theft * keep
+            fe0 += f_dist
+            fe1 += f_leak
+            fe2 += f_theft
+            follow_log = follow_log + (0.0 + f_dist + f_leak + f_theft + 0.0) / s.fol_w1
+        reference_gained = advance(reference_gained, ref_log_x, ref_log_amount)
+        diverged = updated > big
+        if diverged and not np.isfinite(rsi) and s.rsi_possible:
+            rsi = end
+        software = _k_min(updated, big)
+        if s.has_cpath:
+            budget = np.exp(uncut_base) * dt
+        else:
+            budget = (_k_grown(t + dt, cr, cl, s.slow_at) - _k_grown(t, cr, cl, s.slow_at))
+        budget = budget * np.exp(boost_log + boost_step / 2 - cut_at(mid))
+        boost_log = boost_log + boost_step
+        used = 0.0 if finished else sh0 * budget
+        run_compute += used
+        training_used += used
+        done = (not finished) and end >= train_end - 1e-12
+        if s.serial_speedup and done:
+            hv = h[2]
+            eval_len = (d.eval_time[i] * (hv + (1 - hv) / s.ai_speed)
+                        / (today2 + (1 - today2) / s.ai_speed))
+        if done and review(end):
+            eval_len = _k_max(eval_len, s.review_time)
+        candidate_compute = np.log(_k_max(run_compute / s.reference_train_compute, 1e-12))
+        candidate = (1 - ff) * snapshot + candidate_compute
+        reference_snapshot = init + reference_at_run_start
+        if done:
+            adopted = candidate_compute + pays_off(
+                t, software, boost_log, run_start_scale, (1 - ff) * snapshot, fast_deployed,
+                (1 - ff) * reference_snapshot) > now2
+            if adopted:
+                pending, pending_scale = candidate, run_start_scale
+                pending_software = (1 - ff) * snapshot
+            else:
+                pending, pending_scale = deployed, deployed_scale
+                pending_software = deployed_software
+            reference_candidate = (1 - ff) * reference_snapshot + np.log(
+                _k_max(run_compute / s.reference_train_compute, 1e-12))
+            reference_pending_capability = _k_max(reference_deployed, reference_candidate)
+            reference_pending_software = ((1 - ff) * reference_snapshot
+                                          if reference_candidate > reference_deployed
+                                          else reference_delivered)
+            finished = True
+        ready = finished and end >= deploy_end - 1e-12
+        if ready:
+            behind = (pending - pending_software) + pays_off(
+                t, software, boost_log, pending_scale, pending_software, fast_deployed,
+                reference_pending_software) < now2 - 1e-12
+            if behind:
+                pending, pending_software = deployed, deployed_software
+                pending_scale = deployed_scale
+            deployed, deployed_scale = pending, pending_scale
+        fast_ready = end >= fast_next - 1e-12
+        if fast_ready:
+            fast_deployed = ff * fast_snapshot
+            reference_fast = ff * (init + reference_at_fast_start)
+            reference_at_fast_start = reference_gained
+            fast_snapshot = software
+            fast_next += _k_max(s.fast_time, s.review_time) if review(end) else s.fast_time
+        validated = (pending_software if ready else deployed_software) + fast_deployed
+        reference_validated = ((reference_pending_software if ready else reference_delivered)
+                               + reference_fast)
+        if ready:
+            span = (end - last_deploy) * sr
+            delivered_rate = _k_max(validated - last_validated, 0.0) / span
+            reference_rate = _k_max(reference_validated - last_reference, 0.0) / span
+            advantage = delivered_rate / reference_rate if reference_rate > 0 else 0.0
+            last_validated, last_reference = validated, reference_validated
+            reference_delivered = reference_pending_software
+            reference_deployed = reference_pending_capability
+            deployed_software = pending_software
+            last_deploy = end
+        if ready or fast_ready:
+            now0 = deployed - deployed_software
+            now1 = pays_off(t, software, boost_log, deployed_scale, deployed_software,
+                            fast_deployed, reference_delivered)
+            now2 = now0 + now1
+        software_now = now1 + follow_log
+        effective = now2 + follow_log
+        if s.has_coding_capability:
+            level = s.cw0 * now0 + s.cw1 * software_now if s.has_coding_weights else effective
+            if level >= d.coding_level[i] and o.coding[i] > end:
+                o.coding[i] = end
+        if ready or fast_ready:
+            held0, held1, held2, held3 = effective, software_now, validated, reference_validated
+        humans(effective, software_now, end, True, rsi, hb)
+        carried = True
+        coding = o.coding[i]
+        for rec in range(2):
+            hit = (end >= coding and not coding_recorded) if rec == 0 else (
+                (not diverged) and end >= coding and hb[0] <= s.full_human
+                and not np.isfinite(rsi))
+            if hit:
+                if rec == 0:
+                    coding_recorded = True
+                else:
+                    rsi = end
+                dest = o.out_coding if rec == 0 else o.out_rsi
+                dest[0, i] = hb[0] * _W0 + hb[1] * _W1 + hb[2] * _W2
+                dest[1, i] = _k_max(_k_max(hb[0], hb[1]), hb[2])
+                dest[2, i], dest[3, i], dest[4, i] = hb[0], hb[1], hb[2]
+                dest[5, i], dest[6, i] = delivered_rate, advantage
+        if rsi >= end:
+            last_labor, last_experiments = labor_log, experiment_log
+        if ready:
+            snapshot = software
+            run_start = end
+            reference_at_run_start = reference_gained
+            if s.serial_speedup:
+                growth_now = sr * pace + (cr if end < s.slow_at else cl)
+                run_len = d.train_time[i] * _k_min(1.0, d.bcr[i] / _k_max(growth_now, 1e-9))
+            run_start_scale = frontier(end) + boost_log
+            run_compute = 0.0
+            finished = False
+        if end >= next_obs - 1e-12 and obs < G:
+            j = obs
+            o.pace[i, j] = pace
+            o.agent_share[i, j] = agent_share
+            seen[j] = _k_max(frontier(end) + boost_log, seen[max(j - 1, 0)])
+            stock[j] = software
+            o.capability[i, j], o.realized[i, j] = held0, held1
+            o.validated[i, j], o.reference[i, j] = held2, held3
+            if fol:
+                o.follow[0, i, j], o.follow[1, i, j] = fe0, fe1
+                o.follow[2, i, j], o.follow[3, i, j] = fe2, fe3
+            o.boost[i, j] = boost_log
+            resources = research_log - judgment_log
+            o.factor[0, i, j], o.factor[1, i, j] = judgment_log, resources
+            o.factor[2, i, j], o.factor[3, i, j] = penalty, compute_part
+            o.factor[4, i, j] = labor_part
+            o.factor[5, i, j] = resources - compute_part - labor_part
+            o.reference_pace[i, j] = reference_pace
+            obs += 1
+        resources = research_log - judgment_log
+        lf0, lf1, lf2, lf3, lf4 = judgment_log, resources, penalty, compute_part, labor_part
+        lf5 = resources - compute_part - labor_part
+        last_pace, last_reference_pace = pace, reference_pace
+        if diverged:
+            stopped_at = end
+            t = years
+        else:
+            t = end
+    o.rsi[i] = rsi
+    o.software[i], o.deployed[i] = software, deployed
+    o.deployed_software[i], o.fast_deployed[i] = deployed_software, fast_deployed
+    o.training_used[i] = training_used
+    o.delivered_rate[i], o.advantage[i] = delivered_rate, advantage
+    o.stopped_at[i] = stopped_at
+    o.last_labor[i], o.last_experiments[i] = last_labor, last_experiments
+    o.last_pace[i], o.last_reference_pace[i] = last_pace, last_reference_pace
+    o.last_factors[0, i], o.last_factors[1, i], o.last_factors[2, i] = lf0, lf1, lf2
+    o.last_factors[3, i], o.last_factors[4, i], o.last_factors[5, i] = lf3, lf4, lf5
+    o.boost_log[i] = boost_log
+    o.obs[i] = obs
+    o.held[0, i], o.held[1, i], o.held[2, i], o.held[3, i] = held0, held1, held2, held3
+
+
+def _k_run_py(d, s, a, o):
+    for i in _prange(len(d.software_rate)):    # draws are independent
+        _k_draw(np.int64(i), d, s, a, o)    # prange's index is unsigned
+
+
+_prange = _numba.prange if _numba is not None else range
+_k_run = (_numba.njit(cache=True, error_model="numpy", parallel=True)(_k_run_py)
+          if _numba is not None else _k_run_py)
+
+
+# False runs the numpy loop everywhere (the parity test flips it).
+COMPILED = True
+
+
+def _cpu_quota():
+    """Cores this process may use: the cgroup CPU quota where one is set
+    (a container sees the host's cores but is throttled to its quota), else
+    its CPU affinity."""
+    import os
+    cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    for path, split in (("/sys/fs/cgroup/cpu.max", None),
+                        ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu/cpu.cfs_period_us")):
+        try:
+            if split is None:
+                quota, period = open(path).read().split()[:2]
+            else:
+                quota, period = open(path).read().strip(), open(split).read().strip()
+            if quota not in ("max", "-1"):
+                cores = min(cores, max(1, int(int(quota) / int(period))))
+            break
+        except (OSError, ValueError):
+            continue
+    return max(1, cores or 1)
+
+
+_K_THREADS = (min(_cpu_quota(), _numba.config.NUMBA_NUM_THREADS)
+              if _numba is not None else 1)
+_K_FACTORS = ("judgment", "resources", "difficulty", "compute", "labor", "ai")
+_K_OUTCOMES = ("human_mean", "human_worst", "human_direction", "human_experiments",
+               "human_verification", "progress_multiple", "compute_matched_advantage")
+_KDraws = namedtuple("_KDraws", (
+    "starts", "halves", "today_hours", "software_rate", "compute_rate", "compute_late",
+    "exp_rate", "exp_late", "exp_share", "exp_growth", "has_history", "initial_throughput",
+    "initial_stock", "train_time", "eval_time", "scale_ratio", "amdahl0", "quality0_log",
+    "human0", "hire_effect", "input_rate", "exp_slope", "coding_level", "taste_slope", "drift",
+    "rho", "beta", "ceiling", "scale_share", "scale_lag", "fast_fraction", "bcr", "fol_rate",
+    "fol_eci_now", "fol_slope", "fol_distill", "fol_leak"))
+_KSettings = namedtuple("_KSettings", (
+    "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
+    "sh0", "sh1", "sh2", "ai_speed", "ai_copies", "hire_rate", "after_rate",
+    "judgment_today", "judgment_cap", "adoption", "coding_today", "coding_slope",
+    "reallocate", "has_slopes", "trend_weight", "trend_months", "useful", "full_human",
+    "autopilot", "serial_speedup", "fast_time", "review_from", "review_to", "review_time",
+    "difficulty_on", "reference_train_compute", "own_experiments", "floor",
+    "reference_half", "has_curve", "has_coding_capability", "has_coding_weights", "cw0",
+    "cw1", "rsi_possible", "has_cpath", "has_epath", "has_cut", "has_use_cut", "follower",
+    "fol_w0", "fol_w1", "fol_theft", "fol_absorb", "fol_ppy", "fol_software_ppy",
+    "has_trained", "fol_lo", "fol_step", "has_distill_scale", "has_leak_scale",
+    "has_theft_scale"))
+_KPaths = namedtuple("_KPaths", (
+    "grid", "cyears", "cv0", "cv1", "cv2", "cv_2d", "cpath_years", "cpath_logs", "epath_years",
+    "epath_logs", "cut_years", "cut_logs", "agents_logs", "experiments_logs", "fol_years",
+    "fol_grid", "fol_table", "fol_teacher", "fol_software", "fol_trained",
+    "fol_distill_scale", "fol_leak_scale", "fol_theft_scale"))
+_KOut = namedtuple("_KOut", (
+    "coding", "rsi", "capability", "realized", "validated", "reference", "pace",
+    "reference_pace", "agent_share", "boost", "factor", "follow", "out_coding", "out_rsi",
+    "software", "deployed", "deployed_software", "fast_deployed", "training_used",
+    "delivered_rate", "advantage", "stopped_at", "last_labor", "last_experiments",
+    "last_pace", "last_reference_pace", "last_factors", "boost_log", "obs", "held"))
+
+
+def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding, rsi,
+                outcomes, histories, pace_history, reference_pace_history,
+                agent_share_history, boost_history, factor_history, follow_history,
+                experiment_slopes, coding_capability, coding_weights, review, v):
+    """Run `simulate`'s step loop compiled. Arrays it is handed (coding,
+    rsi, the histories) are filled in place; the rest comes back in `_KOut`."""
+    # One array type per argument (C order, writable), so one compiled
+    # specialization serves every call.
+    f64 = lambda x: np.require(x, dtype=float, requirements=["C", "W"])
+    per = lambda x: f64(np.broadcast_to(np.asarray(x, dtype=float), (n,)).copy())
+    dummy_years, dummy_logs = np.array([0.0, 1.0]), np.zeros((1, 2))
+
+    def path(pair):
+        return (dummy_years, dummy_logs) if pair is None else (f64(pair[0]), f64(pair[1]))
+    raw = fol["raw"] if fol is not None else None
+    d = _KDraws(
+        starts=f64(v["starts"]), halves=f64(v["halves"]), today_hours=f64(v["today_hours"]),
+        **{k: per(v[k]) for k in (
+            "software_rate", "compute_rate", "compute_late", "exp_rate", "exp_late",
+            "exp_share", "exp_growth", "initial_throughput", "initial_stock", "train_time",
+            "eval_time", "scale_ratio", "amdahl0", "quality0_log", "human0", "hire_effect",
+            "input_rate", "taste_slope", "drift", "rho", "beta", "ceiling", "scale_share",
+            "scale_lag", "fast_fraction", "bcr")},
+        has_history=per(np.asarray(v["has_history"], dtype=float)),
+        exp_slope=np.zeros(n) if experiment_slopes is None else per(experiment_slopes),
+        coding_level=(np.full(n, np.inf) if coding_capability is None
+                      else per(coding_capability)),
+        fol_rate=np.zeros(n) if raw is None else per(fol["rate"]),
+        fol_eci_now=np.zeros(n) if raw is None else per(fol["eci_now"]),
+        fol_slope=np.zeros(n) if raw is None else per(raw["slope"]),
+        fol_distill=np.zeros(n) if raw is None else per(fol["distill"]),
+        fol_leak=np.zeros(n) if raw is None else per(fol["leak"]))
+    shares = v["shares"]
+    s = _KSettings(
+        years=float(p["years"]), step=float(step), boost=float(v["boost"]),
+        rsi_delay=float(p["rsi_compute_delay"]) / 12, rsi_ramp=float(p["rsi_compute_ramp"]) / 12,
+        slow_at=float(v["slow_at"]), transfer=float(v["transfer"]),
+        parallel=float(v["parallel"]), sh0=float(shares[0]), sh1=float(shares[1]),
+        sh2=float(shares[2]), ai_speed=float(v["ai_speed"]), ai_copies=float(p["ai_copies"]),
+        hire_rate=float(v["hire_rate"]), after_rate=float(v["after_rate"]),
+        judgment_today=float(p["judgment_today"]), judgment_cap=float(p["judgment_cap"]),
+        adoption=float(p["direction_adoption"]), coding_today=float(p["coding_today"]),
+        coding_slope=float(p["coding_slope"]), reallocate=bool(p["reallocate_compute"]),
+        has_slopes=bool(experiment_slopes is not None and v["transfer"]),
+        trend_weight=float(p["rsi_trend_weight"]), trend_months=float(p["rsi_trend_months"]),
+        useful=float(p["rsi_useful_growth"]), full_human=float(p["full_human"]) / 100,
+        autopilot=bool(p["rsi_autopilot"]), serial_speedup=bool(p["serial_speedup"]),
+        fast_time=float(v["fast_time"]), review_from=float(review[0]),
+        review_to=float(review[1]), review_time=float(review[2]),
+        difficulty_on=bool(p["difficulty"] > 0),
+        reference_train_compute=float(v["reference_train_compute"]),
+        own_experiments=bool(v["own_experiments"]), floor=float(v["floor"]),
+        reference_half=float(v["reference_half"]), has_curve=human_curve is not None,
+        has_coding_capability=coding_capability is not None,
+        has_coding_weights=coding_weights is not None,
+        cw0=float(coding_weights[0]) if coding_weights is not None else 1.0,
+        cw1=float(coding_weights[1]) if coding_weights is not None else 1.0,
+        rsi_possible=bool(v["floor"] <= p["full_human"] / 100),
+        has_cpath=cpath is not None, has_epath=epath is not None, has_cut=cut is not None,
+        has_use_cut=use_cut is not None, follower=fol is not None,
+        fol_w0=float(fol["w"][0]) if raw else 1.0, fol_w1=float(fol["w"][1]) if raw else 1.0,
+        fol_theft=float(fol["theft"]) if raw else 0.0,
+        fol_absorb=float(fol["absorb"]) if raw else 0.0,
+        fol_ppy=float(raw["ppy"]) if raw else 0.0,
+        fol_software_ppy=float(raw["software_ppy"]) if raw else 0.0,
+        has_trained=bool(raw and raw["trained"] is not None),
+        fol_lo=float(raw["lo"]) if raw else 0.0, fol_step=float(raw["step"]) if raw else 1.0,
+        has_distill_scale=bool(raw and raw["distill_scale"] is not None),
+        has_leak_scale=bool(raw and raw["leak_scale"] is not None),
+        has_theft_scale=bool(raw and raw["theft_scale"] is not None))
+    if human_curve is not None:
+        own = list(human_curve[2:])
+        stage = [own[k] if k < len(own) else human_curve[1] for k in range(3)]
+        cv = tuple(f64(np.atleast_2d(c)) for c in stage)
+        cv_2d = np.array([np.ndim(c) == 2 for c in stage])
+        cyears = f64(human_curve[0])
+    else:
+        cv, cv_2d, cyears = (dummy_logs,) * 3, np.zeros(3, dtype=bool), dummy_years
+    cpy, cpl = path(cpath)
+    epy, epl = path(epath)
+    cuty, cutl = path(cut)
+    ag = f64(use_cut["agents"][1]) if use_cut is not None else dummy_logs
+    ex = f64(use_cut["experiments"][1]) if use_cut is not None else dummy_logs
+
+    def fpath(key):
+        return dummy_logs if raw is None or raw[key] is None else f64(raw[key])
+    a = _KPaths(
+        grid=f64(v["grid"]),
+        cyears=cyears, cv0=cv[0], cv1=cv[1], cv2=cv[2], cv_2d=cv_2d, cpath_years=cpy, cpath_logs=cpl,
+        epath_years=epy, epath_logs=epl, cut_years=cuty, cut_logs=cutl, agents_logs=ag,
+        experiments_logs=ex,
+        fol_years=dummy_years if raw is None else f64(raw["years"]),
+        fol_grid=dummy_years if raw is None else f64(raw["grid"]),
+        fol_table=fpath("table"), fol_teacher=fpath("teacher"),
+        fol_software=fpath("software"), fol_trained=fpath("trained"),
+        fol_distill_scale=fpath("distill_scale"), fol_leak_scale=fpath("leak_scale"),
+        fol_theft_scale=fpath("theft_scale"))
+    factor = np.stack([factor_history[k] for k in _K_FACTORS])
+    follow = (np.stack([follow_history[k] for k in FOLLOW_CHANNELS]) if follow_history
+              else np.zeros((4, 1, 1)))
+    o = _KOut(
+        coding=coding, rsi=rsi, capability=histories[0], realized=histories[1],
+        validated=histories[2], reference=histories[3], pace=pace_history,
+        reference_pace=reference_pace_history, agent_share=agent_share_history,
+        boost=boost_history, factor=factor, follow=follow,
+        out_coding=np.stack([outcomes["Full coding automation"][k] for k in _K_OUTCOMES]),
+        out_rsi=np.stack([outcomes["RSI"][k] for k in _K_OUTCOMES]),
+        software=np.zeros(n), deployed=np.zeros(n), deployed_software=np.zeros(n),
+        fast_deployed=np.zeros(n), training_used=np.zeros(n), delivered_rate=np.zeros(n),
+        advantage=np.zeros(n), stopped_at=np.zeros(n), last_labor=np.zeros(n),
+        last_experiments=np.zeros(n), last_pace=np.zeros(n),
+        last_reference_pace=np.zeros(n), last_factors=np.zeros((6, n)),
+        boost_log=np.zeros(n), obs=np.zeros(n, dtype=np.int64), held=np.zeros((4, n)))
+    for arr in (o.coding, o.rsi) + tuple(histories) + (pace_history, reference_pace_history,
+                                                      agent_share_history, boost_history):
+        assert arr.flags.c_contiguous and arr.dtype == float
+    _numba.set_num_threads(_K_THREADS)
+    _k_run(d, s, a, o)
+    for k, key in enumerate(_K_FACTORS):
+        factor_history[key][:] = factor[k]
+    for k, key in enumerate(FOLLOW_CHANNELS if follow_history else ()):
+        follow_history[key][:] = follow[k]
+    for name, block in (("Full coding automation", o.out_coding), ("RSI", o.out_rsi)):
+        for k, key in enumerate(_K_OUTCOMES):
+            outcomes[name][key][:] = block[k]
+    return o
 
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
@@ -1113,6 +1994,47 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     carried_hours = None
     histories = (capability_history, realized_history, validated_history, reference_history)
     held_now = tuple(np.zeros(n) for _ in histories)
+    if COMPILED and _numba is not None and (fol is None or (
+            fol["theft_jump"] is None and fol["weight_theft"] is None)):
+        # The compiled loop fills the same arrays; the numpy loop then
+        # finds every draw at the horizon and does not run.
+        o = _k_simulate(
+            n=n, p=p, step=step, fol=fol, cpath=cpath, epath=epath, cut=cut, use_cut=use_cut,
+            human_curve=human_curve, coding=coding, rsi=events["RSI"],
+            outcomes=outcomes, histories=histories, pace_history=pace_history,
+            reference_pace_history=reference_pace_history,
+            agent_share_history=agent_share_history, boost_history=boost_history,
+            factor_history=factor_history, follow_history=follow_history,
+            experiment_slopes=experiment_slopes, coding_capability=coding_capability,
+            coding_weights=coding_weights, review=(review_from, review_to, review_time),
+            v=dict(starts=starts, halves=halves, today_hours=today_hours,
+                   software_rate=software_rate, compute_rate=compute_rate,
+                   compute_late=compute_late, exp_rate=exp_rate, exp_late=exp_late,
+                   exp_share=exp_share, exp_growth=exp_growth, has_history=has_history,
+                   initial_throughput=initial_throughput, initial_stock=initial_stock,
+                   train_time=train_time, eval_time=eval_time, scale_ratio=scale_ratio,
+                   amdahl0=amdahl0, quality0_log=quality0_log, human0=human0,
+                   hire_effect=hire_effect, input_rate=input_rate, taste_slope=taste_slope,
+                   drift=drift, rho=rho, beta=beta, ceiling=ceiling, scale_share=scale_share,
+                   scale_lag=scale_lag, fast_fraction=fast_fraction,
+                   bcr=baseline_capability_rate, transfer=transfer, parallel=parallel,
+                   shares=shares, ai_speed=ai_speed, hire_rate=hire_rate,
+                   after_rate=after_rate, fast_time=fast_time, floor=floor,
+                   reference_half=reference_half, slow_at=slow_at,
+                   own_experiments=own_experiments, boost=boost,
+                   reference_train_compute=reference_train_compute,
+                   grid=workflow_grid))
+        (software, deployed, deployed_software, fast_deployed, training_used,
+         delivered_rate, advantage, stopped_at, last_labor, last_experiments, last_pace,
+         last_reference_pace, boost_log) = (
+            o.software, o.deployed, o.deployed_software, o.fast_deployed, o.training_used,
+            o.delivered_rate, o.advantage, o.stopped_at, o.last_labor, o.last_experiments,
+            o.last_pace, o.last_reference_pace, o.boost_log)
+        for k, key in enumerate(_K_FACTORS):
+            last_factors[key] = o.last_factors[k]
+        held_now = tuple(o.held)
+        observation_index = o.obs
+        t = np.full(n, float(p["years"]))
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + run_len
         deploy_end = train_end + eval_len
