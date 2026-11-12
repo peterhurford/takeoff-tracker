@@ -7592,3 +7592,30 @@ class TestFracWords:
         assert vp._frac_words(0.38) == "two-fifths"
         assert vp._frac_words(0.52) == "a half"
         assert vp._frac_words(0.66) == "two-thirds"
+
+
+def test_concurrent_seeded_blocks_keep_their_streams():
+    """Two sessions' seeded blocks in two threads at once each draw exactly their
+    own seed's stream (numpy's generator is global), and leave it as found."""
+    import threading
+    import time
+
+    def expected(seed):
+        return np.random.RandomState(seed).random_sample(5)
+    got, before = {}, np.random.get_state()[1].copy()
+
+    def run(seed):
+        with vp._seeded_rng(seed):
+            draws = []
+            for _ in range(5):
+                draws.append(np.random.random_sample())
+                time.sleep(0.01)     # without the lock the other thread draws here
+            got[seed] = np.array(draws)
+    threads = [threading.Thread(target=run, args=(s,)) for s in (1, 2)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    for seed in (1, 2):
+        np.testing.assert_array_equal(got[seed], expected(seed))
+    np.testing.assert_array_equal(np.random.get_state()[1], before)

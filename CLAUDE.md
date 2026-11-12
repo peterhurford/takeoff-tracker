@@ -13,7 +13,9 @@ streamlit run visualize_projection.py    # http://localhost:8501
 Every tab's rerun draws its Monte Carlo inside `_seeded_rng(_APP_SEED)` (the dispatch), so
 the same settings give the same numbers; Takeoff reseeds from its own `tk_seed`. No cached
 function may draw unseeded, or a cache hit would shift the stream
-(`test_toggling_a_box_back_restores_the_numbers`).
+(`test_toggling_a_box_back_restores_the_numbers`). A seeded block holds a process-wide lock,
+since sessions run in threads sharing numpy's one global generator
+(`test_concurrent_seeded_blocks_keep_their_streams`).
 
 ## Running Tests
 
@@ -81,6 +83,10 @@ Keep this file an index: new design detail goes in the matching `docs/` file, no
 - **Every ECI frontier goes through `_best_per_date()`**, and company matching on Epoch's
   `Organization` is by substring, never an exact key (`docs/tabs.md`).
 - **Before overwriting a CSV wholesale, diff by key column** (`docs/data-sources.md`).
+- **`takeoff_model.simulate`'s weekly step exists twice**: the numpy loop in `simulate`
+  and the compiled `_k_draw`, which is what the app runs. A change to the step's equations
+  or a new `simulate` option goes into both, then run
+  `pytest test_takeoff_model.py -k compiled_loop` (`docs/takeoff.md`).
 - **Editing these files or the app by script:** a naive paren-counter will not do (an
   f-string like `.split(' (')` carries an unbalanced paren). Tokenize, or edit by hand.
 

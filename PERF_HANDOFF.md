@@ -112,7 +112,8 @@ what the app runs: time the app's real calls instead (capture them by wrapping
 bit-identical. At 2 threads, the live host's most: US run 2.02 → 0.33s, China's follower
 runs 2.44 → 0.23s; a browser setting change 6.2 → ~2.1s; cold Takeoff server-side
 6.95 → 3.1s, China 10.9 → 3.0s. Numbers moved only by float reordering (a draw or two per
-run, relative 1e-8). Still open: the live re-measure, and the one-time compile (~15s here,
+run, relative 1e-8). Live (2026-11-11): a Takeoff setting change 30s and 56s → 4.1–4.9s, of which ~4s is
+Streamlit rerendering even when every result is cached. Still open: the one-time compile (~15s here,
 likely 2-3× that on the live host) the first visitor after each deploy pays, which step 2's
 server-start warm-up should absorb. Whether numba's cache survives a Community Cloud
 sleep is unknown.
@@ -126,6 +127,15 @@ default results on disk. Mind the seed rule above, and that `_tk_simulate` has
 
 Done when: first load of Takeoff, Pacing and China after a restart is within a second or
 two of the warm load.
+
+**Status (2026-11-11):** neither in-process option works. Streamlit has no server-start
+hook (the script first runs when the first visitor connects), and `AppTest` swaps out the
+global `Runtime._instance`, so it cannot run inside the live server. Live after step 1:
+Takeoff 9.8s on the first visit after the deploy, 4.7s warm, so a warm-up can save ~5s
+once per restart. It would have to come from outside (a scheduled headless visit), which
+would also keep the app from sleeping. Not built: Peter's call. Done instead: seeded blocks now hold
+a process-wide lock, since concurrent sessions (or a warm-up run) shared numpy's global
+generator and could poison the cache with perturbed draws.
 
 ### 3. Re-measure on the live site, then decide on hosting
 

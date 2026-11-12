@@ -22,6 +22,7 @@ import os
 import json
 import hashlib
 import importlib
+import threading
 from pathlib import Path
 import takeoff_model as takeoff
 from datetime import datetime, timedelta
@@ -19155,20 +19156,28 @@ def _pc_clock_note(release_dated, timing_label, us_lag=None):
             f"\u201c{timing_label.lower()}\u201d clock.")
 
 
+# numpy's global generator is one per process and Streamlit runs each session in
+# its own thread, so a seeded block holds this lock: two runs at once never draw
+# from each other's stream. Kept on the model module, which outlives reruns.
+_RNG_LOCK = takeoff.__dict__.setdefault("_vp_rng_lock", threading.RLock())
+
+
 @contextmanager
 def _seeded_rng(seed):
     """Seed numpy's global generator for the block (the samplers draw from
     it), then put back whatever state it had, so seeding one computation
-    neither depends on nor shifts the draws around it. None leaves it alone."""
+    neither depends on nor shifts the draws around it. None leaves it alone.
+    Other threads' seeded blocks wait (`test_concurrent_seeded_blocks_keep_their_streams`)."""
     if seed is None:
         yield
         return
-    state = np.random.get_state()
-    np.random.seed(int(seed) % 2**32)
-    try:
-        yield
-    finally:
-        np.random.set_state(state)
+    with _RNG_LOCK:
+        state = np.random.get_state()
+        np.random.seed(int(seed) % 2**32)
+        try:
+            yield
+        finally:
+            np.random.set_state(state)
 
 
 def _tk_ultra_min(today=None):
