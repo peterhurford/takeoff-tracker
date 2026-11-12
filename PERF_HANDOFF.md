@@ -137,6 +137,9 @@ would also keep the app from sleeping. Not built: Peter's call. Done instead: se
 a process-wide lock, since concurrent sessions (or a warm-up run) shared numpy's global
 generator and could poison the cache with perturbed draws.
 
+**Evidence charts (2026-11-12):** built once per input via `_fig_memo` (`docs/takeoff.md`);
+a warm Takeoff rerun's evidence half 0.71 → 0.15s on the laptop, all 27 charts identical.
+
 ### 3. Re-measure on the live site, then decide on hosting
 
 Run `node perf/time_browser.js https://takeoff-tracker.streamlit.app/~/+/` after deploying

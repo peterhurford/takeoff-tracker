@@ -20,6 +20,7 @@ import calendar
 import textwrap
 import os
 import json
+import pickle
 import hashlib
 import importlib
 import threading
@@ -850,6 +851,69 @@ def _today_fwd_refit_y(fig, today, end):
 def _tf(fig):
     """`_today_forward` when the toggle is on; the chart's own figure otherwise."""
     return _today_forward(fig, _today()) if _today_fwd_on() else fig
+
+
+# Built figures by input, shared across reruns and sessions (module globals
+# reset every rerun, so the store lives on `takeoff_model`, like the RNG lock).
+_FIG_MEMO = takeoff.__dict__.setdefault("_vp_fig_memo", {})
+_FIG_MEMO_LOCK = takeoff.__dict__.setdefault("_vp_fig_memo_lock", threading.Lock())
+_FIG_MEMO_MAX = 64
+# Settings a builder reaches through shared helpers (the ECI dating), keyed.
+_FIG_MEMO_STATE = ("us_ship_lag", "cn_ship_lag", "_eci_internal_on", "_eci_trained_on")
+
+
+def _code_key(code):
+    """A code object's bytecode, names and constants, nested code included:
+    the same source gives the same key on every rerun."""
+    return (code.co_code, code.co_names, tuple(
+        _code_key(c) if hasattr(c, "co_code") else c for c in code.co_consts))
+
+
+def _closure_parts(fn, seen=None):
+    """`fn`'s code and the values it closes over, a nested function's own
+    parts spliced in."""
+    seen = seen if seen is not None else set()
+    seen.add(id(fn))
+    parts = [_code_key(fn.__code__)]
+    for cell in fn.__closure__ or ():
+        v = cell.cell_contents
+        if hasattr(v, "__code__"):
+            if id(v) not in seen:
+                parts += _closure_parts(v, seen)
+        else:
+            parts.append(v)
+    return parts
+
+
+def _fig_memo(build):
+    """`build()`'s figure, built once per input. Plotly's construction is most
+    of a warm rerun's evidence half. The key is `build`'s code, every value
+    it closes over, today, the today-forward toggle, `_FIG_MEMO_STATE` and
+    numpy's global state, so `build` may reach no other session state, even
+    through a helper; a draw inside it is replayed by
+    restoring the state it left (`TestFigMemo`). Callers must not change the
+    returned figure."""
+    # Each value pickled on its own: one pickle of them all would encode
+    # which of them share objects, which differs between a cache hit and miss.
+    try:
+        key = hashlib.sha1(b"".join(
+            hashlib.sha1(pickle.dumps(part, protocol=5)).digest()
+            for part in [_today(), _today_fwd_on(), np.random.get_state(),
+                         [st.session_state.get(k) for k in _FIG_MEMO_STATE],
+                         *_closure_parts(build)])).digest()
+    except (pickle.PicklingError, TypeError, AttributeError):
+        return build()
+    with _FIG_MEMO_LOCK:
+        hit = _FIG_MEMO.get(key)
+    if hit is not None:
+        np.random.set_state(hit[1])
+        return hit[0]
+    fig = build()
+    with _FIG_MEMO_LOCK:
+        if len(_FIG_MEMO) >= _FIG_MEMO_MAX:
+            _FIG_MEMO.pop(next(iter(_FIG_MEMO)))
+        _FIG_MEMO[key] = (fig, np.random.get_state())
+    return fig
 
 
 def _add_today_vline(fig):
@@ -7285,77 +7349,79 @@ def render_rsi(end_year):
         pct = _fan_pctiles(proj_start_logit, proj_slope, proj_days,
                            (5, 10, 25, 50, 75, 90, 95), logit=True)
 
-        fig = go.Figure()
-        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+        def _build():
+            fig = go.Figure()
+            for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                         (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                         (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+                fig.add_trace(go.Scatter(
+                    x=proj_dates + proj_dates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    name=label, hoverinfo='skip', showlegend=True))
+
+            # Fitted trend through the recorded frontier, then the median projection.
+            _hist_days = np.arange(0, (current['date'] - _base).days + 1, dtype=float)
+            _hist_y = _inv_logit(_intercept + _slope * _hist_days) * 100
+            _hist_dates = [_base + timedelta(days=int(d)) for d in _hist_days]
             fig.add_trace(go.Scatter(
-                x=proj_dates + proj_dates[::-1],
-                y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=color, line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=True))
-
-        # Fitted trend through the recorded frontier, then the median projection.
-        _hist_days = np.arange(0, (current['date'] - _base).days + 1, dtype=float)
-        _hist_y = _inv_logit(_intercept + _slope * _hist_days) * 100
-        _hist_dates = [_base + timedelta(days=int(d)) for d in _hist_days]
-        fig.add_trace(go.Scatter(
-            x=_hist_dates, y=_hist_y.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2× odds:{_fit_dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
-                       for d, y in zip(_hist_dates, _hist_y)],
-            hoverinfo='text'))
-        fig.add_trace(go.Scatter(
-            x=proj_dates, y=pct[50].tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5, dash='dash'),
-            name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
-                       for d, y in zip(proj_dates, pct[50])],
-            hoverinfo='text'))
-
-        for m in rsi_all:
-            _is_fr = m['is_frontier']
+                x=_hist_dates, y=_hist_y.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"Fitted trend (2× odds:{_fit_dt:.0f}d)",
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                           for d, y in zip(_hist_dates, _hist_y)],
+                hoverinfo='text'))
             fig.add_trace(go.Scatter(
-                x=[m['date']], y=[m['cobench']],
-                mode='markers+text',
-                marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
-                            symbol='circle' if _is_fr else 'circle-open',
-                            line=dict(color='white' if _is_fr else '#777777', width=2)),
-                text=[m['name']],
-                textposition='top center',
-                textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
-                hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
-                          f"CoBench: {m['cobench']:.1f}%"
-                          + (f"<br>{m['note']}" if m['note'] else ""),
-                hoverinfo='text', showlegend=False))
+                x=proj_dates, y=pct[50].tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5, dash='dash'),
+                name='Median projection',
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                           for d, y in zip(proj_dates, pct[50])],
+                hoverinfo='text'))
 
-        fig.add_hline(
-            y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-            annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
-                            "Anthropic research staff",
-            annotation_position="top left",
-            annotation_font=dict(size=11, color='#e74c3c'))
-        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
-        _add_today_vline(fig)
+            for m in rsi_all:
+                _is_fr = m['is_frontier']
+                fig.add_trace(go.Scatter(
+                    x=[m['date']], y=[m['cobench']],
+                    mode='markers+text',
+                    marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
+                                symbol='circle' if _is_fr else 'circle-open',
+                                line=dict(color='white' if _is_fr else '#777777', width=2)),
+                    text=[m['name']],
+                    textposition='top center',
+                    textfont=dict(size=10, color='#1a1a2e' if _is_fr else '#999999'),
+                    hovertext=f"{m['name']}<br>{_rsi_date_label(m)}<br>"
+                              f"CoBench: {m['cobench']:.1f}%"
+                              + (f"<br>{m['note']}" if m['note'] else ""),
+                    hoverinfo='text', showlegend=False))
 
-        fig.update_layout(
-            height=600,
-            margin=dict(l=50, r=60, t=50, b=40),
-            font=dict(color='#1a1a2e'),
-            xaxis=dict(title="Release date",
-                       range=[rsi_all[0]['date'] - timedelta(days=25), proj_end_date],
-                       gridcolor='rgba(0,0,0,0.1)',
-                       tickfont=dict(color='#1a1a2e'), zeroline=False,
-                       title_font=dict(color='#1a1a2e')),
-            yaxis=dict(title="CoBench score (%)", range=[0, 100],
-                       gridcolor='rgba(0,0,0,0.1)', zeroline=False, ticksuffix='%',
-                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-            hovermode='closest',
-            legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
-                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-            plot_bgcolor='white', paper_bgcolor='white')
-        st.plotly_chart(fig, width="stretch")
+            fig.add_hline(
+                y=_RSI_SUBSTITUTION_BAR, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+                annotation_text=f"{_RSI_SUBSTITUTION_BAR:.0f}% — full substitution for "
+                                "Anthropic research staff",
+                annotation_position="top left",
+                annotation_font=dict(size=11, color='#e74c3c'))
+            _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
+            _add_today_vline(fig)
+
+            fig.update_layout(
+                height=600,
+                margin=dict(l=50, r=60, t=50, b=40),
+                font=dict(color='#1a1a2e'),
+                xaxis=dict(title="Release date",
+                           range=[rsi_all[0]['date'] - timedelta(days=25), proj_end_date],
+                           gridcolor='rgba(0,0,0,0.1)',
+                           tickfont=dict(color='#1a1a2e'), zeroline=False,
+                           title_font=dict(color='#1a1a2e')),
+                yaxis=dict(title="CoBench score (%)", range=[0, 100],
+                           gridcolor='rgba(0,0,0,0.1)', zeroline=False, ticksuffix='%',
+                           tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+                hovermode='closest',
+                legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                            bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+                plot_bgcolor='white', paper_bgcolor='white')
+            return fig
+        st.plotly_chart(_fig_memo(_build), width="stretch")
 
         _fn_caption(
             "Source: "
@@ -7527,170 +7593,172 @@ def _render_rsi_automation(end_year):
     else:
         lag_days = None
 
-    fig = go.Figure()
-    x_end = cur['date']
+    def _build():
+        fig = go.Figure()
+        x_end = cur['date']
 
-    if slope > 0:
-        dt = np.log(2) / slope
-        n = N_SAMPLES
-        proj_slope = np.log(2) / np.maximum(
-            _lognormal_around(dt, *_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
-        _cur, centre, sigma = _rsi_auto_start(rows)
-        start_logit = np.random.normal(centre, sigma, n)
+        if slope > 0:
+            dt = np.log(2) / slope
+            n = N_SAMPLES
+            proj_slope = np.log(2) / np.maximum(
+                _lognormal_around(dt, *_rsi_auto_dt_ci(rows, round(dt)), n=n), 1.0)
+            _cur, centre, sigma = _rsi_auto_start(rows)
+            start_logit = np.random.normal(centre, sigma, n)
 
-        horizon = max((datetime(end_year, 12, 31) - cur['date']).days, 1)
-        pdays = _fan_days(horizon)
-        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        x_end = pdates[-1]
+            horizon = max((datetime(end_year, 12, 31) - cur['date']).days, 1)
+            pdays = _fan_days(horizon)
+            pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+            x_end = pdates[-1]
 
-        # AL4 and AL5 come off the *same* sampled paths — AL5 is those paths
-        # shifted per sample — so the two fans cannot tell different stories
-        # about the rung they share.
-        shifts = {'al4': np.zeros(n)}
-        if lag_days is not None:
-            shifts['al5'] = _rsi_al5_tau_draws(lag_days, n, lag['slow'], lag['floor'])
-        bands = {
-            'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
-                    (10, 90, 'rgba(52,152,219,0.18)'),
-                    (25, 75, 'rgba(52,152,219,0.28)')],
-            'al5': [(5, 95, 'rgba(155,89,182,0.10)'),
-                    (10, 90, 'rgba(155,89,182,0.18)'),
-                    (25, 75, 'rgba(155,89,182,0.28)')]}
-        medians = {}
-        for key, shift in shifts.items():
-            pct = _fan_pctiles(start_logit, proj_slope, pdays,
-                               (5, 10, 25, 50, 75, 90, 95), logit=True, shift=shift)
-            medians[key] = pct[50]
-            for i, (lo, hi, color) in enumerate(bands[key]):
-                fig.add_trace(go.Scatter(
-                    x=pdates + pdates[::-1],
-                    y=list(pct[hi]) + list(pct[lo][::-1]),
-                    fill='toself', fillcolor=color, line=dict(width=0),
-                    # One entry per fan, not three. Two fans at the app's usual
-                    # three-band legend would be six rows of key for two
-                    # objects, and the legend then covers the fans it labels.
-                    name=f"{key.upper()}{'+' if key == 'al4' else ''} "
-                         "50/80/90% CI",
-                    hoverinfo='skip', showlegend=(i == 0)))
+            # AL4 and AL5 come off the *same* sampled paths — AL5 is those paths
+            # shifted per sample — so the two fans cannot tell different stories
+            # about the rung they share.
+            shifts = {'al4': np.zeros(n)}
+            if lag_days is not None:
+                shifts['al5'] = _rsi_al5_tau_draws(lag_days, n, lag['slow'], lag['floor'])
+            bands = {
+                'al4': [(5, 95, 'rgba(52,152,219,0.10)'),
+                        (10, 90, 'rgba(52,152,219,0.18)'),
+                        (25, 75, 'rgba(52,152,219,0.28)')],
+                'al5': [(5, 95, 'rgba(155,89,182,0.10)'),
+                        (10, 90, 'rgba(155,89,182,0.18)'),
+                        (25, 75, 'rgba(155,89,182,0.28)')]}
+            medians = {}
+            for key, shift in shifts.items():
+                pct = _fan_pctiles(start_logit, proj_slope, pdays,
+                                   (5, 10, 25, 50, 75, 90, 95), logit=True, shift=shift)
+                medians[key] = pct[50]
+                for i, (lo, hi, color) in enumerate(bands[key]):
+                    fig.add_trace(go.Scatter(
+                        x=pdates + pdates[::-1],
+                        y=list(pct[hi]) + list(pct[lo][::-1]),
+                        fill='toself', fillcolor=color, line=dict(width=0),
+                        # One entry per fan, not three. Two fans at the app's usual
+                        # three-band legend would be six rows of key for two
+                        # objects, and the legend then covers the fans it labels.
+                        name=f"{key.upper()}{'+' if key == 'al4' else ''} "
+                             "50/80/90% CI",
+                        hoverinfo='skip', showlegend=(i == 0)))
 
-        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
-        hdates = [base + timedelta(days=int(d)) for d in hdays]
-        hy = _inv_logit(icpt + slope * hdays) * 100
-        fig.add_trace(go.Scatter(
-            x=hdates, y=hy.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"AL4+ fitted trend (2× odds:{dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
-                       for d, y in zip(hdates, hy)],
-            hoverinfo='text'))
-        for key, med in medians.items():
+            hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+            hdates = [base + timedelta(days=int(d)) for d in hdays]
+            hy = _inv_logit(icpt + slope * hdays) * 100
             fig.add_trace(go.Scatter(
-                x=pdates, y=med.tolist(), mode='lines',
-                line=dict(color=_RSI_AUTO_COLORS[key], width=2.5, dash='dash'),
-                name=(f"{key.upper()}+ median projection" if key == 'al4'
-                      else "AL5 median (assumed lag)"),
-                hovertext=[f"{d.strftime('%b %d, %Y')}<br>"
-                           f"{key.upper()} median: {y:.1f}%"
-                           for d, y in zip(pdates, med)],
+                x=hdates, y=hy.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"AL4+ fitted trend (2× odds:{dt:.0f}d)",
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                           for d, y in zip(hdates, hy)],
                 hoverinfo='text'))
+            for key, med in medians.items():
+                fig.add_trace(go.Scatter(
+                    x=pdates, y=med.tolist(), mode='lines',
+                    line=dict(color=_RSI_AUTO_COLORS[key], width=2.5, dash='dash'),
+                    name=(f"{key.upper()}+ median projection" if key == 'al4'
+                          else "AL5 median (assumed lag)"),
+                    hovertext=[f"{d.strftime('%b %d, %Y')}<br>"
+                               f"{key.upper()} median: {y:.1f}%"
+                               for d, y in zip(pdates, med)],
+                    hoverinfo='text'))
 
-    # The rungs below AL4, as measured context. Saturated months draw hollow:
-    # they are real readings, but a share pinned against 100 carries no rate,
-    # so they are excluded from that rung's fit.
-    for key in ('al2', 'al3'):
-        usable = {id(r) for r in _rsi_auto_points(rows, key)}
+        # The rungs below AL4, as measured context. Saturated months draw hollow:
+        # they are real readings, but a share pinned against 100 carries no rate,
+        # so they are excluded from that rung's fit.
+        for key in ('al2', 'al3'):
+            usable = {id(r) for r in _rsi_auto_points(rows, key)}
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in rows], y=[r[key] for r in rows],
+                mode='lines', line=dict(color=_RSI_AUTO_COLORS[key], width=2),
+                name=_RSI_AUTO_LABELS[key],
+                hovertext=[f"{r['date']:%b %Y}<br>{_RSI_AUTO_LABELS[key]}: "
+                           f"{r[key]:.1f}%"
+                           + ("" if id(r) in usable else
+                              "<br>at the ceiling — charted, not fitted")
+                           for r in rows],
+                hoverinfo='text'))
+            sat = [r for r in rows if id(r) not in usable]
+            if sat:
+                fig.add_trace(go.Scatter(
+                    x=[r['date'] for r in sat], y=[r[key] for r in sat],
+                    mode='markers',
+                    marker=dict(color='white', size=7,
+                                line=dict(color=_RSI_AUTO_COLORS[key], width=2)),
+                    hoverinfo='skip', showlegend=False))
+
+        # AL4: the unlabelled months hollow at zero, the labelled ones with the
+        # figure's own 90% whiskers.
+        unfit = [r for r in rows if not r['fitted']]
+        if unfit:
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in unfit], y=[r['al4'] for r in unfit],
+                mode='markers',
+                marker=dict(color='#aaaaaa', size=7, symbol='circle-open',
+                            line=dict(color='#777777', width=1.5)),
+                hovertext=[f"{r['date']:%b %Y}<br>No labelled AL4 value<br>"
+                           "below the figure's resolution" for r in unfit],
+                hoverinfo='text', showlegend=False))
         fig.add_trace(go.Scatter(
-            x=[r['date'] for r in rows], y=[r[key] for r in rows],
-            mode='lines', line=dict(color=_RSI_AUTO_COLORS[key], width=2),
-            name=_RSI_AUTO_LABELS[key],
-            hovertext=[f"{r['date']:%b %Y}<br>{_RSI_AUTO_LABELS[key]}: "
-                       f"{r[key]:.1f}%"
-                       + ("" if id(r) in usable else
-                          "<br>at the ceiling — charted, not fitted")
+            x=[r['date'] for r in fitted_rows], y=[r['al4'] for r in fitted_rows],
+            mode='markers+lines',
+            line=dict(color=_RSI_AUTO_COLORS['al4'], width=2),
+            marker=dict(color=_RSI_AUTO_COLORS['al4'], size=11,
+                        line=dict(color='white', width=2)),
+            name=_RSI_AUTO_LABELS['al4'],
+            error_y=dict(type='data', symmetric=False,
+                         array=[r['hi'] - r['al4'] for r in fitted_rows],
+                         arrayminus=[r['al4'] - r['lo'] for r in fitted_rows],
+                         color='rgba(79,141,253,0.85)', thickness=1.5, width=5),
+            hovertext=[f"{r['date']:%b %Y}<br>Claude leads {r['al4']:.0f}%<br>"
+                       f"90% measurement interval: {r['lo']:.1f}–{r['hi']:.1f}%"
+                       for r in fitted_rows],
+            hoverinfo='text'))
+        # AL5's own measurements: zero, every month. Drawn as a flat line rather
+        # than markers because AL4's own pre-March zeros occupy the same seven
+        # points — as markers the two series were indistinguishable rings sitting
+        # on each other. The axis is floored below zero so this is not swallowed
+        # by the axis line.
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in rows], y=[0.0] * len(rows),
+            mode='lines',
+            line=dict(color=_RSI_AUTO_COLORS['al5'], width=3),
+            name='AL5 measured (zero every month)',
+            hovertext=[f"{r['date']:%b %Y}<br>No AL5 band<br>"
+                       f"below the figure's ~{_RSI_AUTO_FLOOR:g}pt floor"
                        for r in rows],
             hoverinfo='text'))
-        sat = [r for r in rows if id(r) not in usable]
-        if sat:
-            fig.add_trace(go.Scatter(
-                x=[r['date'] for r in sat], y=[r[key] for r in sat],
-                mode='markers',
-                marker=dict(color='white', size=7,
-                            line=dict(color=_RSI_AUTO_COLORS[key], width=2)),
-                hoverinfo='skip', showlegend=False))
 
-    # AL4: the unlabelled months hollow at zero, the labelled ones with the
-    # figure's own 90% whiskers.
-    unfit = [r for r in rows if not r['fitted']]
-    if unfit:
-        fig.add_trace(go.Scatter(
-            x=[r['date'] for r in unfit], y=[r['al4'] for r in unfit],
-            mode='markers',
-            marker=dict(color='#aaaaaa', size=7, symbol='circle-open',
-                        line=dict(color='#777777', width=1.5)),
-            hovertext=[f"{r['date']:%b %Y}<br>No labelled AL4 value<br>"
-                       "below the figure's resolution" for r in unfit],
-            hoverinfo='text', showlegend=False))
-    fig.add_trace(go.Scatter(
-        x=[r['date'] for r in fitted_rows], y=[r['al4'] for r in fitted_rows],
-        mode='markers+lines',
-        line=dict(color=_RSI_AUTO_COLORS['al4'], width=2),
-        marker=dict(color=_RSI_AUTO_COLORS['al4'], size=11,
-                    line=dict(color='white', width=2)),
-        name=_RSI_AUTO_LABELS['al4'],
-        error_y=dict(type='data', symmetric=False,
-                     array=[r['hi'] - r['al4'] for r in fitted_rows],
-                     arrayminus=[r['al4'] - r['lo'] for r in fitted_rows],
-                     color='rgba(79,141,253,0.85)', thickness=1.5, width=5),
-        hovertext=[f"{r['date']:%b %Y}<br>Claude leads {r['al4']:.0f}%<br>"
-                   f"90% measurement interval: {r['lo']:.1f}–{r['hi']:.1f}%"
-                   for r in fitted_rows],
-        hoverinfo='text'))
-    # AL5's own measurements: zero, every month. Drawn as a flat line rather
-    # than markers because AL4's own pre-March zeros occupy the same seven
-    # points — as markers the two series were indistinguishable rings sitting
-    # on each other. The axis is floored below zero so this is not swallowed
-    # by the axis line.
-    fig.add_trace(go.Scatter(
-        x=[r['date'] for r in rows], y=[0.0] * len(rows),
-        mode='lines',
-        line=dict(color=_RSI_AUTO_COLORS['al5'], width=3),
-        name='AL5 measured (zero every month)',
-        hovertext=[f"{r['date']:%b %Y}<br>No AL5 band<br>"
-                   f"below the figure's ~{_RSI_AUTO_FLOOR:g}pt floor"
-                   for r in rows],
-        hoverinfo='text'))
+        # One bar, two crossings: both rungs are dated against the same level, so
+        # the gap between where the fans meet it is the ladder's step made visible.
+        fig.add_hline(
+            y=_RSI_AUTO_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+            annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — of model R&D tasks: "
+                            "led by Claude (AL4+), then unsupervised (AL5)",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color='#e74c3c'))
+        _add_today_diamond(fig, 'AL4+ median projection', lambda v: f"{v:.0f}%", label="AL4+ trend")
+        _add_today_diamond(fig, 'AL5 median (assumed lag)', lambda v: f"{v:.1f}%",
+                           label="AL5", color='#c0392b', position='top right')
+        _add_today_vline(fig)
 
-    # One bar, two crossings: both rungs are dated against the same level, so
-    # the gap between where the fans meet it is the ladder's step made visible.
-    fig.add_hline(
-        y=_RSI_AUTO_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-        annotation_text=f"{_RSI_AUTO_TARGET:.0f}% — of model R&D tasks: "
-                        "led by Claude (AL4+), then unsupervised (AL5)",
-        annotation_position="top left",
-        annotation_font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, 'AL4+ median projection', lambda v: f"{v:.0f}%", label="AL4+ trend")
-    _add_today_diamond(fig, 'AL5 median (assumed lag)', lambda v: f"{v:.1f}%",
-                       label="AL5", color='#c0392b', position='top right')
-    _add_today_vline(fig)
-
-    fig.update_layout(
-        height=580, margin=dict(l=50, r=60, t=86, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Month rated",
-                   range=[rows[0]['date'] - timedelta(days=20), max(x_end, rows[-1]['date'])],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Share of model R&D tasks at this level or above",
-                   range=[-3, 100], tick0=0, dtick=20, ticksuffix='%',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        # Above the plot: nine keys inside it would sit on top of the AL5 fan
-        # whichever corner they took, the chart being full left to right.
-        legend=dict(orientation='h', yanchor='bottom', y=1.02,
-                    xanchor='left', x=0, font=dict(color='#1a1a2e', size=11)),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+        fig.update_layout(
+            height=580, margin=dict(l=50, r=60, t=86, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Month rated",
+                       range=[rows[0]['date'] - timedelta(days=20), max(x_end, rows[-1]['date'])],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Share of model R&D tasks at this level or above",
+                       range=[-3, 100], tick0=0, dtick=20, ticksuffix='%',
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            # Above the plot: nine keys inside it would sit on top of the AL5 fan
+            # whichever corner they took, the chart being full left to right.
+            legend=dict(orientation='h', yanchor='bottom', y=1.02,
+                        xanchor='left', x=0, font=dict(color='#1a1a2e', size=11)),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _fn_caption(
         "Cumulative shares on a frozen basket of tasks, judged by a model. "
@@ -7752,113 +7820,115 @@ def _render_rsi_survey(end_year):
     base, intercept, slope = _rsi_survey_fit(rows)
     cur = rows[-1]
 
-    fig = go.Figure()
+    def _build():
+        fig = go.Figure()
 
-    if slope > 0:
-        dt = np.log(2) / slope
-        n = N_SAMPLES
-        proj_slope = np.log(2) / np.maximum(
-            _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
-        fitted = intercept + slope * (cur['date'] - base).days
-        centre, sigma = _fan_start_on_trend(fitted, _rsi_log_gain(cur['uplift']),
-                                   np.log(_RSI_SURVEY_POS_FACTOR) / 1.282)
-        start_log = np.random.normal(centre, sigma, n)
+        if slope > 0:
+            dt = np.log(2) / slope
+            n = N_SAMPLES
+            proj_slope = np.log(2) / np.maximum(
+                _lognormal_around(dt, *_rsi_survey_dt_ci(rows, dt), n=n), 1.0)
+            fitted = intercept + slope * (cur['date'] - base).days
+            centre, sigma = _fan_start_on_trend(fitted, _rsi_log_gain(cur['uplift']),
+                                       np.log(_RSI_SURVEY_POS_FACTOR) / 1.282)
+            start_log = np.random.normal(centre, sigma, n)
 
-        pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
-        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        pct = {q: v + 1 for q, v in _fan_pctiles(
-            start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95)).items()}
+            pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
+            pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+            pct = {q: v + 1 for q, v in _fan_pctiles(
+                start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95)).items()}
 
-        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                         (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                         (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+                fig.add_trace(go.Scatter(
+                    x=pdates + pdates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    name=label, hoverinfo='skip', showlegend=True))
+
+            hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+            hdates = [base + timedelta(days=int(d)) for d in hdays]
+            trend = 1 + np.exp(intercept + slope * hdays)
             fig.add_trace(go.Scatter(
-                x=pdates + pdates[::-1],
-                y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=color, line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=True))
-
-        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
-        hdates = [base + timedelta(days=int(d)) for d in hdays]
-        trend = 1 + np.exp(intercept + slope * hdays)
-        fig.add_trace(go.Scatter(
-            x=hdates, y=trend.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (gain over no AI 2×:{dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}×"
-                       for d, y in zip(hdates, trend)],
-            hoverinfo='text'))
-        fig.add_trace(go.Scatter(
-            x=pdates, y=pct[50].tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5, dash='dash'),
-            name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}×"
-                       for d, y in zip(pdates, pct[50])],
-            hoverinfo='text'))
-        x_end = pdates[-1]
-        y_top = min(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * _RSI_MULTIPLE_VIEW)
-        y_top = max(y_top, _PC_RSI_SURVEY_TARGET_X * 1.3)
-    else:
-        x_end, y_top = cur['date'], _PC_RSI_SURVEY_TARGET_X * 1.3
-
-    for r in rows:
-        if 'lo' in r:
+                x=hdates, y=trend.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"Fitted trend (gain over no AI 2×:{dt:.0f}d)",
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: ~{y:.1f}×"
+                           for d, y in zip(hdates, trend)],
+                hoverinfo='text'))
             fig.add_trace(go.Scatter(
-                x=[r['date'], r['date']], y=[r['lo'], r['hi']],
-                mode='lines', line=dict(color='#4F8DFD', width=1.5),
-                opacity=0.35, hoverinfo='skip', showlegend=False))
-        _est = r.get('estimated', False)
-        _metr = r.get('metr', False)
-        fig.add_trace(go.Scatter(
-            x=[r['date']], y=[r['uplift']], mode='markers+text',
-            marker=dict(color='white' if _est else '#4F8DFD', size=13,
-                        symbol='triangle-up' if _metr else 'circle',
-                        line=dict(color='#4F8DFD', width=2) if _est
-                        else dict(color='white', width=2)),
-            text=[r['name'] + (' (est.)' if _est else '')],
-            # METR's readings label to the right, so two rounds on one date
-            # don't collide; Model 4's goes above, clear of today's diamond.
-            textposition=_RSI_SURVEY_LABEL_AT.get(
-                r['name'], 'bottom center' if _est else
-                'middle right' if _metr else 'top center'),
-            textfont=dict(size=10, color='#999999' if _est else '#1a1a2e'),
-            hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
-                      f"~{r['uplift']:g}× output vs no AI<br>{r['note']}",
-            hoverinfo='text', showlegend=False))
+                x=pdates, y=pct[50].tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5, dash='dash'),
+                name='Median projection',
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: ~{y:.1f}×"
+                           for d, y in zip(pdates, pct[50])],
+                hoverinfo='text'))
+            x_end = pdates[-1]
+            y_top = min(float(pct[95][-1]), _PC_RSI_SURVEY_TARGET_X * _RSI_MULTIPLE_VIEW)
+            y_top = max(y_top, _PC_RSI_SURVEY_TARGET_X * 1.3)
+        else:
+            x_end, y_top = cur['date'], _PC_RSI_SURVEY_TARGET_X * 1.3
 
-    fig.add_hline(y=_PC_RSI_SURVEY_TARGET_X,
-                  line=dict(color='#e74c3c', width=1.5, dash='dash'))
-    # By hand, not `annotation_text`: on a log axis plotly reads an
-    # annotation's y as the exponent and parks the label off the chart.
-    fig.add_annotation(
-        xref='x domain', x=0.01, y=np.log10(_PC_RSI_SURVEY_TARGET_X),
-        yanchor='bottom', xanchor='left', showarrow=False,
-        text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}× — the milestone bar, " + (
-            f"passed by {cur['name']}" if cur['uplift'] >= _PC_RSI_SURVEY_TARGET_X
-            else f"{np.log2(_PC_RSI_SURVEY_TARGET_X / cur['uplift']):.1f} "
-                 "doublings past the last round"),
-        font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, 'Median projection', lambda v: f"~{v:.1f}×", label="trend", log=True)
-    _add_today_vline(fig)
-    fig.update_layout(
-        height=480, margin=dict(l=50, r=60, t=40, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Survey round",
-                   range=[base - timedelta(days=30), max(x_end, rows[-1]['date'])],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Self-reported output vs. no AI assistance",
-                   type='log', range=[np.log10(0.8), np.log10(y_top * 1.3)],
-                   # Decades only, as on the merged-code chart: the default
-                   # log axis labels every minor tick and buries them.
-                   dtick=1, ticksuffix='x',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+        for r in rows:
+            if 'lo' in r:
+                fig.add_trace(go.Scatter(
+                    x=[r['date'], r['date']], y=[r['lo'], r['hi']],
+                    mode='lines', line=dict(color='#4F8DFD', width=1.5),
+                    opacity=0.35, hoverinfo='skip', showlegend=False))
+            _est = r.get('estimated', False)
+            _metr = r.get('metr', False)
+            fig.add_trace(go.Scatter(
+                x=[r['date']], y=[r['uplift']], mode='markers+text',
+                marker=dict(color='white' if _est else '#4F8DFD', size=13,
+                            symbol='triangle-up' if _metr else 'circle',
+                            line=dict(color='#4F8DFD', width=2) if _est
+                            else dict(color='white', width=2)),
+                text=[r['name'] + (' (est.)' if _est else '')],
+                # METR's readings label to the right, so two rounds on one date
+                # don't collide; Model 4's goes above, clear of today's diamond.
+                textposition=_RSI_SURVEY_LABEL_AT.get(
+                    r['name'], 'bottom center' if _est else
+                    'middle right' if _metr else 'top center'),
+                textfont=dict(size=10, color='#999999' if _est else '#1a1a2e'),
+                hovertext=f"{r['name']}<br>{r['date'].strftime('%b %Y')}<br>"
+                          f"~{r['uplift']:g}× output vs no AI<br>{r['note']}",
+                hoverinfo='text', showlegend=False))
+
+        fig.add_hline(y=_PC_RSI_SURVEY_TARGET_X,
+                      line=dict(color='#e74c3c', width=1.5, dash='dash'))
+        # By hand, not `annotation_text`: on a log axis plotly reads an
+        # annotation's y as the exponent and parks the label off the chart.
+        fig.add_annotation(
+            xref='x domain', x=0.01, y=np.log10(_PC_RSI_SURVEY_TARGET_X),
+            yanchor='bottom', xanchor='left', showarrow=False,
+            text=f"{_PC_RSI_SURVEY_TARGET_X:.0f}× — the milestone bar, " + (
+                f"passed by {cur['name']}" if cur['uplift'] >= _PC_RSI_SURVEY_TARGET_X
+                else f"{np.log2(_PC_RSI_SURVEY_TARGET_X / cur['uplift']):.1f} "
+                     "doublings past the last round"),
+            font=dict(size=11, color='#e74c3c'))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"~{v:.1f}×", label="trend", log=True)
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=480, margin=dict(l=50, r=60, t=40, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Survey round",
+                       range=[base - timedelta(days=30), max(x_end, rows[-1]['date'])],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Self-reported output vs. no AI assistance",
+                       type='log', range=[np.log10(0.8), np.log10(y_top * 1.3)],
+                       # Decades only, as on the merged-code chart: the default
+                       # log axis labels every minor tick and buries them.
+                       dtick=1, ticksuffix='x',
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _n_rounds = len(rows)
     _fn_caption(
@@ -7901,122 +7971,124 @@ def _render_rsi_code(end_year):
     base, icpt, slope = _rsi_code_fit(rows)
     cur = rows[-1]
 
-    fig = go.Figure()
+    def _build():
+        fig = go.Figure()
 
-    if slope > 0:
-        dt = np.log(2) / slope
-        n = N_SAMPLES
-        proj_slope = np.log(2) / np.maximum(
-            _lognormal_around(dt, *_rsi_code_dt_ci(rows, dt), n=n), 1.0)
-        fitted = icpt + slope * (cur['date'] - base).days
-        start_log = np.random.normal(*_fan_start_on_trend(
-            fitted, np.log(cur['mult']), np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
+        if slope > 0:
+            dt = np.log(2) / slope
+            n = N_SAMPLES
+            proj_slope = np.log(2) / np.maximum(
+                _lognormal_around(dt, *_rsi_code_dt_ci(rows, dt), n=n), 1.0)
+            fitted = icpt + slope * (cur['date'] - base).days
+            start_log = np.random.normal(*_fan_start_on_trend(
+                fitted, np.log(cur['mult']), np.log(_RSI_CODE_POS_FACTOR) / 1.282), n)
 
-        pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
-        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
+            pdays = _fan_days(max((datetime(end_year, 12, 31) - cur['date']).days, 1))
+            pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+            pct = _fan_pctiles(start_log, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95))
 
-        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                         (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                         (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+                fig.add_trace(go.Scatter(
+                    x=pdates + pdates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    name=label, hoverinfo='skip', showlegend=True))
+
+            hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+            hdates = [base + timedelta(days=int(d)) for d in hdays]
+            hy = np.exp(icpt + slope * hdays)
             fig.add_trace(go.Scatter(
-                x=pdates + pdates[::-1],
-                y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=color, line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=True))
+                x=hdates, y=hy.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"Fitted trend (2×:{dt:.0f}d)",
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}×"
+                           for d, y in zip(hdates, hy)],
+                hoverinfo='text'))
+            fig.add_trace(go.Scatter(
+                x=pdates, y=pct[50].tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5, dash='dash'),
+                name='Median projection',
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}×"
+                           for d, y in zip(pdates, pct[50])],
+                hoverinfo='text'))
+            x_end = pdates[-1]
+            y_top = min(float(pct[95][-1]), _RSI_CODE_TARGET * _RSI_MULTIPLE_VIEW)
+            y_top = max(y_top, _RSI_CODE_TARGET * 1.3)
+        else:
+            x_end, y_top = cur['date'], _RSI_CODE_TARGET * 1.3
 
-        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
-        hdates = [base + timedelta(days=int(d)) for d in hdays]
-        hy = np.exp(icpt + slope * hdays)
+        # The quarters themselves: a light connector so 21 points read as a
+        # series, then markers — hollow grey for the unfitted baseline bars,
+        # hollow blue for the partial quarter, as the survey draws its estimate.
         fig.add_trace(go.Scatter(
-            x=hdates, y=hy.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2×:{dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}×"
-                       for d, y in zip(hdates, hy)],
-            hoverinfo='text'))
-        fig.add_trace(go.Scatter(
-            x=pdates, y=pct[50].tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5, dash='dash'),
-            name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}×"
-                       for d, y in zip(pdates, pct[50])],
-            hoverinfo='text'))
-        x_end = pdates[-1]
-        y_top = min(float(pct[95][-1]), _RSI_CODE_TARGET * _RSI_MULTIPLE_VIEW)
-        y_top = max(y_top, _RSI_CODE_TARGET * 1.3)
-    else:
-        x_end, y_top = cur['date'], _RSI_CODE_TARGET * 1.3
+            x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
+            mode='lines', line=dict(color='rgba(79,141,253,0.30)', width=1.5),
+            hoverinfo='skip', showlegend=False))
+        for grp, marker in [
+                ([r for r in rows if not r['fitted']],
+                 dict(color='#aaaaaa', size=8, symbol='circle-open',
+                      line=dict(color='#777777', width=2))),
+                ([r for r in rows if r['fitted'] and not r['partial'] and not r.get('other')],
+                 dict(color='#4F8DFD', size=11,
+                      line=dict(color='white', width=2))),
+                ([r for r in rows if r.get('other')],
+                 dict(color='#4F8DFD', size=12, symbol='triangle-up',
+                      line=dict(color='white', width=1))),
+                ([r for r in rows if r['partial']],
+                 dict(color='white', size=11,
+                      line=dict(color='#4F8DFD', width=2)))]:
+            if not grp:
+                continue
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in grp], y=[r['mult'] for r in grp],
+                mode='markers', marker=marker,
+                hovertext=[_rsi_code_hover(r) for r in grp],
+                hoverinfo='text', showlegend=False))
+        for r in rows:
+            if r.get('other'):
+                fig.add_annotation(x=r['date'], y=np.log10(r['mult']), text=r['other'],
+                                   showarrow=False, xanchor='right', xshift=-10,
+                                   font=dict(size=11))
 
-    # The quarters themselves: a light connector so 21 points read as a
-    # series, then markers — hollow grey for the unfitted baseline bars,
-    # hollow blue for the partial quarter, as the survey draws its estimate.
-    fig.add_trace(go.Scatter(
-        x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
-        mode='lines', line=dict(color='rgba(79,141,253,0.30)', width=1.5),
-        hoverinfo='skip', showlegend=False))
-    for grp, marker in [
-            ([r for r in rows if not r['fitted']],
-             dict(color='#aaaaaa', size=8, symbol='circle-open',
-                  line=dict(color='#777777', width=2))),
-            ([r for r in rows if r['fitted'] and not r['partial'] and not r.get('other')],
-             dict(color='#4F8DFD', size=11,
-                  line=dict(color='white', width=2))),
-            ([r for r in rows if r.get('other')],
-             dict(color='#4F8DFD', size=12, symbol='triangle-up',
-                  line=dict(color='white', width=1))),
-            ([r for r in rows if r['partial']],
-             dict(color='white', size=11,
-                  line=dict(color='#4F8DFD', width=2)))]:
-        if not grp:
-            continue
-        fig.add_trace(go.Scatter(
-            x=[r['date'] for r in grp], y=[r['mult'] for r in grp],
-            mode='markers', marker=marker,
-            hovertext=[_rsi_code_hover(r) for r in grp],
-            hoverinfo='text', showlegend=False))
-    for r in rows:
-        if r.get('other'):
-            fig.add_annotation(x=r['date'], y=np.log10(r['mult']), text=r['other'],
-                               showarrow=False, xanchor='right', xshift=-10,
-                               font=dict(size=11))
+        fig.add_hline(y=_RSI_CODE_TARGET,
+                      line=dict(color='#e74c3c', width=1.5, dash='dash'))
+        # The label is added by hand rather than through `annotation_text`: on a
+        # log axis plotly reads an annotation's y as the exponent, which parks
+        # `annotation_text` at 10^20 and off the chart.
+        fig.add_annotation(
+            xref='x domain', x=0.01, y=np.log10(_RSI_CODE_TARGET),
+            yanchor='bottom', xanchor='left', showarrow=False,
+            text=f"{_RSI_CODE_TARGET:.0f}× — one engineer merging what "
+                 f"{_RSI_CODE_TARGET:.0f} did before 2025",
+            font=dict(size=11, color='#e74c3c'))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×", label="trend", log=True)
+        _add_today_vline(fig)
 
-    fig.add_hline(y=_RSI_CODE_TARGET,
-                  line=dict(color='#e74c3c', width=1.5, dash='dash'))
-    # The label is added by hand rather than through `annotation_text`: on a
-    # log axis plotly reads an annotation's y as the exponent, which parks
-    # `annotation_text` at 10^20 and off the chart.
-    fig.add_annotation(
-        xref='x domain', x=0.01, y=np.log10(_RSI_CODE_TARGET),
-        yanchor='bottom', xanchor='left', showarrow=False,
-        text=f"{_RSI_CODE_TARGET:.0f}× — one engineer merging what "
-             f"{_RSI_CODE_TARGET:.0f} did before 2025",
-        font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×", label="trend", log=True)
-    _add_today_vline(fig)
-
-    fig.update_layout(
-        height=480, margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Quarter",
-                   range=[_RSI_CODE_CHART_FROM, max(x_end, cur['date'])],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Lines merged per active contributor "
-                         "(× pre-2025 average)",
-                   type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
-                   # Decades only: the default log axis labels every minor
-                   # tick, and three decades of them bury the four that matter.
-                   dtick=1, ticksuffix='x',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        # Top left, above the target label: the series climbs left to right,
-        # so the fan owns the bottom right corner too by the end.
-        legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+        fig.update_layout(
+            height=480, margin=dict(l=50, r=60, t=50, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Quarter",
+                       range=[_RSI_CODE_CHART_FROM, max(x_end, cur['date'])],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Lines merged per active contributor "
+                             "(× pre-2025 average)",
+                       type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
+                       # Decades only: the default log axis labels every minor
+                       # tick, and three decades of them bury the four that matter.
+                       dtick=1, ticksuffix='x',
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            # Top left, above the target label: the series climbs left to right,
+            # so the fan owns the bottom right corner too by the end.
+            legend=dict(yanchor='top', y=0.99, xanchor='left', x=0.01,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _fn_caption(
         "Output volume, not research progress; the last quarter is partial "
@@ -8097,62 +8169,64 @@ def _render_rsi_experiments(end_year):
     base, icpt, slope = _rsi_experiment_fit(rows)
     cur = rows[-1]['date']
     end = max(datetime(end_year, 12, 31), cur)
-    fig = go.Figure()
-    draws = _rsi_experiment_draws(rows)
-    y_top = _RSI_EXPERIMENT_TARGET * 1.3
-    if draws is not None:
-        starts, slopes = draws
-        days = _fan_days((end - cur).days)
-        dates = [cur + timedelta(days=float(d)) for d in days]
-        pct = _fan_pctiles(starts, slopes, days, (5, 10, 25, 50, 75, 90, 95))
-        for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
+    def _build():
+        fig = go.Figure()
+        draws = _rsi_experiment_draws(rows)
+        y_top = _RSI_EXPERIMENT_TARGET * 1.3
+        if draws is not None:
+            starts, slopes = draws
+            days = _fan_days((end - cur).days)
+            dates = [cur + timedelta(days=float(d)) for d in days]
+            pct = _fan_pctiles(starts, slopes, days, (5, 10, 25, 50, 75, 90, 95))
+            for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
+                fig.add_trace(go.Scatter(
+                    x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=f'rgba(52,152,219,{alpha})',
+                    line=dict(width=0), name=f'{hi - lo}% CI', hoverinfo='skip'))
             fig.add_trace(go.Scatter(
-                x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=f'rgba(52,152,219,{alpha})',
-                line=dict(width=0), name=f'{hi - lo}% CI', hoverinfo='skip'))
+                x=dates, y=pct[50], mode='lines', name='Median projection',
+                line=dict(color='#2c3e50', dash='dash'),
+                hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}×<extra></extra>'))
+            fit_dates = [r['date'] for r in rows]
+            fig.add_trace(go.Scatter(
+                x=fit_dates,
+                y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])),
+                mode='lines', name=f'Fitted trend (2×:{np.log(2) / slope:.0f}d)',
+                line=dict(color='#2c3e50'), hoverinfo='skip'))
+            y_top = max(y_top, float(pct[95][-1]))
         fig.add_trace(go.Scatter(
-            x=dates, y=pct[50], mode='lines', name='Median projection',
-            line=dict(color='#2c3e50', dash='dash'),
-            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.2f}×<extra></extra>'))
-        fit_dates = [r['date'] for r in rows]
-        fig.add_trace(go.Scatter(
-            x=fit_dates,
-            y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])),
-            mode='lines', name=f'Fitted trend (2×:{np.log(2) / slope:.0f}d)',
-            line=dict(color='#2c3e50'), hoverinfo='skip'))
-        y_top = max(y_top, float(pct[95][-1]))
-    fig.add_trace(go.Scatter(
-        x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
-        mode='lines+markers', name='OpenAI observations',
-        line=dict(color='#4F8DFD'),
-        hovertemplate='Week: %{x|%b %d, %Y}<br>Experiments / active experimenter: '
-                      '%{y:.2f}× (2025 = 1×)<extra></extra>'))
-    fig.add_hline(y=_RSI_EXPERIMENT_TARGET,
-                  line=dict(color='#e74c3c', dash='dash'))
-    fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
-                       text='10× the 2025 baseline', showarrow=False,
-                       xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
-    # Where the trend stands today, not Takeoff's pace (that is METR's, set apart).
-    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
-                       label="trend", log=True)
-    _add_today_vline(fig)
-    fig.update_layout(
-        height=480, margin=dict(l=50, r=60, t=50, b=40),
-        xaxis=dict(title='Week', range=[base - timedelta(days=7), end],
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
-                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
-        yaxis=dict(title='Experiments per active experimenter (× 2025)',
-                   type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
-                   dtick=1, ticksuffix='x',
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
-                   gridcolor='rgba(0,0,0,0.12)', zeroline=False),
-        hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
-        font=dict(color='#1a1a2e'),
-        legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
-                    font=dict(color='#1a1a2e')),
-        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
-                        bordercolor='#5c6370'))
-    st.plotly_chart(fig, width='stretch', theme=None)
+            x=[r['date'] for r in rows], y=[r['mult'] for r in rows],
+            mode='lines+markers', name='OpenAI observations',
+            line=dict(color='#4F8DFD'),
+            hovertemplate='Week: %{x|%b %d, %Y}<br>Experiments / active experimenter: '
+                          '%{y:.2f}× (2025 = 1×)<extra></extra>'))
+        fig.add_hline(y=_RSI_EXPERIMENT_TARGET,
+                      line=dict(color='#e74c3c', dash='dash'))
+        fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_EXPERIMENT_TARGET),
+                           text='10× the 2025 baseline', showarrow=False,
+                           xanchor='left', yanchor='bottom', font=dict(color='#e74c3c'))
+        # Where the trend stands today, not Takeoff's pace (that is METR's, set apart).
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
+                           label="trend", log=True)
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=480, margin=dict(l=50, r=60, t=50, b=40),
+            xaxis=dict(title='Week', range=[base - timedelta(days=7), end],
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            yaxis=dict(title='Experiments per active experimenter (× 2025)',
+                       type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
+                       dtick=1, ticksuffix='x',
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
+            font=dict(color='#1a1a2e'),
+            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
+                        font=dict(color='#1a1a2e')),
+            hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
+                            bordercolor='#5c6370'))
+        return fig
+    st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
     _fn_caption(
         f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
         "‘Experiment velocity has increased’; values read from all 32 tooltips. "
@@ -8444,110 +8518,112 @@ def _render_rsi_metr():
          "redacted most of the evidence METR found most informative."))
     eci = {m['version']: m for m in _eci_rows_by_version()}
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    figure = go.Figure()
-
-    def dots(pts, name, color, symbol, size=9, group=None, show=True, ys=None,
-             what="AECI", note="", **kw):
-        if pts and pts[0].get('produced_lo') and ys is None:
-            # Each model's plausible end-of-training window, drawn as a segment
-            # (plotly draws no error bars on a date axis).
-            xs, yv = [], []
-            for r in pts:
-                xs += [r['produced_lo'], r['produced_hi'], None]
-                yv += [r['aeci'], r['aeci'], None]
-            figure.add_trace(go.Scatter(
-                x=xs, y=yv, mode='lines', line=dict(color=color, width=2),
-                opacity=0.45, hoverinfo='skip', showlegend=False, legendgroup=group or name))
-        figure.add_trace(go.Scatter(
-            x=[r['date'] for r in pts], y=ys or [r['aeci'] for r in pts], mode='markers',
-            name=name, legendgroup=group or name, showlegend=show,
-            marker=dict(color=color, symbol=symbol, size=size,
-                        line=dict(width=1.5, color=color)),
-            # Internal models: "(internal)" after the name, "~" on the date, since
-            # their dates are estimates.
-            # Anthropic's points sit at an internal date (estimated end of
-            # training), so every one reads "(internal)" and "~"; other labs'
-            # points are public releases.
-            hovertext=[(f"{r['model']} (internal)<br>Training ends ~{r['date']:%b %d, %Y}"
-                        if r.get('produced') else f"{r['model']}<br>Released {r['date']:%b %d, %Y}")
-                       + f"<br>{what} {y:.1f}{note}"
-                       for r, y in zip(pts, ys or [r['aeci'] for r in pts])],
-            hoverinfo='text', **kw))
-
-    # One meaning per channel: shape is the index (circle AECI, square Epoch
-    # ECI), colour the models (green public Claude, orange internal Claude,
-    # blue other labs); grey diamonds are only today's estimates, as elsewhere.
-    green, orange, blue = '#1a7048', '#d8774f', '#5b8fd9'
-    dots([r for r in anth if r['kind'] == 'frontier'], "Claude public: AECI",
-         green, 'circle', group='pub')
-    dots([r for r in anth if r['kind'] == 'not_frontier'], "Claude public: AECI",
-         green, 'circle-open', group='pub', show=False)
-    dots([r for r in anth if r['kind'] == 'internal'], "Claude internal: AECI",
-         orange, 'circle')
-    produced = {r['model']: r['date'] for r in anth}
-    projected = [dict(r, date=produced.get(r['model'], r['date']), produced=True)
-                 for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
-    dots(projected, "Claude internal: ECI, projected", orange, 'square-open',
-         ys=[r['eci'] for r in projected],
-         what="Projected ECI", note=" (AECI less Claude's gap at that date; bar: 80%)",
-         error_y=dict(type='data', array=[1.2816 * r['sd'] for r in projected],
-                      color='rgba(216,119,79,0.45)', thickness=1, width=0))
-    matched = [(r, eci[r['epoch_model']]) for r in anth if r['epoch_model'] in eci]
-    figure.add_trace(go.Scatter(
-        x=[e['date'] for _, e in matched], y=[e['eci'] for _, e in matched],
-        mode='markers', name="Claude public: ECI",
-        marker=dict(color=green, symbol='square', size=7),
-        text=[f"{r['model']}: ECI {e['eci']:.1f} (AECI {r['aeci']:.1f})" for r, e in matched],
-        hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<extra></extra>'))
-    others = [r for r in rows if r['chart'] == 'all_developers' and r['kind'] == 'other']
-    dots(others, "Other labs: AECI", blue, 'circle', size=6)
-    first = min(r['date'] for r in anth + others)
-    last = max(r['date'] for r in anth)
-    fit_name = (f"Fit by end of training: +{fit['pre']:.0f} → +{fit['post']:.0f} AECI a year "
-                f"({fit['ratio']:.2f}×; METR's, by availability: 1.90×)")
-    for (a, b, slope, dash, color, show) in (
-            (first, _METR_BREAK, fit['pre'], None, '#2c3e50', True),
-            (_METR_BREAK, last, fit['post'], None, '#2c3e50', False),
-            (last, today, fit['post'], 'dot', '#2c3e50', False),
-            (_METR_BREAK, today, fit['pre'], 'dash', '#b0b7bb', False)):
-        ys = [fit['icpt'] + slope * (d - _METR_BREAK).days / 365.25 for d in (a, b)]
-        figure.add_trace(go.Scatter(
-            x=[a, b], y=ys, mode='lines', hoverinfo='skip', legendgroup='fit',
-            name=fit_name if show else ('fit carried to today' if dash == 'dot' else ''),
-            showlegend=show, line=dict(color=color, dash=dash, width=2)))
-    # Where the Takeoff model's ECI projection starts: today's trained frontier.
     eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
-    tk_now = _tk_trained_now(eci_today, today)
-    aeci_now = fit['icpt'] + fit['post'] * (today - _METR_BREAK).days / 365.25
-    # One today marker: where the takeoff model's ECI starts. METR's AECI
-    # trend carried to today is labelled at the end of its dotted line.
-    # Today's estimates in the chart's own shapes: a circle on METR's AECI trend,
-    # a square where the takeoff model's ECI starts.
-    figure.add_trace(go.Scatter(
-        x=[today], y=[aeci_now], mode='markers+text', showlegend=False,
-        text=[f"today (est.)<br>AECI {aeci_now:.0f}"], textposition='top right',
-        textfont=dict(size=11), marker=dict(symbol='circle-open', size=11,
-                                            color='#2c3e50', line=dict(width=2)),
-        hovertemplate="METR's post-break AECI line carried to today<extra></extra>"))
-    figure.add_trace(go.Scatter(
-        x=[today], y=[tk_now], mode='markers+text', showlegend=False,
-        text=[f"today (est.)<br>ECI {tk_now:.0f}<br>model starts"],
-        textposition='bottom right', textfont=dict(size=11),
-        marker=dict(symbol='square-open', size=11, color='#2c3e50', line=dict(width=2)),
-        hovertemplate="Where the takeoff model's ECI starts: the latest US release "
-                      "plus the US ship lag at today's ECI growth, i.e. the best "
-                      "model as trained today<extra></extra>"))
-    _add_today_vline(figure)
-    figure.update_layout(
-        height=480, margin=dict(l=50, r=20, t=20, b=20),
-        xaxis=dict(title='Training ends (internal) date',
-                   range=[first - timedelta(days=20), today + timedelta(days=130)],
-                   gridcolor='rgba(0,0,0,0.10)'),
-        yaxis=dict(title='Capabilities index (AECI or ECI)', gridcolor='rgba(0,0,0,0.10)'),
-        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
-        legend=dict(orientation='h', x=0, y=-0.14, yanchor='top', font=dict(size=11)),
-        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
-    st.plotly_chart(figure, width='stretch', theme=None)
+    def _build():
+        figure = go.Figure()
+
+        def dots(pts, name, color, symbol, size=9, group=None, show=True, ys=None,
+                 what="AECI", note="", **kw):
+            if pts and pts[0].get('produced_lo') and ys is None:
+                # Each model's plausible end-of-training window, drawn as a segment
+                # (plotly draws no error bars on a date axis).
+                xs, yv = [], []
+                for r in pts:
+                    xs += [r['produced_lo'], r['produced_hi'], None]
+                    yv += [r['aeci'], r['aeci'], None]
+                figure.add_trace(go.Scatter(
+                    x=xs, y=yv, mode='lines', line=dict(color=color, width=2),
+                    opacity=0.45, hoverinfo='skip', showlegend=False, legendgroup=group or name))
+            figure.add_trace(go.Scatter(
+                x=[r['date'] for r in pts], y=ys or [r['aeci'] for r in pts], mode='markers',
+                name=name, legendgroup=group or name, showlegend=show,
+                marker=dict(color=color, symbol=symbol, size=size,
+                            line=dict(width=1.5, color=color)),
+                # Internal models: "(internal)" after the name, "~" on the date, since
+                # their dates are estimates.
+                # Anthropic's points sit at an internal date (estimated end of
+                # training), so every one reads "(internal)" and "~"; other labs'
+                # points are public releases.
+                hovertext=[(f"{r['model']} (internal)<br>Training ends ~{r['date']:%b %d, %Y}"
+                            if r.get('produced') else f"{r['model']}<br>Released {r['date']:%b %d, %Y}")
+                           + f"<br>{what} {y:.1f}{note}"
+                           for r, y in zip(pts, ys or [r['aeci'] for r in pts])],
+                hoverinfo='text', **kw))
+
+        # One meaning per channel: shape is the index (circle AECI, square Epoch
+        # ECI), colour the models (green public Claude, orange internal Claude,
+        # blue other labs); grey diamonds are only today's estimates, as elsewhere.
+        green, orange, blue = '#1a7048', '#d8774f', '#5b8fd9'
+        dots([r for r in anth if r['kind'] == 'frontier'], "Claude public: AECI",
+             green, 'circle', group='pub')
+        dots([r for r in anth if r['kind'] == 'not_frontier'], "Claude public: AECI",
+             green, 'circle-open', group='pub', show=False)
+        dots([r for r in anth if r['kind'] == 'internal'], "Claude internal: AECI",
+             orange, 'circle')
+        produced = {r['model']: r['date'] for r in anth}
+        projected = [dict(r, date=produced.get(r['model'], r['date']), produced=True)
+                     for r in _metr_on_eci(rows) if r['projected'] and r['kind'] == 'internal']
+        dots(projected, "Claude internal: ECI, projected", orange, 'square-open',
+             ys=[r['eci'] for r in projected],
+             what="Projected ECI", note=" (AECI less Claude's gap at that date; bar: 80%)",
+             error_y=dict(type='data', array=[1.2816 * r['sd'] for r in projected],
+                          color='rgba(216,119,79,0.45)', thickness=1, width=0))
+        matched = [(r, eci[r['epoch_model']]) for r in anth if r['epoch_model'] in eci]
+        figure.add_trace(go.Scatter(
+            x=[e['date'] for _, e in matched], y=[e['eci'] for _, e in matched],
+            mode='markers', name="Claude public: ECI",
+            marker=dict(color=green, symbol='square', size=7),
+            text=[f"{r['model']}: ECI {e['eci']:.1f} (AECI {r['aeci']:.1f})" for r, e in matched],
+            hovertemplate='%{text}<br>Released %{x|%b %d, %Y}<extra></extra>'))
+        others = [r for r in rows if r['chart'] == 'all_developers' and r['kind'] == 'other']
+        dots(others, "Other labs: AECI", blue, 'circle', size=6)
+        first = min(r['date'] for r in anth + others)
+        last = max(r['date'] for r in anth)
+        fit_name = (f"Fit by end of training: +{fit['pre']:.0f} → +{fit['post']:.0f} AECI a year "
+                    f"({fit['ratio']:.2f}×; METR's, by availability: 1.90×)")
+        for (a, b, slope, dash, color, show) in (
+                (first, _METR_BREAK, fit['pre'], None, '#2c3e50', True),
+                (_METR_BREAK, last, fit['post'], None, '#2c3e50', False),
+                (last, today, fit['post'], 'dot', '#2c3e50', False),
+                (_METR_BREAK, today, fit['pre'], 'dash', '#b0b7bb', False)):
+            ys = [fit['icpt'] + slope * (d - _METR_BREAK).days / 365.25 for d in (a, b)]
+            figure.add_trace(go.Scatter(
+                x=[a, b], y=ys, mode='lines', hoverinfo='skip', legendgroup='fit',
+                name=fit_name if show else ('fit carried to today' if dash == 'dot' else ''),
+                showlegend=show, line=dict(color=color, dash=dash, width=2)))
+        # Where the Takeoff model's ECI projection starts: today's trained frontier.
+        tk_now = _tk_trained_now(eci_today, today)
+        aeci_now = fit['icpt'] + fit['post'] * (today - _METR_BREAK).days / 365.25
+        # One today marker: where the takeoff model's ECI starts. METR's AECI
+        # trend carried to today is labelled at the end of its dotted line.
+        # Today's estimates in the chart's own shapes: a circle on METR's AECI trend,
+        # a square where the takeoff model's ECI starts.
+        figure.add_trace(go.Scatter(
+            x=[today], y=[aeci_now], mode='markers+text', showlegend=False,
+            text=[f"today (est.)<br>AECI {aeci_now:.0f}"], textposition='top right',
+            textfont=dict(size=11), marker=dict(symbol='circle-open', size=11,
+                                                color='#2c3e50', line=dict(width=2)),
+            hovertemplate="METR's post-break AECI line carried to today<extra></extra>"))
+        figure.add_trace(go.Scatter(
+            x=[today], y=[tk_now], mode='markers+text', showlegend=False,
+            text=[f"today (est.)<br>ECI {tk_now:.0f}<br>model starts"],
+            textposition='bottom right', textfont=dict(size=11),
+            marker=dict(symbol='square-open', size=11, color='#2c3e50', line=dict(width=2)),
+            hovertemplate="Where the takeoff model's ECI starts: the latest US release "
+                          "plus the US ship lag at today's ECI growth, i.e. the best "
+                          "model as trained today<extra></extra>"))
+        _add_today_vline(figure)
+        figure.update_layout(
+            height=480, margin=dict(l=50, r=20, t=20, b=20),
+            xaxis=dict(title='Training ends (internal) date',
+                       range=[first - timedelta(days=20), today + timedelta(days=130)],
+                       gridcolor='rgba(0,0,0,0.10)'),
+            yaxis=dict(title='Capabilities index (AECI or ECI)', gridcolor='rgba(0,0,0,0.10)'),
+            plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
+            legend=dict(orientation='h', x=0, y=-0.14, yanchor='top', font=dict(size=11)),
+            hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
+        return figure
+    st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
     offsets = _metr_offsets(rows)
     recent = [o['offset'] for o in offsets if o['anthropic'] and o['date'] >= datetime(2026, 4, 1)]
     gap_others = [o['offset'] for o in offsets
@@ -8603,66 +8679,68 @@ def _tk_render_pace_so_far(today):
         ("the 2024–25 average",
          "The US frontier on Epoch's ECI, Jan 2024 to Dec 2025. METR's own ~2× is a "
          "different ratio: total AECI growth against Anthropic's slow 2024–25."))
-    fig = go.Figure()
-    fig.add_hline(y=1.0, line=dict(color='#bbb', width=1))
-    grid_end = today
-    series = []
-    d, v = _metr_pace_series()
-    series.append(("Best US model as trained, any lab: the model's input",
-                   d, v, '#c0392b', 3.5, True))
-    anth = sorted((r['date'], r['eci']) for r in _metr_on_eci() if r['kind'] != 'not_frontier')
-    series.append(("Anthropic's best, internal included", [a for a, _ in anth],
-                   [b for _, b in anth], '#d8774f', 2, False))
-    fr = [m for m in _eci_entity_data("US best")[1] if m['date'] >= _METR_WINDOW_FROM]
-    series.append(("Best public US model, any lab", [m['date'] for m in fr],
-                   [m['eci_score'] for m in fr], '#95a5a6', 2, False))
-    for label, dates, vals, color, width, band in series:
-        last = min(dates[-1], grid_end)
-        grid = [_TK_PACE_BASE[0] + timedelta(days=int(k))
-                for k in range(0, (last - _TK_PACE_BASE[0]).days + 1, 14)]
-        est = _metr_local_slope(dates, vals, grid)
-        mid = [pace(m) for m, _ in est]
-        if band:
-            lo = [pace(m - 1.2816 * e) for m, e in est]
-            hi = [pace(m + 1.2816 * e) for m, e in est]
-            fig.add_trace(go.Scatter(
-                x=grid + grid[::-1], y=hi + lo[::-1], fill='toself', mode='lines',
-                fillcolor='rgba(192,57,43,0.12)', line=dict(width=0),
-                hoverinfo='skip', showlegend=False))
-        if band and grid[-1] < today:
-            # From the latest model to today: the line's last value carried
-            # flat, dotted, to the diamond that is the model's start.
-            fig.add_trace(go.Scatter(
-                x=[grid[-1], today], y=[mid[-1], mid[-1]], mode='lines',
-                line=dict(color=color, width=2, dash='dot'), hoverinfo='skip',
-                showlegend=False))
-        fig.add_trace(go.Scatter(
-            x=grid, y=mid, mode='lines', name=label,
-            line=dict(color=color, width=width, dash=None if band else 'dot'),
-            hovertemplate=f"{label}<br>%{{x|%b %Y}}: %{{y:.2f}}× the 2024–25 average"
-                          "<extra></extra>"))
     eci_today = float(st.session_state.get("tk_eci_today", _TK_ECI_TODAY))
-    now = pace(eci_today)
-    fig.add_trace(go.Scatter(
-        x=[today], y=[now], mode='markers+text', showlegend=False,
-        text=[f"today (est.) {now:.2f}×: the model's start"], textposition='bottom left',
-        textfont=dict(size=12),
-        marker=dict(symbol='diamond', size=13, color=_TK_PACE_COLOR,
-                    line=dict(color='white', width=1)),
-        hovertemplate=f"The model's pace today: {eci_today:g} ECI points a year "
-                      f"(*Today's ECI growth*) = {now:.2f}×<extra></extra>"))
-    _add_today_vline(fig)
-    fig.update_layout(
-        height=340, margin=dict(l=50, r=30, t=20, b=20),
-        xaxis=dict(title='Date', range=[_TK_PACE_BASE[0] - timedelta(days=20),
-                                        today + timedelta(days=30)],
-                   gridcolor='rgba(0,0,0,0.10)'),
-        yaxis=dict(title='Research pace (× 2024–25 average)', rangemode='tozero',
-                   gridcolor='rgba(0,0,0,0.10)'),
-        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
-        legend=dict(orientation='h', x=0, y=-0.22, yanchor='top', font=dict(size=11)),
-        hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
-    st.plotly_chart(fig, width='stretch', theme=None)
+    def _build():
+        fig = go.Figure()
+        fig.add_hline(y=1.0, line=dict(color='#bbb', width=1))
+        grid_end = today
+        series = []
+        d, v = _metr_pace_series()
+        series.append(("Best US model as trained, any lab: the model's input",
+                       d, v, '#c0392b', 3.5, True))
+        anth = sorted((r['date'], r['eci']) for r in _metr_on_eci() if r['kind'] != 'not_frontier')
+        series.append(("Anthropic's best, internal included", [a for a, _ in anth],
+                       [b for _, b in anth], '#d8774f', 2, False))
+        fr = [m for m in _eci_entity_data("US best")[1] if m['date'] >= _METR_WINDOW_FROM]
+        series.append(("Best public US model, any lab", [m['date'] for m in fr],
+                       [m['eci_score'] for m in fr], '#95a5a6', 2, False))
+        for label, dates, vals, color, width, band in series:
+            last = min(dates[-1], grid_end)
+            grid = [_TK_PACE_BASE[0] + timedelta(days=int(k))
+                    for k in range(0, (last - _TK_PACE_BASE[0]).days + 1, 14)]
+            est = _metr_local_slope(dates, vals, grid)
+            mid = [pace(m) for m, _ in est]
+            if band:
+                lo = [pace(m - 1.2816 * e) for m, e in est]
+                hi = [pace(m + 1.2816 * e) for m, e in est]
+                fig.add_trace(go.Scatter(
+                    x=grid + grid[::-1], y=hi + lo[::-1], fill='toself', mode='lines',
+                    fillcolor='rgba(192,57,43,0.12)', line=dict(width=0),
+                    hoverinfo='skip', showlegend=False))
+            if band and grid[-1] < today:
+                # From the latest model to today: the line's last value carried
+                # flat, dotted, to the diamond that is the model's start.
+                fig.add_trace(go.Scatter(
+                    x=[grid[-1], today], y=[mid[-1], mid[-1]], mode='lines',
+                    line=dict(color=color, width=2, dash='dot'), hoverinfo='skip',
+                    showlegend=False))
+            fig.add_trace(go.Scatter(
+                x=grid, y=mid, mode='lines', name=label,
+                line=dict(color=color, width=width, dash=None if band else 'dot'),
+                hovertemplate=f"{label}<br>%{{x|%b %Y}}: %{{y:.2f}}× the 2024–25 average"
+                              "<extra></extra>"))
+        now = pace(eci_today)
+        fig.add_trace(go.Scatter(
+            x=[today], y=[now], mode='markers+text', showlegend=False,
+            text=[f"today (est.) {now:.2f}×: the model's start"], textposition='bottom left',
+            textfont=dict(size=12),
+            marker=dict(symbol='diamond', size=13, color=_TK_PACE_COLOR,
+                        line=dict(color='white', width=1)),
+            hovertemplate=f"The model's pace today: {eci_today:g} ECI points a year "
+                          f"(*Today's ECI growth*) = {now:.2f}×<extra></extra>"))
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=340, margin=dict(l=50, r=30, t=20, b=20),
+            xaxis=dict(title='Date', range=[_TK_PACE_BASE[0] - timedelta(days=20),
+                                            today + timedelta(days=30)],
+                       gridcolor='rgba(0,0,0,0.10)'),
+            yaxis=dict(title='Research pace (× 2024–25 average)', rangemode='tozero',
+                       gridcolor='rgba(0,0,0,0.10)'),
+            plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#1a1a2e'),
+            legend=dict(orientation='h', x=0, y=-0.22, yanchor='top', font=dict(size=11)),
+            hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e'))
+        return fig
+    st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
     _fn_caption(
         f"Source: [METR]({_METR_ACCEL_SOURCE_URL}) and Epoch's ECI, each climb smoothed "
         "over ~6 months. The model starts from the thick line.",
@@ -8783,90 +8861,92 @@ def _render_rsi_direction(end_year):
     fit_dt = np.log(2) / slope if slope > 0 else 0.0
     cur = frontier[-1]
 
-    fig = go.Figure()
+    def _build():
+        fig = go.Figure()
 
-    if slope > 0:
-        n = N_SAMPLES
-        proj_slope = np.log(2) / np.maximum(
-            _lognormal_around(fit_dt, *_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
-        start_logit = np.random.normal(*_rsi_dir_start(frontier), n)
+        if slope > 0:
+            n = N_SAMPLES
+            proj_slope = np.log(2) / np.maximum(
+                _lognormal_around(fit_dt, *_rsi_dir_dt_ci(frontier, round(fit_dt)), n=n), 1.0)
+            start_logit = np.random.normal(*_rsi_dir_start(frontier), n)
 
-        end_date = datetime(end_year, 12, 31)
-        pdays = _fan_days(max((end_date - cur['date']).days, 1))
-        pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
-        pct = _fan_pctiles(start_logit, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95),
-                           logit=True)
+            end_date = datetime(end_year, 12, 31)
+            pdays = _fan_days(max((end_date - cur['date']).days, 1))
+            pdates = [cur['date'] + timedelta(days=int(d)) for d in pdays]
+            pct = _fan_pctiles(start_logit, proj_slope, pdays, (5, 10, 25, 50, 75, 90, 95),
+                               logit=True)
 
-        for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
-                                     (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
-                                     (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+            for lo, hi, color, label in [(5, 95, 'rgba(52,152,219,0.10)', '90% CI'),
+                                         (10, 90, 'rgba(52,152,219,0.18)', '80% CI'),
+                                         (25, 75, 'rgba(52,152,219,0.28)', '50% CI')]:
+                fig.add_trace(go.Scatter(
+                    x=pdates + pdates[::-1],
+                    y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=color, line=dict(width=0),
+                    name=label, hoverinfo='skip', showlegend=True))
+
+            hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
+            hdates = [base + timedelta(days=int(d)) for d in hdays]
+            hy = _inv_logit(intercept + slope * hdays) * 100
             fig.add_trace(go.Scatter(
-                x=pdates + pdates[::-1],
-                y=list(pct[hi]) + list(pct[lo][::-1]),
-                fill='toself', fillcolor=color, line=dict(width=0),
-                name=label, hoverinfo='skip', showlegend=True))
+                x=hdates, y=hy.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"Fitted trend (2× odds:{fit_dt:.0f}d)",
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
+                           for d, y in zip(hdates, hy)],
+                hoverinfo='text'))
+            fig.add_trace(go.Scatter(
+                x=pdates, y=pct[50].tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5, dash='dash'),
+                name='Median projection',
+                hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
+                           for d, y in zip(pdates, pct[50])],
+                hoverinfo='text'))
+            x_end = pdates[-1]
+        else:
+            x_end = cur['date']
 
-        hdays = np.arange(0, (cur['date'] - base).days + 1, dtype=float)
-        hdates = [base + timedelta(days=int(d)) for d in hdays]
-        hy = _inv_logit(intercept + slope * hdays) * 100
-        fig.add_trace(go.Scatter(
-            x=hdates, y=hy.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"Fitted trend (2× odds:{fit_dt:.0f}d)",
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}%"
-                       for d, y in zip(hdates, hy)],
-            hoverinfo='text'))
-        fig.add_trace(go.Scatter(
-            x=pdates, y=pct[50].tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5, dash='dash'),
-            name='Median projection',
-            hovertext=[f"{d.strftime('%b %d, %Y')}<br>Median: {y:.1f}%"
-                       for d, y in zip(pdates, pct[50])],
-            hoverinfo='text'))
-        x_end = pdates[-1]
-    else:
-        x_end = cur['date']
+        for r, _pos in zip(rows, _rsi_dir_label_positions(rows)):
+            _is_fr = r['is_frontier']
+            fig.add_trace(go.Scatter(
+                x=[r['date']], y=[r['better']],
+                mode='markers+text' if _pos else 'markers',
+                marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
+                            symbol='circle' if _is_fr else 'circle-open',
+                            line=dict(color='white' if _is_fr else '#777777', width=2)),
+                text=[r['name'].replace('Claude ', '')] if _pos else None,
+                textposition=_pos or 'top center',
+                textfont=dict(size=10, color='#1a1a2e'),
+                hovertext=f"{r['name']}<br>{_rsi_date_label(r)}<br>"
+                          f"Better: {r['better']:.0f}% · tie: {r['tie']:.0f}%",
+                hoverinfo='text', showlegend=False))
 
-    for r, _pos in zip(rows, _rsi_dir_label_positions(rows)):
-        _is_fr = r['is_frontier']
-        fig.add_trace(go.Scatter(
-            x=[r['date']], y=[r['better']],
-            mode='markers+text' if _pos else 'markers',
-            marker=dict(color='#4F8DFD' if _is_fr else '#aaaaaa', size=12,
-                        symbol='circle' if _is_fr else 'circle-open',
-                        line=dict(color='white' if _is_fr else '#777777', width=2)),
-            text=[r['name'].replace('Claude ', '')] if _pos else None,
-            textposition=_pos or 'top center',
-            textfont=dict(size=10, color='#1a1a2e'),
-            hovertext=f"{r['name']}<br>{_rsi_date_label(r)}<br>"
-                      f"Better: {r['better']:.0f}% · tie: {r['tie']:.0f}%",
-            hoverinfo='text', showlegend=False))
+        fig.add_hline(
+            y=_RSI_DIR_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
+            annotation_text=f"{_RSI_DIR_TARGET:.0f}% — the study's practical "
+                            "ceiling: a judge shown the finished session",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color='#e74c3c'))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
+        _add_today_vline(fig)
 
-    fig.add_hline(
-        y=_RSI_DIR_TARGET, line=dict(color='#e74c3c', width=1.5, dash='dash'),
-        annotation_text=f"{_RSI_DIR_TARGET:.0f}% — the study's practical "
-                        "ceiling: a judge shown the finished session",
-        annotation_position="top left",
-        annotation_font=dict(size=11, color='#e74c3c'))
-    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.0f}%", label="trend")
-    _add_today_vline(fig)
-
-    fig.update_layout(
-        height=520, margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Release date",
-                   range=[rows[0]['date'] - timedelta(days=25), max(x_end, rows[-1]['date'])],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Sampled turns where the model's next step won (%)",
-                   range=[0, 100], ticksuffix='%',
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+        fig.update_layout(
+            height=520, margin=dict(l=50, r=60, t=50, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Release date",
+                       range=[rows[0]['date'] - timedelta(days=25), max(x_end, rows[-1]['date'])],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Sampled turns where the model's next step won (%)",
+                       range=[0, 100], ticksuffix='%',
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _fn_caption(
         "The turns were chosen for having room for improvement, and the bar "
@@ -8908,127 +8988,129 @@ def _render_rsi_tasteval(end_year):
     rows = load_tasteval()
     segs = _tasteval_fit(rows)
     brk = datetime.strptime(_TASTEVAL_BREAK, '%Y-%m-%d')
-    fig = go.Figure()
-    for d0, d1, icpt, slope in segs:
-        days = np.arange(0, (d1 - d0).days + 1, 7, dtype=float)
-        dates = [d0 + timedelta(days=int(d)) for d in days]
-        ys = 2 ** (icpt + slope * np.array([(d - brk).days / 365.25 for d in dates]))
-        fig.add_trace(go.Scatter(
-            x=dates, y=ys.tolist(), mode='lines',
-            line=dict(color='#2c3e50', width=2.5),
-            name=f"{'Before' if d0 < brk else 'From'} GPT-5.2: "
-                 f"2× every {12 / slope:.1f} mo",
-            hoverinfo='skip'))
-    for fitted, name in ((True, "Frontier models (fitted)"),
-                         (False, "Not fitted")):
-        pts = [r for r in rows if r['fitted'] == fitted]
-        # A CI that rounds to 0.00 is drawn to the axis floor, not to log(0).
-        lo = [max(r['lo'], 0.005) for r in pts]
-        fig.add_trace(go.Scatter(
-            x=[r['date'] for r in pts], y=[r['mult'] for r in pts],
-            mode='markers', name=name,
-            marker=dict(color='#4F8DFD' if fitted else '#aaaaaa', size=11,
-                        symbol='circle' if fitted else 'circle-open',
-                        line=dict(color='white' if fitted else '#777777', width=2)),
-            error_y=dict(type='data', symmetric=False,
-                         array=[r['hi'] - r['mult'] for r in pts],
-                         arrayminus=[r['mult'] - l for r, l in zip(pts, lo)],
-                         color='rgba(79,141,253,0.4)' if fitted else 'rgba(0,0,0,0.2)',
-                         thickness=1.2, width=3),
-            hovertext=[f"{r['name']}" + (f" ({r['setting']})" if r['setting'] else "")
-                       + f"<br>{r['date'].strftime('%b %d, %Y')}"
-                       f"<br>Compute multiplier: {r['mult']:.2f}×"
-                       f" (95% CI {r['lo']:.2f}–{r['hi']:.2f})"
-                       for r in pts],
-            hoverinfo='text'))
-    est = _tasteval_eci_estimate(rows)
-    if est:
-        fig.add_trace(go.Scatter(
-            x=[e['date'] for e in est], y=[e['mult'] for e in est],
-            mode='markers+text', name="Estimated from ECI (not scored)",
-            marker=dict(color='white', size=11, symbol='diamond-open',
-                        line=dict(color='#d35400', width=2)),
-            error_y=dict(type='data', symmetric=False,
-                         array=[e['hi'] - e['mult'] for e in est],
-                         arrayminus=[e['mult'] - e['lo'] for e in est],
-                         color='rgba(211,84,0,0.4)', thickness=1.2, width=3),
-            text=[e['name'].replace('Claude ', '') + " (est.)" for e in est],
-            textposition='middle right', textfont=dict(size=10, color='#d35400'),
-            hovertext=[f"{e['name']}<br>{e['date'].strftime('%b %d, %Y')}"
-                       f"<br>Estimated multiplier: {e['mult']:.1f}× "
-                       f"(80% {e['lo']:.1f}–{e['hi']:.1f}×)<br>from its ECI "
-                       f"{e['eci']:.1f}, at 2× per {e['per_doubling']:.1f} ECI "
-                       "points (the scored models since GPT-5.2); not in the fit"
-                       for e in est],
-            hoverinfo='text'))
-    # Only the leader is named: the models just past 1× ship within weeks of
-    # each other and their labels collide.
-    top = max(rows, key=lambda r: r['mult'])
-    fig.add_annotation(x=top['date'], y=np.log10(top['mult']),
-                       text=top['name'].replace('Claude ', ''),
-                       showarrow=False, xanchor='right', xshift=-8,
-                       font=dict(size=10, color='#1a1a2e'))
-    fig.add_hline(y=1.0, line=dict(color='#e74c3c', width=1.5, dash='dash'))
-    # By hand, not `annotation_text`: on a log axis plotly reads an
-    # annotation's y as the exponent.
-    fig.add_annotation(
-        xref='x domain', x=0.01, y=0.0, yanchor='bottom', xanchor='left',
-        text="1× — the best human expert", showarrow=False,
-        font=dict(size=11, color='#e74c3c'))
-    # The post-break fit carried on as a fan, like the other evidence charts:
-    # 80% from half to double its doubling time, widened to the t-interval.
-    post = [r for r in rows if r['fitted'] and r['date'] >= brk]
-    _d0, _d1, p_icpt, p_slope = segs[-1]
-    y_top = 6.0
-    if len(post) >= 2 and p_slope > 0:
-        pdays = [(r['date'] - post[0]['date']).days for r in post]
-        fit_dt = 365.25 / p_slope                       # days per doubling
-        dt_lo, dt_hi = _dt_ci_t_widened(pdays, np.log([r['mult'] for r in post]), fit_dt)
-        anchor = post[-1]['date']
-        fitted = np.log(2) * (p_icpt + p_slope * (anchor - brk).days / 365.25)
-        centre, sigma = _fan_start_on_trend(fitted, np.log(post[-1]['mult']), 0.0)
-        # A local generator: this chart's draws must not shift the tab's stream.
-        rng = np.random.default_rng(20261106)
-        n = N_SAMPLES
-        starts = rng.normal(centre, sigma, n)
-        slopes = np.log(2) / rng.lognormal(
-            np.log(fit_dt), np.log(dt_hi / dt_lo) / (2 * 1.282), n)
-        end = datetime(int(end_year), 12, 31)
-        fdays = _fan_days(max((end - anchor).days, 1))
-        fdates = [anchor + timedelta(days=float(d)) for d in fdays]
-        pct = _fan_pctiles(starts, slopes, fdays, (10, 50, 90))
-        med, fast, slow = pct[50], pct[90], pct[10]
-        a_val = float(np.exp(centre))
-        fig.add_trace(go.Scatter(
-            x=fdates + fdates[::-1], y=list(fast) + list(slow[::-1]), fill='toself',
-            mode='lines', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
-            name='80% CI', hoverinfo='skip'))
-        fig.add_trace(go.Scatter(
-            x=fdates, y=med.tolist(), mode='lines', name='Median projection',
-            line=dict(color='#2c3e50', dash='dash'),
-            hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.1f}×<extra></extra>'))
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        y_top = max(y_top, 20 * a_val * 2 ** (max((today - anchor).days, 0) / fit_dt))
-    _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
-                       label="trend", log=True)
-    _add_today_vline(fig)
-    x_end = max(datetime(int(end_year), 12, 31), rows[-1]['date']) + timedelta(days=45)
-    fig.update_layout(
-        height=480, margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Release date",
-                   range=[rows[0]['date'] - timedelta(days=45), x_end],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Compute multiplier vs. experts (×)", type='log',
-                   range=[np.log10(0.004), np.log10(y_top)],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+    def _build():
+        fig = go.Figure()
+        for d0, d1, icpt, slope in segs:
+            days = np.arange(0, (d1 - d0).days + 1, 7, dtype=float)
+            dates = [d0 + timedelta(days=int(d)) for d in days]
+            ys = 2 ** (icpt + slope * np.array([(d - brk).days / 365.25 for d in dates]))
+            fig.add_trace(go.Scatter(
+                x=dates, y=ys.tolist(), mode='lines',
+                line=dict(color='#2c3e50', width=2.5),
+                name=f"{'Before' if d0 < brk else 'From'} GPT-5.2: "
+                     f"2× every {12 / slope:.1f} mo",
+                hoverinfo='skip'))
+        for fitted, name in ((True, "Frontier models (fitted)"),
+                             (False, "Not fitted")):
+            pts = [r for r in rows if r['fitted'] == fitted]
+            # A CI that rounds to 0.00 is drawn to the axis floor, not to log(0).
+            lo = [max(r['lo'], 0.005) for r in pts]
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in pts], y=[r['mult'] for r in pts],
+                mode='markers', name=name,
+                marker=dict(color='#4F8DFD' if fitted else '#aaaaaa', size=11,
+                            symbol='circle' if fitted else 'circle-open',
+                            line=dict(color='white' if fitted else '#777777', width=2)),
+                error_y=dict(type='data', symmetric=False,
+                             array=[r['hi'] - r['mult'] for r in pts],
+                             arrayminus=[r['mult'] - l for r, l in zip(pts, lo)],
+                             color='rgba(79,141,253,0.4)' if fitted else 'rgba(0,0,0,0.2)',
+                             thickness=1.2, width=3),
+                hovertext=[f"{r['name']}" + (f" ({r['setting']})" if r['setting'] else "")
+                           + f"<br>{r['date'].strftime('%b %d, %Y')}"
+                           f"<br>Compute multiplier: {r['mult']:.2f}×"
+                           f" (95% CI {r['lo']:.2f}–{r['hi']:.2f})"
+                           for r in pts],
+                hoverinfo='text'))
+        est = _tasteval_eci_estimate(rows)
+        if est:
+            fig.add_trace(go.Scatter(
+                x=[e['date'] for e in est], y=[e['mult'] for e in est],
+                mode='markers+text', name="Estimated from ECI (not scored)",
+                marker=dict(color='white', size=11, symbol='diamond-open',
+                            line=dict(color='#d35400', width=2)),
+                error_y=dict(type='data', symmetric=False,
+                             array=[e['hi'] - e['mult'] for e in est],
+                             arrayminus=[e['mult'] - e['lo'] for e in est],
+                             color='rgba(211,84,0,0.4)', thickness=1.2, width=3),
+                text=[e['name'].replace('Claude ', '') + " (est.)" for e in est],
+                textposition='middle right', textfont=dict(size=10, color='#d35400'),
+                hovertext=[f"{e['name']}<br>{e['date'].strftime('%b %d, %Y')}"
+                           f"<br>Estimated multiplier: {e['mult']:.1f}× "
+                           f"(80% {e['lo']:.1f}–{e['hi']:.1f}×)<br>from its ECI "
+                           f"{e['eci']:.1f}, at 2× per {e['per_doubling']:.1f} ECI "
+                           "points (the scored models since GPT-5.2); not in the fit"
+                           for e in est],
+                hoverinfo='text'))
+        # Only the leader is named: the models just past 1× ship within weeks of
+        # each other and their labels collide.
+        top = max(rows, key=lambda r: r['mult'])
+        fig.add_annotation(x=top['date'], y=np.log10(top['mult']),
+                           text=top['name'].replace('Claude ', ''),
+                           showarrow=False, xanchor='right', xshift=-8,
+                           font=dict(size=10, color='#1a1a2e'))
+        fig.add_hline(y=1.0, line=dict(color='#e74c3c', width=1.5, dash='dash'))
+        # By hand, not `annotation_text`: on a log axis plotly reads an
+        # annotation's y as the exponent.
+        fig.add_annotation(
+            xref='x domain', x=0.01, y=0.0, yanchor='bottom', xanchor='left',
+            text="1× — the best human expert", showarrow=False,
+            font=dict(size=11, color='#e74c3c'))
+        # The post-break fit carried on as a fan, like the other evidence charts:
+        # 80% from half to double its doubling time, widened to the t-interval.
+        post = [r for r in rows if r['fitted'] and r['date'] >= brk]
+        _d0, _d1, p_icpt, p_slope = segs[-1]
+        y_top = 6.0
+        if len(post) >= 2 and p_slope > 0:
+            pdays = [(r['date'] - post[0]['date']).days for r in post]
+            fit_dt = 365.25 / p_slope                       # days per doubling
+            dt_lo, dt_hi = _dt_ci_t_widened(pdays, np.log([r['mult'] for r in post]), fit_dt)
+            anchor = post[-1]['date']
+            fitted = np.log(2) * (p_icpt + p_slope * (anchor - brk).days / 365.25)
+            centre, sigma = _fan_start_on_trend(fitted, np.log(post[-1]['mult']), 0.0)
+            # A local generator: this chart's draws must not shift the tab's stream.
+            rng = np.random.default_rng(20261106)
+            n = N_SAMPLES
+            starts = rng.normal(centre, sigma, n)
+            slopes = np.log(2) / rng.lognormal(
+                np.log(fit_dt), np.log(dt_hi / dt_lo) / (2 * 1.282), n)
+            end = datetime(int(end_year), 12, 31)
+            fdays = _fan_days(max((end - anchor).days, 1))
+            fdates = [anchor + timedelta(days=float(d)) for d in fdays]
+            pct = _fan_pctiles(starts, slopes, fdays, (10, 50, 90))
+            med, fast, slow = pct[50], pct[90], pct[10]
+            a_val = float(np.exp(centre))
+            fig.add_trace(go.Scatter(
+                x=fdates + fdates[::-1], y=list(fast) + list(slow[::-1]), fill='toself',
+                mode='lines', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
+                name='80% CI', hoverinfo='skip'))
+            fig.add_trace(go.Scatter(
+                x=fdates, y=med.tolist(), mode='lines', name='Median projection',
+                line=dict(color='#2c3e50', dash='dash'),
+                hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.1f}×<extra></extra>'))
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            y_top = max(y_top, 20 * a_val * 2 ** (max((today - anchor).days, 0) / fit_dt))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}×",
+                           label="trend", log=True)
+        _add_today_vline(fig)
+        x_end = max(datetime(int(end_year), 12, 31), rows[-1]['date']) + timedelta(days=45)
+        fig.update_layout(
+            height=480, margin=dict(l=50, r=60, t=50, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Release date",
+                       range=[rows[0]['date'] - timedelta(days=45), x_end],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Compute multiplier vs. experts (×)", type='log',
+                       range=[np.log10(0.004), np.log10(y_top)],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            legend=dict(yanchor='bottom', y=0.02, xanchor='right', x=0.98,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _fn_caption(
         "Opus 5.5 passed the experts at 2.3×, and the multiplier has doubled "
@@ -9058,69 +9140,71 @@ def _render_rsi_tasteval(end_year):
     mase = _tasteval_predict_mase(grid)
     bar = (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_TARGET / 100
            * (_TASTEVAL_PREDICT_BASELINE - _TASTEVAL_PREDICT_FLOOR))
-    fig = go.Figure()
-    fan_dates = [d for d in grid if d >= last]
-    fan = _tasteval_predict_fan(fan_dates)
-    fig.add_trace(go.Scatter(
-        x=fan_dates + fan_dates[::-1], y=list(fan[90]) + list(fan[10][::-1]),
-        fill='toself', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
-        name='80% CI', hoverinfo='skip'))
-    for past, dash, name in ((True, 'solid', "The fit"),
-                             (False, 'dash', "Its extrapolation")):
-        idx = [i for i, d in enumerate(grid) if (d <= last) == past]
-        if past and idx and idx[-1] + 1 < len(grid):
-            idx.append(idx[-1] + 1)     # meet the dashed half
+    def _build():
+        fig = go.Figure()
+        fan_dates = [d for d in grid if d >= last]
+        fan = _tasteval_predict_fan(fan_dates)
         fig.add_trace(go.Scatter(
-            x=[grid[i] for i in idx], y=[float(mase[i]) for i in idx],
-            mode='lines', name=name,
-            line=dict(color='#2c3e50', width=2.5, dash=dash),
-            hovertext=[f"{grid[i].strftime('%b %Y')}<br>MASE {mase[i]:.3f}"
-                       for i in idx],
-            hoverinfo='text'))
-    held = [(n, datetime.strptime(d, '%Y-%m-%d'), m, lo, hi)
-            for n, d, m, lo, hi in _TASTEVAL_PREDICT_HELDOUT]
-    if held:
-        on_curve = _tasteval_predict_mase([h[1] for h in held])
-        fig.add_trace(go.Scatter(
-            x=[h[1] for h in held], y=[h[2] for h in held],
-            mode='markers+text', name="Scored after the paper",
-            marker=dict(color='#d35400', size=10),
-            error_y=dict(type='data', symmetric=False,
-                         array=[h[4] - h[2] for h in held],
-                         arrayminus=[h[2] - h[3] for h in held],
-                         color='rgba(211,84,0,0.5)'),
-            text=[h[0].replace("Claude ", "") for h in held],
-            textposition='bottom right', textfont=dict(size=11, color='#d35400'),
-            hovertext=[f"{h[0]} ({h[1].strftime('%b %Y')})<br>MASE {h[2]:.3f} "
-                       f"(95% CI {h[3]:.3f}–{h[4]:.3f})<br>the curve: "
-                       f"{c:.3f}" for h, c in zip(held, on_curve)],
-            hoverinfo='text'))
-    for y, color, label in ((_TASTEVAL_PREDICT_BASELINE, '#6b7280',
-                             f"{_TASTEVAL_PREDICT_BASELINE} — predict the run's last score"),
-                            (_TASTEVAL_PREDICT_FLOOR, '#5b9bd5',
-                             f"{_TASTEVAL_PREDICT_FLOOR} — replication noise floor"),
-                            (bar, '#e74c3c',
-                             f"{_TASTEVAL_PREDICT_TARGET:.0f}% of the gap closed")):
-        fig.add_hline(y=y, line=dict(color=color, width=1.5, dash='dash'),
-                      annotation_text=label, annotation_position="top left",
-                      annotation_font=dict(size=11, color=color))
-    _add_today_diamond(fig, "Its extrapolation", lambda v: f"{v:.2f}", label="extrapolated")
-    _add_today_vline(fig)
-    fig.update_layout(
-        height=420, margin=dict(l=50, r=60, t=50, b=40),
-        font=dict(color='#1a1a2e'),
-        xaxis=dict(title="Release date",
-                   range=[first - timedelta(days=45), pred_end],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        yaxis=dict(title="Prediction error (MASE)", range=[0.15, 0.65],
-                   gridcolor='rgba(0,0,0,0.1)', zeroline=False,
-                   tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-        hovermode='closest',
-        legend=dict(yanchor='top', y=0.98, xanchor='right', x=0.98,
-                    bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
-        plot_bgcolor='white', paper_bgcolor='white')
-    st.plotly_chart(fig, width="stretch")
+            x=fan_dates + fan_dates[::-1], y=list(fan[90]) + list(fan[10][::-1]),
+            fill='toself', fillcolor='rgba(52,152,219,0.18)', line=dict(width=0),
+            name='80% CI', hoverinfo='skip'))
+        for past, dash, name in ((True, 'solid', "The fit"),
+                                 (False, 'dash', "Its extrapolation")):
+            idx = [i for i, d in enumerate(grid) if (d <= last) == past]
+            if past and idx and idx[-1] + 1 < len(grid):
+                idx.append(idx[-1] + 1)     # meet the dashed half
+            fig.add_trace(go.Scatter(
+                x=[grid[i] for i in idx], y=[float(mase[i]) for i in idx],
+                mode='lines', name=name,
+                line=dict(color='#2c3e50', width=2.5, dash=dash),
+                hovertext=[f"{grid[i].strftime('%b %Y')}<br>MASE {mase[i]:.3f}"
+                           for i in idx],
+                hoverinfo='text'))
+        held = [(n, datetime.strptime(d, '%Y-%m-%d'), m, lo, hi)
+                for n, d, m, lo, hi in _TASTEVAL_PREDICT_HELDOUT]
+        if held:
+            on_curve = _tasteval_predict_mase([h[1] for h in held])
+            fig.add_trace(go.Scatter(
+                x=[h[1] for h in held], y=[h[2] for h in held],
+                mode='markers+text', name="Scored after the paper",
+                marker=dict(color='#d35400', size=10),
+                error_y=dict(type='data', symmetric=False,
+                             array=[h[4] - h[2] for h in held],
+                             arrayminus=[h[2] - h[3] for h in held],
+                             color='rgba(211,84,0,0.5)'),
+                text=[h[0].replace("Claude ", "") for h in held],
+                textposition='bottom right', textfont=dict(size=11, color='#d35400'),
+                hovertext=[f"{h[0]} ({h[1].strftime('%b %Y')})<br>MASE {h[2]:.3f} "
+                           f"(95% CI {h[3]:.3f}–{h[4]:.3f})<br>the curve: "
+                           f"{c:.3f}" for h, c in zip(held, on_curve)],
+                hoverinfo='text'))
+        for y, color, label in ((_TASTEVAL_PREDICT_BASELINE, '#6b7280',
+                                 f"{_TASTEVAL_PREDICT_BASELINE} — predict the run's last score"),
+                                (_TASTEVAL_PREDICT_FLOOR, '#5b9bd5',
+                                 f"{_TASTEVAL_PREDICT_FLOOR} — replication noise floor"),
+                                (bar, '#e74c3c',
+                                 f"{_TASTEVAL_PREDICT_TARGET:.0f}% of the gap closed")):
+            fig.add_hline(y=y, line=dict(color=color, width=1.5, dash='dash'),
+                          annotation_text=label, annotation_position="top left",
+                          annotation_font=dict(size=11, color=color))
+        _add_today_diamond(fig, "Its extrapolation", lambda v: f"{v:.2f}", label="extrapolated")
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=420, margin=dict(l=50, r=60, t=50, b=40),
+            font=dict(color='#1a1a2e'),
+            xaxis=dict(title="Release date",
+                       range=[first - timedelta(days=45), pred_end],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            yaxis=dict(title="Prediction error (MASE)", range=[0.15, 0.65],
+                       gridcolor='rgba(0,0,0,0.1)', zeroline=False,
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
+            hovermode='closest',
+            legend=dict(yanchor='top', y=0.98, xanchor='right', x=0.98,
+                        bgcolor='rgba(255,255,255,0.95)', font=dict(color='#1a1a2e')),
+            plot_bgcolor='white', paper_bgcolor='white')
+        return fig
+    st.plotly_chart(_fig_memo(_build), width="stretch")
 
     _fn_caption(
         "Predicting an experiment's score before running it: models have "
@@ -19040,11 +19124,14 @@ def _pc_render_rsi_blend(components, origin, survival=None, horizon=None,
     with _b2:
         st.metric("80% CI", f"{early:%b %Y} \u2013 {late:%b %Y}")
 
-    _dist = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
-                             horizon=horizon, raw_days=raw_days,
-                             model_days=model_days)
+    def _build():
+        fig = _pc_rsi_dist_fig(blend_days, origin, early, med, late,
+                               horizon=horizon, raw_days=raw_days,
+                               model_days=model_days)
+        return None if fig is None else _tf(fig)
+    _dist = _fig_memo(_build)
     if _dist is not None:
-        st.plotly_chart(_tf(_dist), width="stretch")
+        st.plotly_chart(_dist, width="stretch")
     if penalty:
         st.caption(
             f"All-things-considered adjustment: a model probability of 10% "

@@ -220,6 +220,13 @@ One seed, `tk_seed` (default 42, *Random seed* in the sidebar), fixes every draw
 draw under `_seeded_rng`, which restores the global state afterward so a cache hit and a
 miss leave the same stream. The simulator seeds its own local generator from it. The same
 settings give the same cards and charts across processes and reruns.
+Each evidence chart, the coder projection's and the research-pace chart is built inside a
+`_build()` closure passed to `_fig_memo`, which keeps the figure per process keyed on the
+closure's code, the values it closes over, today, the today-forward toggle, `_FIG_MEMO_STATE`
+(the ship lags and ECI dating toggles, which the ECI helpers read) and numpy's global state, and on a hit restores the state the build left. Plotly's construction
+was ~0.5s of a warm rerun. A builder reaches no other session state, even through a helper:
+read the setting before it, as the METR and pace charts do with `tk_eci_today`, or a changed
+setting serves a stale chart (`TestFigMemo` walks every builder's calls for it).
 The static loop diagram and brakes line draw first, above the bar. A progress bar
 (`_tk_loading`, `_TK_LOADING_STEPS`), styled to the cards' height so they replace it without
 the page jumping, sits above that slot and steps through

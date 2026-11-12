@@ -7623,3 +7623,117 @@ def test_concurrent_seeded_blocks_keep_their_streams():
     for seed in (1, 2):
         np.testing.assert_array_equal(got[seed], expected(seed))
     np.testing.assert_array_equal(np.random.get_state()[1], before)
+
+
+# Builds the TestFigMemo charts ran: a global, since a closed-over list
+# would be part of the key.
+_MEMO_CALLS = []
+
+
+class TestFigMemo:
+    """`_fig_memo` builds a figure once per input and replays its draws."""
+
+    def setup_method(self):
+        vp._FIG_MEMO.clear()
+        _MEMO_CALLS.clear()
+
+    def test_a_hit_returns_the_figure_and_leaves_the_stream_as_a_miss_does(self):
+        def chart(level):
+            def _build():
+                _MEMO_CALLS.append(level)
+                return {"y": level + np.random.normal(size=3)}
+            return vp._fig_memo(_build)
+        np.random.seed(5)
+        first = chart(1.0)
+        after_miss = np.random.random_sample()
+        np.random.seed(5)
+        again = chart(1.0)
+        after_hit = np.random.random_sample()
+        assert again is first and _MEMO_CALLS == [1.0]
+        assert after_hit == after_miss
+
+    def test_any_change_in_input_today_or_stream_rebuilds(self):
+        def chart(level):
+            def _build():
+                _MEMO_CALLS.append(level)
+                return {"y": level}
+            return vp._fig_memo(_build)
+        np.random.seed(5)
+        chart(1.0)
+        chart(2.0)                       # a closed-over value
+        np.random.seed(6)
+        chart(1.0)                       # numpy's global state
+        vp.st.session_state[vp._TODAY_FWD_KEY] = True
+        try:
+            np.random.seed(5)
+            chart(1.0)                   # the today-forward toggle
+        finally:
+            vp.st.session_state.pop(vp._TODAY_FWD_KEY)
+        assert _MEMO_CALLS == [1.0, 2.0, 1.0, 1.0]
+
+    def test_a_nested_helper_is_keyed_by_its_own_inputs(self):
+        def chart(scale):
+            def helper(v):
+                return v * scale
+            def _build():
+                return {"y": helper(1.0)}
+            return vp._fig_memo(_build)
+        assert chart(2.0)["y"] == 2.0 and chart(3.0)["y"] == 3.0
+
+    def test_an_unhashable_input_builds_every_time(self):
+        lock = __import__("threading").Lock()
+        def _build():
+            _MEMO_CALLS.append(lock)
+            return {}
+        vp._fig_memo(_build)
+        vp._fig_memo(_build)
+        assert len(_MEMO_CALLS) == 2
+
+    def test_no_builder_reaches_unkeyed_session_state(self):
+        """Every `_build` handed to `_fig_memo`, and every helper it calls,
+        reads session state only by a key in `_FIG_MEMO_STATE` (or the
+        today-forward toggle, also keyed)."""
+        import ast
+        from pathlib import Path
+        tree = ast.parse(Path(vp.__file__).read_text())
+        defs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        keyed = set(vp._FIG_MEMO_STATE) | {vp._TODAY_FWD_KEY}
+
+        def key_of(node, fn):
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.Name):           # a local, else a constant
+                local = next((a.value for a in ast.walk(defs[fn]) if isinstance(a, ast.Assign)
+                              and any(isinstance(t, ast.Name) and t.id == node.id
+                                      for t in a.targets)), None)
+                return key_of(local, fn) if local is not None else getattr(vp, node.id, None)
+            if isinstance(node, ast.JoinedStr):      # f"{country}_ship_lag": both
+                tail = "".join(v.value for v in node.values if isinstance(v, ast.Constant))
+                both = {"us" + tail, "cn" + tail}
+                return "us" + tail if both <= keyed else None
+
+        def unkeyed(fn, seen):
+            if fn in seen or fn not in defs:
+                return None
+            seen.add(fn)
+            for n in ast.walk(defs[fn]):
+                if isinstance(n, ast.Attribute) and n.attr in ("session_state", "query_params"):
+                    parent = next((p for p in ast.walk(defs[fn])
+                                   for c in ast.iter_child_nodes(p) if c is n), None)
+                    call = next((p for p in ast.walk(defs[fn]) if isinstance(p, ast.Call)
+                                 and p.func is parent), None)
+                    if not (n.attr == "session_state" and isinstance(parent, ast.Attribute)
+                            and parent.attr == "get" and call is not None
+                            and key_of(call.args[0], fn) in keyed):
+                        return [fn, n.lineno]
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+                    trail = unkeyed(n.func.id, seen)
+                    if trail:
+                        return [fn] + trail
+            return None
+        builders = [n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == "_build"]
+        assert len(builders) >= 11
+        for b in builders:
+            defs["_build"] = b
+            assert unkeyed("_build", set()) is None, f"line {b.lineno}: {unkeyed('_build', set())}"
