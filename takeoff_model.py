@@ -301,6 +301,8 @@ def ai_judgment_log(effective, slope, drift, transfer, cap=0.0):
 def _ces_log(x, y, rho):
     """Log of the CES mean of exp(x) and exp(y), equal to 1 when both are 1."""
     flat = np.abs(rho) < 1e-9
+    if not np.any(flat):        # the usual case: skip the branch np.where drops
+        return (np.logaddexp(rho * x, rho * y) - np.log(2)) / rho
     safe = np.where(flat, 1.0, rho)
     return np.where(flat, (x + y) / 2,
                     (np.logaddexp(safe * x, safe * y) - np.log(2)) / safe)
@@ -519,14 +521,21 @@ def workflow_state(capability_log, baseline_rate, starts, half_months, floor,
         def follow(shape, at):
             if np.ndim(shape) == 1:
                 return np.interp(at, years, shape / shape[0])
-            # One curve per draw on a shared, evenly spaced grid.
+            # One curve per draw on a shared, evenly spaced grid; flat
+            # indices pick the same cells as shape[rows, i0], faster.
             last = len(years) - 1
             pos = np.clip(at / (years[1] - years[0]), 0, last)
             i0 = np.minimum(pos.astype(int), last - 1)
             w = pos - i0
-            rows = np.arange(len(shape))[:, None]
-            return (shape[rows, i0] * (1 - w) + shape[rows, i0 + 1] * w) / shape[:, :1]
-        decline = follow(share, along)
+            flat = np.ravel(shape)
+            cell = np.arange(len(shape))[:, None] * shape.shape[1] + i0
+            return (flat[cell] * (1 - w) + flat[cell + 1] * w) / shape[:, :1]
+        # Stages with their own curves are overwritten below, so the shared
+        # curve is read only for the rest.
+        if len(curve[2:]) >= along.shape[1]:
+            decline = np.empty_like(along)
+        else:
+            decline = follow(share, along)
         for i, own in enumerate(curve[2:]):     # stages with their own curves
             decline[:, i:i + 1] = follow(own, along[:, i:i + 1])
     return floor + (starts - floor) * decline
@@ -564,6 +573,8 @@ def ceiling_step(log_x, log_amount, k, ceiling):
     with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
         above = -np.logaddexp(-(k - 1) * log_x, np.log(np.abs(k - 1))
                               + log_amount - np.log(ceiling)) / (k - 1)
+        if np.all(k > 1 + 1e-9):    # every draw on the k > 1 branch
+            return above
         m = 1 - k
         left = np.exp(m * log_x) - m * np.exp(np.minimum(log_amount, 700)) / ceiling
         below = np.where(left > 0, np.log(np.maximum(left, 1e-300)) / m, -np.inf)
@@ -876,6 +887,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                              * ceiling_rank)
                if p["ceiling_high_oom"] > 0 and p["difficulty"] > 0 else np.full(n, np.inf))
     capped = np.isfinite(ceiling)
+    all_capped = bool(capped.all())   # lets the step skip the uncapped branch
     # Scale-dependent share of algorithmic gains, logit-normal per draw (row 19).
     share_pct = p["scale_dependent"]
     with np.errstate(divide="ignore"):
@@ -1098,6 +1110,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     if fol is not None:
         coding_level = np.broadcast_to(np.asarray(coding_capability, dtype=float), (n,)).copy()
     realized()                  # the deployed model, refreshed when it changes
+    carried_hours = None
+    histories = (capability_history, realized_history, validated_history, reference_history)
+    held_now = tuple(np.zeros(n) for _ in histories)
     while np.any(t < p["years"] - 1e-12):
         train_end = run_start + run_len
         deploy_end = train_end + eval_len
@@ -1145,7 +1160,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # The deployed model only changes at the end of a step, where `now`
         # is refreshed, so the last step's reading still holds here.
         effective = now[2] + follow_log
-        human_now = humans(effective, t, now[1] + follow_log)
+        # The last step's closing hours were read at this same capability and
+        # time, so they are reused (unless a draw diverged, which moves its t).
+        human_now = (carried_hours if carried_hours is not None
+                     else humans(effective, t, now[1] + follow_log))
         if p["rsi_autopilot"]:
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
                       & ~under_review(t)] = 0.0
@@ -1262,6 +1280,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         def difficulty_at(progress):
             """(log x, penalty) at `progress` above today's stock."""
             with np.errstate(divide="ignore", invalid="ignore"):
+                if all_capped:
+                    lx = np.log1p(-np.minimum(progress / ceiling, 1))
+                    return lx, -beta * ceiling * lx
                 lx = np.where(capped, np.log1p(-np.minimum(progress / ceiling, 1)), 0.0)
                 return lx, np.where(capped, -beta * np.where(capped, ceiling, 0) * lx,
                                     beta * progress)
@@ -1288,10 +1309,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             """Progress above today's stock after research `amount_log`,
             integrated exactly for the step's research rate."""
             if p["difficulty"] > 0:
-                plain = np.logaddexp(beta * progress, np.log(beta) + amount_log) / beta
                 with np.errstate(divide="ignore", invalid="ignore"):
                     near = -ceiling * np.expm1(
                         ceiling_step(progress_log_x, amount_log, beta * ceiling, ceiling))
+                if all_capped:
+                    return near
+                plain = np.logaddexp(beta * progress, np.log(beta) + amount_log) / beta
                 return np.where(capped, near, plain)
             return progress + np.exp(np.minimum(amount_log, 100))
 
@@ -1447,16 +1470,16 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                 level = coding_weights[0] * compute_now + coding_weights[1] * software_now
             capable = active & (level >= coding_capability) & (coding > end)
             coding[capable] = end[capable]
+        # Each month's history is the value at the last change by then; it is
+        # written when the month is observed below (and held to the end after).
         rows = np.flatnonzero(ready | fast_ready)
-        future = workflow_grid[None, :] >= end[rows, None] - 1e-12
-        for history, values in ((capability_history, effective),
-                                (realized_history, software_now),
-                                (validated_history, validated),
-                                (reference_history, reference_validated)):
-            history[rows] = np.where(future, values[rows, None], history[rows])
+        for held_value, values in zip(held_now, (effective, software_now, validated,
+                                                 reference_validated)):
+            held_value[rows] = values[rows]
         # A diverged draw's state is a numerical ceiling: record nothing from it.
         live = active & ~diverged
         human = humans(effective, end, software_now)
+        carried_hours = None if diverged.any() else human
         coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
@@ -1492,6 +1515,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             seen_flat[0][rows * len(workflow_grid) + observation_index[rows]] = (
                 seen_now + row_offset[rows])
         stock_seen[rows, observation_index[rows]] = software[rows]
+        for history, held_value in zip(histories, held_now):
+            history[rows, observation_index[rows]] = held_value[rows]
         for key in follow_eci:
             follow_history[key][rows, observation_index[rows]] = follow_eci[key][rows]
         boost_history[rows, observation_index[rows]] = boost_log[rows]
@@ -1509,7 +1534,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         last_reference_pace[active] = reference_pace[active]
         stopped_at[active & diverged] = end[active & diverged]
         t = np.where(diverged, p["years"], end)
-    total_budget = (grown(p["years"], compute_rate, compute_late, slow_at) if cpath is None
+    # Months a stopped draw never reached hold its last values.
+    unobserved = np.arange(len(workflow_grid))[None, :] >= observation_index[:, None]
+    for history, held_value in zip(histories, held_now):
+        history[:] = np.where(unobserved, held_value[:, None], history)
+    total_budget =(grown(p["years"], compute_rate, compute_late, slow_at) if cpath is None
                     else np.array([np.sum(np.diff(workflow_grid) * 0.5 * (v[1:] + v[:-1])) for v in (
                         np.exp(np.interp(workflow_grid, cpath[0], row)) for row in cpath[1])]))
     # Cumulative, so a month a stopped draw never reached holds its last value.

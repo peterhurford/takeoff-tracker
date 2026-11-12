@@ -100,8 +100,18 @@ Constraints that must survive:
 - If results change at all (float reordering counts), say so plainly and update the tests
   that pin numbers, rather than loosening tolerances quietly.
 
-Done when: `python perf/bench_simulate.py` shows 1,000 draws well under 1.5s, the takeoff
-tests pass, and a Takeoff setting change on the live site is under about 8s.
+Done when: the app's own `simulate` calls run about 3× faster than the baseline, the takeoff
+tests pass, and a Takeoff setting change on the live site is under about 8s. Judge by the
+multiple, not a fixed time, since machines differ about 2×. `perf/bench_simulate.py` runs bare
+`DEFAULTS` (no per-draw human curve, compute rates or follower), so it misses most of
+what the app runs: time the app's real calls instead (capture them by wrapping
+`takeoff_model.simulate` under `AppTest`).
+
+**Status (2026-11-11, laptop):** the in-place cleanup is in, bit-for-bit identical on
+the five calls a cold Takeoff and China make: US run 2.02 → 1.20s, China's follower runs
+2.44 → 1.63s, a browser setting change 6.2 → 4.8s locally. About 1.5–1.7×; what is left
+is per-op numpy overhead spread over ~300 loop lines, so the next multiple needs numba
+(or similar) on the step loop.
 
 ### 2. Warm the default-settings cache
 
