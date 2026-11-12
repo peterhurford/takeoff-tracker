@@ -27839,27 +27839,39 @@ def _render_takeoff(loading):
         st.session_state.setdefault("_url_auto_defaults", {})["tk_mult_at"] = auto
         if st.session_state.get("tk_mult_at") not in labels:
             st.session_state["tk_mult_at"] = auto
-        _at = st.session_state["tk_mult_at"]
-        with st.expander("The multiplication at "
-                         + ("today" if _at == "Today" else f"the end of {_at}"),
-                         key="tk_ex_mult"):
-            pick = st.select_slider(
-                "Read the multiplication at", labels, key="tk_mult_at",
-                help="Today, or the end of any month to Dec 2030. Starts at the month nearest "
-                     + (f"the median RSI ({when(meds['RSI'])})." if np.isfinite(meds["RSI"])
-                        else "the median RSI, or the last month when RSI is not reached."))
-            at_t = dict(stops)[pick]
-            at_label = "today" if pick == "Today" else f"the end of {pick}"
-            mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
-            _fn_caption(
-                f"Today's {pace_today:g}\u00d7, then each factor's median change to that date, "
-                "on a log scale: each bar starts where the last ended.",
-                ("each factor's median change",
-                 f"The steps multiply to {product:.3g}\u00d7; the last bar is the net pace's own "
-                 f"median, {net:.3g}\u00d7, since medians of the factors don't multiply exactly "
-                 "to the median of their product. Research judgment and harder ideas each run "
-                 "to large multiples and largely cancel."))
-            st.plotly_chart(mult_fig, width="stretch")
+
+        # A fragment: the slider only redraws this chart from `result`, so moving
+        # it reruns this block, not the page (no draws here, so no seed needed).
+        # A fragment rerun skips the end-of-run URL sync, so the slider's
+        # callback writes the URL; the changed-settings badge catches up on the
+        # next full rerun (`test_the_multiplication_slider_reruns_only_its_fragment`).
+        @st.fragment
+        def _tk_mult_section():
+            _at = st.session_state["tk_mult_at"]
+            with st.expander("The multiplication at "
+                             + ("today" if _at == "Today" else f"the end of {_at}"),
+                             key="tk_ex_mult"):
+                pick = st.select_slider(
+                    "Read the multiplication at", labels, key="tk_mult_at",
+                    on_change=_sync_session_to_url,
+                    help="Today, or the end of any month to Dec 2030. Starts at the month "
+                         "nearest " + (f"the median RSI ({when(meds['RSI'])})."
+                                       if np.isfinite(meds["RSI"]) else
+                                       "the median RSI, or the last month when RSI is not "
+                                       "reached."))
+                at_t = dict(stops)[pick]
+                at_label = "today" if pick == "Today" else f"the end of {pick}"
+                mult_fig, product, net = _tk_multiply_fig(result, pace_today, at_t, at_label)
+                _fn_caption(
+                    f"Today's {pace_today:g}\u00d7, then each factor's median change to that "
+                    "date, on a log scale: each bar starts where the last ended.",
+                    ("each factor's median change",
+                     f"The steps multiply to {product:.3g}\u00d7; the last bar is the net "
+                     f"pace's own median, {net:.3g}\u00d7, since medians of the factors don't "
+                     "multiply exactly to the median of their product. Research judgment and "
+                     "harder ideas each run to large multiples and largely cancel."))
+                st.plotly_chart(mult_fig, width="stretch")
+        _tk_mult_section()
 
     st.subheader("1. Research speeds up")
     pace_history = _tk_pace_history(np.exp(experiment_starts) * pace_yield, today)

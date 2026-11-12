@@ -71,6 +71,10 @@ class _FakeStreamlit(types.ModuleType):
             return f
         return lambda fn: fn
 
+    def fragment(self, f=None, **kw):
+        """Pass-through, so a fragment's body still runs."""
+        return f if f is not None else (lambda fn: fn)
+
     def radio(self, label, options, **kw):
         """Return the option at `index` (default 0) so module-level code works."""
         idx = kw.get("index", 0)

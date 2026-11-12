@@ -245,6 +245,17 @@ class TestDefaultTab:
         _assert_no_error(at, "tk_mult_at=Today")
         assert _qp(at, "tk_mult_at") == ["Today"]
 
+    def test_the_multiplication_slider_reruns_only_its_fragment(self):
+        """The multiplication block is the tab's one fragment, so its slider
+        reruns that block alone, and the slider still writes the URL
+        (`test_moving_the_multiplication_slider_writes_it`). AppTest reruns the
+        whole script, so the speed itself is checked in a browser."""
+        at = _fresh_app().run()
+        assert len(at._fragment_storage._fragments) == 1
+        at.select_slider(key="tk_mult_at").set_value("Today").run()
+        _assert_no_error(at, "tk_mult_at=Today")
+        assert len(at._fragment_storage._fragments) == 1
+
     def test_eci_gets_its_slug_in_the_url(self):
         at = _fresh_app().run()
         _switch_tab(at, "ECI")
