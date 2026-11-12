@@ -3242,6 +3242,10 @@ class TestPacingTab:
             return [v for v in self._state(at)["Behind the US"] if v != "—"]
         assert at.toggle(key="pc_internal").value is True
         assert "Model 4 (internal)" in us_line()
+        # Pause late enough that China's ECI lies between the released
+        # frontier and Model 4, where only the internal line covers it.
+        import visualize_projection as vp
+        _plan(at, start=vp._pc_pause_default_mo() + 3)
         on = behind()
         at.toggle(key="pc_internal").set_value(False).run()
         _assert_no_error(at, "Pacing / internal off")

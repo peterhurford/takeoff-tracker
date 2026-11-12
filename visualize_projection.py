@@ -1168,6 +1168,10 @@ _RLI_RAW = [
     # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
     {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
     {"name": "Fable 5.2",       "date": "2026-11-09", "rli_score": 41.30},
+    # Added 2026-11-11: Scale only, as "Deepseek V4.1 Flash" (isNew, createdAt 2026-11-11T18:24Z); not in
+    # the CAIS API. Date is Epoch's catalogued release; Scale does not say whether it ran that checkpoint
+    # or the later 1017 one (Epoch: 2026-10-17). Below the frontier either way.
+    {"name": "DeepSeek V4.1 Flash", "date": "2026-09-09", "rli_score": 9.58},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -9926,6 +9930,7 @@ _OPENAI_REVENUE = [
     # Rechecked daily 2026-10-21 to 11-02: no TickerTrends post since 10-14; Epoch's OpenAI rows unchanged.
     # Rechecked 2026-11-09: TickerTrends' posts since (11-03 crawler volume, 11-03 and 11-06 Anthropic) carry
     # no OpenAI total; press has only the same ~$50B for September and a ~$70B year-end target (forecast).
+    # Rechecked 2026-11-11: no TickerTrends post since 11-06.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10041,6 +10046,7 @@ _ANTHROPIC_REVENUE = [
     # (press and alt-data), which this disclosure supersedes.
     ("2026-09-30", 71.0),
     ("2026-10-31", 81.0),
+    # Rechecked 2026-11-11: no EDGAR filing since S-1/A No. 2; the 11-10 roadshow post states no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
