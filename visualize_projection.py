@@ -18205,8 +18205,14 @@ _PC_USE_OPTIONS = [10, 17, 25, 33, 50, 67, 75, 100, 125, 150, 200, 300]
 # A phase's ban on runaway RSI: the least human review, in months, each
 # capability gain waits for before research builds on it (a successor
 # model's validation and each batch of fast improvements); 0 is no ban.
-_PC_BAN_OPTIONS = [0, 1, 2, 3, 6]
-_PC_PHASE_FIELDS = ("pace", "start", "end", *_PC_USES, "ban")
+_PC_BAN_OPTIONS = [1, 2, 3, 6]
+# A *Cut US R&D compute* phase divides every use's compute by this.
+_PC_CUT_OPTIONS = [2, 3, 6, 10]
+# What a phase does, {kind: its button and row name}: each kind's row shows
+# only its own setting(s) and dates, and `_pc_phase_effect` reads only those.
+_PC_PHASE_KINDS = {"pace": "Pace the US", "cut": "Cut US R&D compute",
+                   "realloc": "Reallocate compute", "ban": "Ban runaway RSI"}
+_PC_PHASE_FIELDS = ("kind", "pace", "cut", "start", "end", *_PC_USES, "ban")
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
@@ -18400,22 +18406,23 @@ def _pc_plan_presets(today):
     for good."""
     t0 = _pc_pause_default_mo(today)
 
-    def phase(pace, start, end=None, ban=0, **uses):
-        return {"pace": pace, "start": min(t0 + start, _PC_PAUSE_MO_MAX),
+    def phase(kind, start, end=None, **v):
+        return {"kind": kind, "pace": v.get("pace", 50), "cut": v.get("cut", 2),
+                "start": min(t0 + start, _PC_PAUSE_MO_MAX),
                 "end": _PC_PAUSE_MO_MAX if end is None else min(t0 + end, _PC_PAUSE_MO_MAX),
-                **{u: uses.get(u, 100) for u in _PC_USES}, "ban": ban}
+                **{u: v.get(u, 100) for u in _PC_USES}, "ban": v.get("ban", 1)}
     return {
         "Clear plan": (),
-        "Pause": (phase(0, 0),),
-        "Half speed": (phase(50, 0),),
-        "Pause a year, then half speed": (phase(0, 0, 12), phase(50, 12)),
-        "Step down: 75%, 50%, 25%": (phase(75, 0, 12), phase(50, 12, 24), phase(25, 24)),
+        "Pause": (phase("pace", 0, pace=0),),
+        "Half speed": (phase("pace", 0, pace=50),),
+        "Pause a year, then half speed": (phase("pace", 0, 12, pace=0),
+                                          phase("pace", 12, pace=50)),
+        "Step down: 75%, 50%, 25%": (phase("pace", 0, 12, pace=75),
+                                     phase("pace", 12, 24, pace=50), phase("pace", 24, pace=25)),
         "Down-and-up: 75%->50%->25%->50%->75%": tuple(
-            phase(p, 12 * k, 12 * (k + 1)) for k, p in enumerate((75, 50, 25, 50, 75))),
-        "Halve R&D compute": (phase(100, 0, train=50, exp=50, agents=50),),
-        "Training compute to experiments": (phase(100, 0, train=50, exp=150),),
-        "Two years of half training compute": (phase(100, 0, 24, train=50),),
-        "Ban runaway RSI": (phase(100, 0, ban=1),),
+            phase("pace", 12 * k, 12 * (k + 1), pace=p)
+            for k, p in enumerate((75, 50, 25, 50, 75))),
+        "Two years of half training compute": (phase("realloc", 0, 24, train=50),),
     }
 
 
@@ -18454,10 +18461,11 @@ def _pc_compute_total_note(kept):
 
 def _pc_render_plan_builder(today):
     """The plan builder at the top of the tab, one open expander: only its
-    buttons change the plan, presets (`_pc_apply_preset`) and *Add a
-    phase*, and whatever they do lands as phases in the list, up to
-    `_PC_WIN_MAX`, each with its own dates, US pace, share of compute per
-    use and RSI ban, and an X (`_pc_remove_phase`). Phases write the
+    buttons change the plan, one per kind of phase (`_PC_PHASE_KINDS`,
+    `_pc_add_phase`) and presets (`_pc_apply_preset`), and whatever they do
+    lands as phases in the list, up to `_PC_WIN_MAX`, each a row naming its
+    kind with only that kind's setting(s), its dates and an X
+    (`_pc_remove_phase`). Phases write the
     `pc_win*` settings `_pc_plan_phases` reads. Returns (the pacing month,
     the earliest phase's start or today with none; the slot for the
     nearest-plan note; the slot for the plan's chart)."""
@@ -18472,13 +18480,18 @@ def _pc_render_plan_builder(today):
     win_n = st.session_state.setdefault("pc_win_n", _PC_DEFAULTS["pc_win_n"])
     with st.expander("Pacing plan", expanded=True, key="pc_ex_plan",
                      icon=":material/timeline:"):
-        st.caption("Each button adds its phases to the list below, where "
-                   "each can be adjusted or removed. A phase runs the US at "
-                   "its own pace, compute split and RSI rule between two "
-                   "dates; with no phases the US is not paced.")
+        st.caption("Each button adds to the list of phases below, where "
+                   "each can be adjusted or removed. A phase does one thing "
+                   "between two dates; with no phases the US is not paced.")
+        with st.container(horizontal=True):
+            for kind, name in _PC_PHASE_KINDS.items():
+                st.button(name, key=f"pc_add_{kind}", icon=":material/add:",
+                          disabled=win_n >= _PC_WIN_MAX, help=_PC_PHASE_HELP[kind],
+                          on_click=_pc_add_phase, args=(kind,))
+        st.caption("Or start from a ready-made plan:")
         with st.container(horizontal=True):
             for j, (name, phases) in enumerate(_pc_plan_presets(today).items()):
-                st.button(name, key=f"pc_preset_{j}",
+                st.button(name, key=f"pc_preset_{j}", type="tertiary" if not phases else "secondary",
                           disabled=win_n + len(phases) > _PC_WIN_MAX,
                           on_click=_pc_apply_preset, args=(phases,))
         if win_n + 1 > _PC_WIN_MAX:
@@ -18488,51 +18501,43 @@ def _pc_render_plan_builder(today):
             st.caption(f"A greyed-out button adds more phases than the "
                        f"{_PC_WIN_MAX - win_n} the plan has room for.")
         pause_mo = _pc_first_phase_mo()
+        if not win_n:
+            return pause_mo, st.container(), st.container()
         st.markdown("**Phases**", help=(
-            "Each phase runs the US at its own pace between its dates, "
-            "then hands it back. A phase left at *No pacing* sets "
-            "none of its own. Where phases overlap, the slowest pace applies. "
-            "A phase can also change the compute each use gets while it runs, "
-            "rerunning the Takeoff model with that compute; "
-            "shares multiply with each other where phases overlap. Its RSI ban "
-            "makes people review each gain in capability before research "
-            "builds on it, as in the Humans in Control Act's ban on runaway "
-            "recursive self-improvement: no autopilot at RSI, and every new "
-            "model and batch of fast improvements waits at least the review "
-            "time. One month is today's validation; without the ban, AI doing "
-            "the checking shrinks it toward a day. Banning phases make one ban "
-            "from the first one's start to the last one's end, at the longest "
+            "Where pacing phases overlap, the slowest pace applies; compute "
+            "changes that overlap multiply. Banning phases make one ban from "
+            "the first one's start to the last one's end, at the longest "
             "review. The earliest phase's start is the pacing date, which sets "
             "the snapshot, the *Compute Thresholds* race's bar and the date "
             "the model-access lever bites."))
-        if win_n:
-            st.caption(f"Pacing starts {month(pause_mo)}, the earliest phase's start.")
-        fields = (("pace", "US pace", _PC_PACE_OPTIONS,
-                   lambda p: "No pacing" if p == 100 else _pc_pace_label(p)),
-                  ("start", "Starts", months[:-1], month), ("end", "Ends", months, month),
-                  *((u, f"Compute for {name}", _PC_USE_OPTIONS, lambda p: f"{p}%")
-                    for u, name in _PC_USES.items()),
-                  ("ban", "RSI ban", _PC_BAN_OPTIONS,
-                   lambda m: "Off" if m == 0 else f"{m}-month review"))
+        st.caption(f"Pacing starts {month(pause_mo)}, the earliest phase's start.")
+        values = {
+            "pace": (("pace", "US pace", _PC_PACE_OPTIONS, _pc_pace_label),),
+            "cut": (("cut", "Compute for research", _PC_CUT_OPTIONS, lambda k: f"÷{k}"),),
+            "realloc": tuple((u, f"Compute for {name}", _PC_USE_OPTIONS, lambda p: f"{p}%")
+                             for u, name in _PC_USES.items()),
+            "ban": (("ban", "Review per gain", _PC_BAN_OPTIONS,
+                     lambda m: f"{m} month" + ("s" if m > 1 else "")),)}
+        dates = (("start", "Starts", months[:-1], month), ("end", "Ends", months, month))
         for i in range(1, win_n + 1):
-            cols = st.columns([1.3, 1, 1, 1, 1, 1, 1.1, 0.4], vertical_alignment="bottom")
-            for col, (f, label, options, fmt) in zip(cols, fields):
+            kind = _pc_phase_kind(i)
+            cols = st.columns([1.4, 1, 1, 1, 1, 1, 0.4], vertical_alignment="bottom")
+            cols[0].markdown(f"**{i}. {_PC_PHASE_KINDS[kind]}**")
+            vals = values[kind]
+            for col, (f, label, options, fmt) in zip(
+                    cols[1:1 + len(vals)] + cols[4:6], vals + dates):
                 key = f"pc_win{i}_{f}"
                 if st.session_state.get(key) not in options:
                     st.session_state[key] = _PC_DEFAULTS[key]
-                col.selectbox(label, options, key=key, format_func=fmt,
-                              label_visibility="visible" if i == 1 else "collapsed")
+                col.selectbox(label, options, key=key, format_func=fmt)
             cols[-1].button(":material/close:", key=f"pc_win{i}_x",
                             type="tertiary", help=f"Remove phase {i}",
                             on_click=_pc_remove_phase, args=(i,))
-            a, b, *uses = (st.session_state[f"pc_win{i}_{f}"]
-                           for f in ("start", "end", *_PC_USES))
+            a, b, _, uses, _ = _pc_phase_effect(i)
             if b <= a:
                 st.caption(f"Phase {i} ends before it starts, so it is ignored.")
-            else:
-                _pc_compute_total_note(tuple(u / 100.0 for u in uses))
-        st.button("Add a phase", icon=":material/add:", key="pc_win_add",
-                  disabled=win_n >= _PC_WIN_MAX, on_click=_pc_add_phase)
+            elif kind == "realloc":
+                _pc_compute_total_note(uses)
         return pause_mo, st.container(), st.container()
 
 
@@ -18545,12 +18550,64 @@ def _pc_first_phase_mo():
     return min((a for a, b in spans if b > a), default=0)
 
 
-def _pc_add_phase():
-    """*Add a phase*: one more row, at its defaults."""
+_PC_PHASE_HELP = {
+    "pace": "Adds a phase that runs the US at a share of its own speed: 100% is "
+            "the Takeoff tab's path, 0% a pause, and 50% runs the US along "
+            "that same path at half speed, so automated coding and RSI "
+            "arrive later too.",
+    "cut": "Adds a phase in which US labs put this many times less compute "
+           "into AI research: training runs, experiments and the AI agents "
+           "doing research all shrink by it. This reruns the Takeoff model "
+           "with less compute, so research slows by less than the cut, since "
+           "researchers and algorithms carry on, and China's takeoff follows "
+           "the slower US. When it ends the compute comes back at the level "
+           "it would have had, so research rebounds.",
+    "realloc": "Adds a phase that changes the share of its compute each use "
+               "keeps: under 100% takes compute away, over 100% moves compute "
+               "in. Training sets how large each new model is; experiments "
+               "and AI researchers are the two inputs to research, so compute "
+               "moved from training to them speeds research up while each "
+               "model trains smaller.",
+    "ban": "Adds a phase in which US labs may automate AI research but not let "
+           "it run on its own: people must review each gain in capability "
+           "before research builds on it, as in the Humans in Control Act's "
+           "ban on runaway recursive self-improvement. No autopilot at RSI, "
+           "and every new model and batch of fast improvements waits at "
+           "least the review time. One month is today's validation; without "
+           "the ban, AI doing the checking shrinks it toward a day.",
+}
+
+
+def _pc_phase_kind(i):
+    """Phase `i`'s kind, `pace` for one a link left unknown."""
+    kind = st.session_state.get(f"pc_win{i}_kind", "pace")
+    return kind if kind in _PC_PHASE_KINDS else "pace"
+
+
+def _pc_phase_effect(i):
+    """Phase `i` as (start month, end month, pace 0–1, kept share of compute
+    per use in `_PC_USES` order, review months or 0), reading only its
+    kind's settings, so a field another kind would use does nothing."""
+    def get(f):
+        return st.session_state.get(f"pc_win{i}_{f}", _PC_DEFAULTS[f"pc_win{i}_{f}"])
+    kind = _pc_phase_kind(i)
+    return (get("start"), get("end"),
+            get("pace") / 100.0 if kind == "pace" else 1.0,
+            tuple(get(u) / 100.0 for u in _PC_USES) if kind == "realloc"
+            else (1.0 / get("cut"),) * 3 if kind == "cut" else (1.0, 1.0, 1.0),
+            get("ban") if kind == "ban" else 0)
+
+
+def _pc_add_phase(kind):
+    """A kind's button: one more row of that kind, at its defaults; a cut
+    or a ban has no end, as those levers last until someone lifts them."""
     n = min(st.session_state.get("pc_win_n", 0) + 1, _PC_WIN_MAX)
     st.session_state["pc_win_n"] = n
     for f in _PC_PHASE_FIELDS:
         st.session_state[f"pc_win{n}_{f}"] = _PC_DEFAULTS[f"pc_win{n}_{f}"]
+    st.session_state[f"pc_win{n}_kind"] = kind
+    if kind in ("cut", "ban"):
+        st.session_state[f"pc_win{n}_end"] = _PC_PAUSE_MO_MAX
 
 
 def _pc_remove_phase(i):
@@ -18627,13 +18684,15 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_win_n": 0,
                 # Each phase opens on the year after the one before it.
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
-                    (f"pc_win{i}_pace", 50),
+                    (f"pc_win{i}_kind", "pace"), (f"pc_win{i}_pace", 50),
+                    (f"pc_win{i}_cut", 2),
                     (f"pc_win{i}_start", min(_pc_pause_default_mo() + 12 * (i - 1),
                                              _PC_PAUSE_MO_MAX - 1)),
                     (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12 * i,
                                            _PC_PAUSE_MO_MAX)),
-                    *((f"pc_win{i}_{u}", 100) for u in _PC_USES),
-                    (f"pc_win{i}_ban", 0))},
+                    # Reallocating opens on training compute moved to experiments.
+                    (f"pc_win{i}_train", 50), (f"pc_win{i}_exp", 150),
+                    (f"pc_win{i}_agents", 100), (f"pc_win{i}_ban", 1))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = list(range(2027, 2036))
 
@@ -20482,11 +20541,9 @@ def _pc_plan_phases(today):
     months or 0)]; a phase ending on or before its start is left out."""
     out = []
     for i in range(1, int(st.session_state.get("pc_win_n", 0) or 0) + 1):
-        a, b, p, *uses, ban = (st.session_state.get(f"pc_win{i}_{f}", _PC_DEFAULTS[f"pc_win{i}_{f}"])
-                               for f in ("start", "end", "pace", *_PC_USES, "ban"))
+        a, b, p, uses, ban = _pc_phase_effect(i)
         if b > a:
-            out.append((_pc_add_months(today, a), _pc_add_months(today, b),
-                        p / 100.0, tuple(u / 100.0 for u in uses), ban))
+            out.append((_pc_add_months(today, a), _pc_add_months(today, b), p, uses, ban))
     return out
 
 
@@ -20495,7 +20552,7 @@ def _pc_pace_plan(today):
     A lone pacing phase that starts the plan and has no end is the plan's
     pace for good, so a pause reads as a pause; otherwise no pacing plus
     each phase under 100% as a (start date, end date, pace) window, so a
-    compute-only phase sets no pace of its own."""
+    phase of another kind sets no pace."""
     wins = [(a, b, p) for a, b, p, _, _ in _pc_plan_phases(today) if p < 1]
     if (len(wins) == 1 and wins[0][1] >= _pc_add_months(today, _PC_PAUSE_MO_MAX)
             and wins[0][0] == _pc_add_months(today, _pc_first_phase_mo())):

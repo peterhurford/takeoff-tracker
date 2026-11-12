@@ -109,14 +109,20 @@ def _switch_tab(at, tab_name):
 def _plan(at, run=True, **fields):
     """Set the Pacing plan to one phase: `fields` over the current phase 1,
     else over a phase at no pacing from `_pc_pause_default_mo()` with no
-    end (as a preset adds it). Runs unless `run` is False."""
+    end (as a preset adds it), its kind the one whose setting `fields`
+    names. Runs unless `run` is False."""
     import visualize_projection as vp
     ss = at.session_state
+    kind = next((k for k, fs in (("pace", ("pace",)), ("cut", ("cut",)),
+                                 ("realloc", vp._PC_USES), ("ban", ("ban",)))
+                 if any(f in fields for f in fs)), None)
+    if kind:
+        fields["kind"] = kind
     if "pc_win_n" in ss and ss["pc_win_n"]:
         ph = {f: ss[f"pc_win1_{f}"] for f in vp._PC_PHASE_FIELDS}
     else:
-        ph = dict(pace=100, start=vp._pc_pause_default_mo(), end=vp._PC_PAUSE_MO_MAX,
-                  ban=0, **{u: 100 for u in vp._PC_USES})
+        ph = dict(kind="pace", pace=100, cut=2, start=vp._pc_pause_default_mo(),
+                  end=vp._PC_PAUSE_MO_MAX, ban=1, **{u: 100 for u in vp._PC_USES})
     ph.update(fields)
     ss["pc_win_n"] = 1
     for f, v in ph.items():
@@ -3633,7 +3639,7 @@ class TestPacingTab:
 
     def test_an_rd_compute_cut_slows_the_us_and_quotes_a_pacing_plan(self):
         """No phase moves compute by default and then nothing is drawn for
-        it. A phase that cuts every use 10x puts the US line below a dotted
+        it. A *Cut US R&D compute* phase at ÷10 puts the US line below a dotted
         no-cut line, China's below its own, and quotes a pacing plan; a cut
         that ends loses less."""
         def traces(at):
@@ -3653,7 +3659,7 @@ class TestPacingTab:
         assert not plan(at)
         free_cn = traces(at)["China, projected"]["y"]
 
-        _plan(at, train=10, exp=10, agents=10)
+        _plan(at, cut=10)
         _assert_no_error(at, "Pacing / R&D compute cut")
         d = traces(at)
         assert "US, no pacing" not in d
@@ -3676,7 +3682,7 @@ class TestPacingTab:
         assert traces(at)["US, projected"]["y"][-1] > cut_us
 
     def test_an_rsi_ban_slows_the_us_and_quotes_a_pacing_plan(self):
-        """Off by default. The preset adds a banning phase: the US falls
+        """Off by default. Its button adds a banning phase: the US falls
         below a dotted no-ban line, the cards and table name the ban, a
         pacing plan is quoted, and a longer review slows the US more; with
         a compute cut too, the dotted line names both."""
@@ -3697,8 +3703,7 @@ class TestPacingTab:
         _switch_tab(at, "Pacing")
         assert not plan(at)
 
-        j = list(vp._pc_plan_presets(datetime.now())).index("Ban runaway RSI")
-        at.button(key=f"pc_preset_{j}").click().run()
+        at.button(key="pc_add_ban").click().run()
         _assert_no_error(at, "Pacing / RSI ban")
         assert at.selectbox(key="pc_win1_ban").value == 1
         d = traces(at)
@@ -3713,14 +3718,15 @@ class TestPacingTab:
         _assert_no_error(at, "Pacing / RSI ban, 6-month reviews")
         assert traces(at)["US, projected"]["y"][-1] < one - 5
 
-        _plan(at, train=50, exp=50, agents=50)
+        at.button(key="pc_add_cut").click().run()
         _assert_no_error(at, "Pacing / RSI ban and compute cut")
+        assert at.selectbox(key="pc_win2_cut").value == 2
         assert "US, no compute cut or RSI ban" in traces(at)
 
     def test_the_plan_builder_sets_phases_presets_and_compute_by_use(self):
         """No plan draws no plan chart. A preset adds its phases to the list;
-        compute moved from training to
-        experiments reruns the US (a dotted no-cut line, a rule naming the
+        a *Reallocate compute* phase shows only its uses and opens with
+        compute moved from training to experiments, which reruns the US (a dotted no-cut line, a rule naming the
         uses) at an unchanged total; overlapping phases' compute shares
         multiply; a phase's X removes it; and *Clear plan* clears it all."""
         import visualize_projection as vp
@@ -3750,8 +3756,9 @@ class TestPacingTab:
         assert {0, 50, 100} <= set(plan["US pace"]["y"])
 
         preset(at, "Clear plan")
-        preset(at, "Training compute to experiments")
+        at.button(key="pc_add_realloc").click().run()
         assert at.session_state["pc_win_n"] == 1
+        assert not [w for w in at.selectbox if w.key == "pc_win1_pace"]
         assert at.selectbox(key="pc_win1_train").value == 50
         assert at.selectbox(key="pc_win1_exp").value == 150
         assert any("total is unchanged" in str(c.value) for c in at.caption)
@@ -3804,7 +3811,8 @@ class TestPacingTab:
         at.run()
         _switch_tab(at, "Pacing")
         assert not [c for c in at.caption if "Pacing starts" in str(c.value)]
-        preset(at, "Halve R&D compute")
+        at.button(key="pc_add_cut").click().run()
+        assert at.selectbox(key="pc_win1_end").value == vp._PC_PAUSE_MO_MAX
         assert f"{_pc_add_months(datetime.now(), _pc_pause_default_mo()):%b %Y}" in starts(at)
         at.selectbox(key="pc_win1_start").set_value(30).run()
         _assert_no_error(at, "Pacing / phase 1 starts later")
@@ -3815,7 +3823,7 @@ class TestPacingTab:
         preset(at, down_up)
         preset(at, down_up)
         assert at.session_state["pc_win_n"] == vp._PC_WIN_MAX == 10
-        assert at.button(key="pc_win_add").disabled
+        assert all(at.button(key=f"pc_add_{k}").disabled for k in vp._PC_PHASE_KINDS)
         assert any("plan is full" in str(c.value) for c in at.caption)
 
     def test_pacing_shows_a_loading_pill_only_when_its_settings_change(self, monkeypatch):
@@ -4436,7 +4444,7 @@ class TestPacingTab:
 
         _plan(at, pace=0)
         pace = at.selectbox(key="pc_win1_pace")
-        assert pace.options[0] == "No pacing" and pace.options[-1] == "0% \u00b7 pause"
+        assert pace.options[0] == "100% \u00b7 no pacing" and pace.options[-1] == "0% \u00b7 pause"
         paused, paused_bar = _cross(at, "paused US frontier")
         _plan(at, pace=10)
         _assert_no_error(at, "Pacing / paced at 10%")
@@ -4463,7 +4471,7 @@ class TestPacingTab:
         assert "paused US frontier" in label
         start = _pause_mo(at)
         at.selectbox(key="pc_win1_end").set_value(start + 3).run()
-        at.button(key="pc_win_add").click().run()
+        at.button(key="pc_add_pace").click().run()
         at.selectbox(key="pc_win2_start").set_value(start + 3)
         at.selectbox(key="pc_win2_end").set_value(start + 40).run()
         _assert_no_error(at, "Pacing / pause resumed by a phase")
@@ -4491,7 +4499,7 @@ class TestPacingTab:
         _plan(at, pace=95)
         before, bar0 = cards(), bar()
         start = _pause_mo(at)
-        at.button(key="pc_win_add").click().run()
+        at.button(key="pc_add_pace").click().run()
         assert at.selectbox(key="pc_win2_pace").value == 50
         at.selectbox(key="pc_win2_pace").set_value(0)
         at.selectbox(key="pc_win2_start").set_value(0)

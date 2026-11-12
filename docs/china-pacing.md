@@ -367,13 +367,17 @@ attribution; the threshold reaches the display through the chart title.
    release, one click away); the fine print states which milestone the dates mean.
 
 The US plan is the *Pacing plan* expander at the top of the tab (`_pc_render_plan_builder`,
-open by default, `pc_ex_plan`): only its buttons change it, presets and *Add a phase*, and
-whatever they do lands as phases in the list, up to `_PC_WIN_MAX`, each a row
-(`pc_win{i}_pace/start/end/train/exp/agents/ban`, `_PC_PHASE_FIELDS`) with an X. There are no
-always-live rows above the phases: a cut, pace or ban outside a phase would change the plan
-without a click and without showing in the list. A phase runs the US at its own pace on
+open by default, `pc_ex_plan`): only its buttons change it, one per kind of phase
+(`_PC_PHASE_KINDS`: *Pace the US*, *Cut US R&D compute*, *Reallocate compute*, *Ban runaway
+RSI*, `_pc_add_phase`, each lever's explanation in its button's help, `_PC_PHASE_HELP`) and
+presets, and whatever they do lands as phases in the list, up to `_PC_WIN_MAX`. Each phase is
+a row naming its kind, with only that kind's setting(s), its dates and an X
+(`pc_win{i}_kind/pace/cut/start/end/train/exp/agents/ban`, `_PC_PHASE_FIELDS`);
+A cut or ban opens with no end, the others a year long. `_pc_phase_effect` reads only the kind's fields, so the others, kept at their defaults, do
+nothing. There are no always-live rows above the phases: a lever outside a phase would change
+the plan without a click and without showing in the list. A pacing phase runs the US at its own pace on
 `_pc_paced_clock` from start to end, then hands it back; at 100% it sets no pace, so a
-compute-only phase leaves the pace alone, and the slowest wins where phases overlap
+non-pacing phase leaves the pace alone, and the slowest wins where phases overlap
 (`_pc_pace_plan`). A lone pacing phase that starts the plan and has no end (its end the last
 month on offer, shown *No end*) is the plan's pace for good, `pace` with no windows, so a
 pause reads as a pause; anything else is pace 1 plus windows. The pacing date is the earliest
@@ -409,8 +413,9 @@ the cut run's median ECI up to ultraintelligence
 path is no slower get "do not slow the US" instead. It offers no button to swap the plan in,
 which would change the plan from a caption rather than the list.
 
-Compute moves by use: each phase's `pc_win{i}_train/exp/agents` (`_PC_USE_OPTIONS`, %
-of no-plan, 100 = off) set the share kept for training, experiments and AI researchers; a
+A *Cut US R&D compute* phase divides every use by `pc_win{i}_cut` (`_PC_CUT_OPTIONS`); a
+*Reallocate compute* phase's `pc_win{i}_train/exp/agents` (`_PC_USE_OPTIONS`, % of no-plan,
+opening at 50/150/100, training moved to experiments) set the share each use keeps; a
 value over 100 is compute moved in, and `_pc_compute_total_note` says what the three sum to
 at Takeoff's training and experiment shares. Overlapping phases' shares multiply
 (`_pc_cut_spans`), and `_pc_cut_schedule` hands Takeoff a tuple of `(start, end, kept)` spans
@@ -418,7 +423,7 @@ that `_tk_cut_path` turns into one log path per use for
 `simulate(compute_cut=(years, {use: logs}))`; equal paths match a single cut exactly
 (`test_a_cut_schedule_gives_each_use_its_own_path`,
 `test_plan_phases_carry_pace_and_compute_into_the_schedule`). `pc_win_n` is no widget but the
-count *Add a phase* (`_pc_add_phase`) raises and a row's X (`_pc_remove_phase`, later phases
+count a kind's button (`_pc_add_phase`) raises and a row's X (`_pc_remove_phase`, later phases
 moving up) lowers. Add a setting to a phase and it must join `_PC_DEFAULTS` and
 `_PC_PHASE_FIELDS` (`_PC_RESET_KEYS` reads the latter). The preset buttons
 (`_pc_plan_presets`, `_pc_apply_preset`) each add their phases to the end of the list, from
@@ -435,8 +440,7 @@ A rerun whose Pacing settings differ from the last one drawn (`_pc_loading_start
 `_PC_LOADING_STEPS` (US rerun, China's takeoff, charts) and the dispatch clears; a rerun
 that changes no setting draws none, so opening a section does not flash it
 (`test_pacing_shows_a_loading_pill_only_when_its_settings_change`).
-A phase's *RSI ban* (`pc_win{i}_ban`, `_PC_BAN_OPTIONS`, review months, 0 = off; the *Ban
-runaway RSI* preset adds one at 1) is the Humans in Control Act's section 4 on the same rerun
+A *Ban runaway RSI* phase (`pc_win{i}_ban`, `_PC_BAN_OPTIONS`, review months, opening at 1) is the Humans in Control Act's section 4 on the same rerun
 path: `_pc_ban_rule` makes one ban from the first banning phase's start to the last one's end
 (for good when that is the last month on offer) at the longest review, and
 `takeoff.simulate(review=(start, months, end))` ends autopilot and holds every successor model

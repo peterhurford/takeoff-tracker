@@ -5548,29 +5548,36 @@ class TestPacing:
         compute and an RSI ban when it has one (`_pc_plan_phases`,
         `_pc_cut_spans`, `_pc_cut_schedule`, `_pc_ban_rule`); a lone pacing
         phase with no end that starts the plan is the plan's pace
-        (`_pc_pace_plan`). A preset adds its phases to the end of the list up
-        to the cap, the training-to-experiments one keeps the total
+        (`_pc_pace_plan`); a phase reads only its kind's fields
+        (`_pc_phase_effect`). A preset adds its phases to the end of the list
+        up to the cap, a *Reallocate compute* phase opens keeping the total
         (`_pc_compute_total`), and *Clear plan* empties it."""
         state = {"pc_win_n": 2, "pc_win1_pace": 0, "pc_win1_start": 6, "pc_win1_end": 18,
-                 "pc_win2_pace": 100, "pc_win2_start": 18, "pc_win2_end": 30,
-                 "pc_win2_train": 50, "pc_win2_exp": 150}
+                 "pc_win2_kind": "realloc", "pc_win2_pace": 0, "pc_win2_start": 18,
+                 "pc_win2_end": 30, "pc_win2_train": 50, "pc_win2_exp": 150}
         monkeypatch.setattr(vp.st, "session_state", state)
         today = datetime(2026, 1, 1)
         phases = vp._pc_plan_phases(today)
         assert [p[2:] for p in phases] == [(0.0, (1.0, 1.0, 1.0), 0), (1.0, (0.5, 1.5, 1.0), 0)]
-        assert vp._pc_pace_plan(today) == (1.0, [phases[0][:3]])   # 100% sets no pace
+        assert vp._pc_pace_plan(today) == (1.0, [phases[0][:3]])   # only its kind's fields count
         assert vp._pc_cut_spans(today) == [(phases[1][0], phases[1][1], (0.5, 1.5, 1.0))]
         (span,) = vp._pc_cut_schedule(today, today)
         assert span[0] == pytest.approx(1.5, abs=0.01) and span[1] == pytest.approx(2.5, abs=0.01)
         assert span[2] == (0.5, 1.5, 1.0)
         assert vp._pc_ban_rule(today) is None
-        state.update(pc_win1_ban=1, pc_win2_ban=3)
+        state.update(pc_win1_ban=3, pc_win2_kind="ban", pc_win2_ban=2)
+        assert vp._pc_ban_rule(today) == (phases[1][0], phases[1][1], 2)
+        state.update(pc_win2_kind="cut", pc_win2_cut=6)
+        assert vp._pc_cut_spans(today) == [(phases[1][0], phases[1][1], (1 / 6,) * 3)]
+        state.update(pc_win2_kind="ban", pc_win1_kind="ban")
         assert vp._pc_ban_rule(today) == (phases[0][0], phases[1][1], 3)
+        state["pc_win1_kind"] = "pace"
         assert vp._pc_uses_label((0.25, 0.5, 0.5)) == "training 25%, experiments 50%, AI researchers 50%"
 
         state.update(pc_win_n=1, pc_win1_end=vp._PC_PAUSE_MO_MAX)
         assert vp._pc_pace_plan(today) == (0.0, [])
-        assert vp._pc_ban_rule(today)[1] is None
+        state["pc_win1_kind"] = "ban"
+        assert vp._pc_ban_rule(today)[1] is None and vp._pc_pace_plan(today) == (1.0, [])
         state["pc_win_n"] = 0
         assert vp._pc_cut_schedule(today, today) is None
         assert vp._pc_uses_label((0.5, 0.5, 0.5)) == "R&D compute ÷2"
@@ -5582,8 +5589,9 @@ class TestPacing:
                    for phases in presets.values() for ph in phases)
         state.clear()
         vp._pc_apply_preset(presets["Pause a year, then half speed"])
-        vp._pc_apply_preset(presets["Training compute to experiments"])
+        vp._pc_add_phase("realloc")      # training compute to experiments
         assert state["pc_win_n"] == 3 and state["pc_win2_pace"] == 50
+        assert state["pc_win3_kind"] == "realloc"
         assert vp._pc_compute_total(vp._pc_plan_phases(today)[2][3]) == pytest.approx(1.0)
         monkeypatch.setattr(vp, "_PC_WIN_MAX", 5)
         vp._pc_apply_preset(presets["Step down: 75%, 50%, 25%"])   # only two rows left
