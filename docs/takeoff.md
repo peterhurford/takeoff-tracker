@@ -370,7 +370,7 @@ less compute's share, over the US frontier's 2024–25 average algorithmic growt
 `_tk_trained_frontier`, the running best of every US lab's public models at release and
 METR's Anthropic rows on Epoch's scale at first internal use, its climb smoothed by
 `_metr_local_slope`, a Gaussian-kernel local-linear slope over ~6 months, read at the latest
-model: ~24.5 → 1.5×); its `on_change` re-reads the evidence at that pace
+model: ~24 → 1.5×); its `on_change` re-reads the evidence at that pace
 (`_tk_evidence_settings`); `_tk_run`
 divides `software_months` by it and reports it as `pace_today`, where chart 1 starts. No
 separate pace input exists to disagree with it
@@ -730,9 +730,9 @@ line, plus `_TASTEVAL_ESTIMATE`'s unscored models as orange diamonds read off EC
 `_render_rsi_metr()` sets METR's AECI (`metr_aeci.csv`, `load_metr_aeci`) against
 Epoch's ECI on one chart, Anthropic's models at their estimated end of training (`produced`, with its plausible window as a segment; METR dated by staff availability, 1.90× → 1.91×): Claude models on both indexes, internal models' projected ECI
 (`_metr_on_eci`: AECI less Claude's AECI–ECI gap, which `_metr_gap_trend` fits as growing
-~2.7 points a year since 2025, 80% bars from its residual sd; Model 3 Early is matched to
+~2.9 points a year since 2025, 80% bars from its residual sd; Model 3 Early is matched to
 Fable 5.2, per its system card, and the models after it, Model 3 and Model 4, take Fable 5.2's
-own gap (2.1) instead of the trend's (~3.7), since it sits under the line where Mythos 5 and
+own gap (2.9) instead of the trend's (~4.4), since it sits under the line where Mythos 5 and
 5.1 sit on it), other labs' record-setting
 AECI points, METR's fit carried to today, and where the takeoff model's ECI starts. Its
 caption says why the indexes differ (shape is the index, colour the models, grey diamonds today's estimates). `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4.
