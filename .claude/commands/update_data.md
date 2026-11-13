@@ -66,6 +66,19 @@ Check each run for a **second round**; that, not the first, is the trigger to pi
   short-answer, ~15% coding of SDPO's gain); Fable 5.1 and GPT-6 Astra memorized the paper.
   A new round needs a new target method, so a second SDPO round is not a trend.
 
+### Anthropic's "pre-training compute multiplier" slide: watch, not ingested
+
+A roadshow slide circulated on X (2026-11), *Pre-training compute multiplier over time
+(code)*: log y-axis with **no values**, points at completion months Jul 2024, ~Apr 2025,
+~Mar 2026 and an arrow to ~Aug 2026; footnote "solely for illustrative purposes". It is in
+no SEC filing (checked 2026-11-13: S-1/A No. 2 and its graphics, all five FWPs); the
+prospectus says only "our accelerating pace of producing compute multipliers". Its segment
+slopes run 1× / 3.3× / ~6.8×, against Takeoff's ECI-read algorithmic pace of ~1.0× / ~1.1× /
+~1.3× (1.47× today), and taken literally it implies ~100 ECI points a year against a measured
+~24. **Trigger:** a filed version (final 424B, a later FWP or 10-Q) with axis values; check
+each run. Not to be confused with the deck's ">4x compute efficiency", which is revenue per
+dollar of compute.
+
 ### Revenue: source-type discipline
 
 The two revenue series follow different conventions on purpose, and mixing them creates a fake growth spike:
