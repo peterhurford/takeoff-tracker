@@ -5996,7 +5996,7 @@ class TestPacing:
         fitted = 0.5 * sum(vp._rli_start_interval(fr, slope))
         dt = round(np.log(2) / slope)
         prev = None
-        # Bars stay above the frontier's newest score (Fable 5.2, 41.3%), else
+        # Bars stay above the frontier's newest score (Fable 5.2, 41.25%), else
         # the ETA collapses to today.
         for target in (50.0, 70.0, vp._PC_RLI_TARGET_PCT):
             early, med, late = vp._pc_rli_eta(fr, target, n=20000)

@@ -1232,7 +1232,7 @@ _RLI_RAW = [
     # Added 2026-10-23: Scale only, as "Gemini Argon 4" (isNew, createdAt 2026-10-22T22:16Z); not yet in
     # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
     {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
-    {"name": "Fable 5.2",       "date": "2026-11-09", "rli_score": 41.30},
+    {"name": "Fable 5.2",       "date": "2026-11-09", "rli_score": 41.25},
     # Added 2026-11-11: Scale only, as "Deepseek V4.1 Flash" (isNew, createdAt 2026-11-11T18:24Z); not in
     # the CAIS API. Date is Epoch's catalogued release; Scale does not say whether it ran that checkpoint
     # or the later 1017 one (Epoch: 2026-10-17). Below the frontier either way.
@@ -1290,7 +1290,9 @@ _RLI_RAW = [
     # closing that asymmetry; Gemini 4 Argon is still Scale-only.
     # Rechecked 2026-10-26 to 10-30: no new model or changed score; Scale's newest createdAt is still Gemini 4
     # Argon, which is still absent from the CAIS API.
-    # Rechecked 2026-11-09: Fable 5.2 above (41.3 on both surfaces; Scale createdAt 11-09) is the only change.
+    # Rechecked 2026-11-09: Fable 5.2 above (41.3 as displayed; Scale createdAt 11-09) is the only change.
+    # Rechecked 2026-11-13: Fable 5.2 is 41.25 (99/240) on Scale's JSON, the CAIS API and remotelabor.ai, so
+    # corrected from 41.30; no new model. The CAIS API now carries Fable 5.2; Argon and V4.1 Flash are Scale-only.
     # Mythos 5.2, Sonnet 5.5, Haiku 5.5, Mythos 5.1 and Opus 5 have no score; Argon is still Scale-only.
 ]
 
@@ -10016,6 +10018,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-11-09: TickerTrends' posts since (11-03 crawler volume, 11-03 and 11-06 Anthropic) carry
     # no OpenAI total; press has only the same ~$50B for September and a ~$70B year-end target (forecast).
     # Rechecked 2026-11-11: no TickerTrends post since 11-06.
+    # Rechecked 2026-11-13: no TickerTrends post since 11-06.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10132,6 +10135,8 @@ _ANTHROPIC_REVENUE = [
     ("2026-09-30", 71.0),
     ("2026-10-31", 81.0),
     # Rechecked 2026-11-11: no EDGAR filing since S-1/A No. 2; the 11-10 roadshow post states no run rate.
+    # Rechecked 2026-11-13: five FWPs since (11-10, 11-11) restate the $81B / 10-31 and +$10B; no S-1/A No. 3
+    # or 424B. Pricing and the final 424B are due ~11-18/19 (Nasdaq trading "on or about November 19").
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10218,6 +10223,8 @@ _CN_REVENUE = {
              "which contradicts the company's own RMB 16B for August."),
             # Excluded (checked 2026-10-08): Rhodium's ~$2.4B for August (via ifeng,
             # 2026-09-21), a third-party estimate for a month already carried.
+            # Checked 2026-11-13: September-quarter results and call land 2026-11-19, the
+            # next likely MaaS ARR point; convert at that release's 2026-09-30 rate.
         ],
     },
     "Moonshot (Kimi)": {
