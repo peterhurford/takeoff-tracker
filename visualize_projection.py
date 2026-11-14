@@ -12375,9 +12375,10 @@ _DC_NETWORK_OPTIONS = {
 # of the whole installed stock, with their disagreement as the spread.
 #
 # Anchors, all public and all by *location*, not owner:
-#   • Epoch, "Trends in AI supercomputers" (May 2025): US ~75%, China ~15%
-#     of aggregate leading-cluster performance; ~74.5% / ~14.1% as re-quoted
-#     for 2026. US + China ≈ 90%, which is what pins Other.
+#   • Epoch, AI chip imports explorer (end-Jun 2026): US 19.8M and China
+#     2.637M (domestic production included) of 27.39M H100e arrived
+#     worldwide, ~72% and 9.63%. Epoch's GPU-clusters / AI-supercomputers
+#     data is a sample of clusters, not a count of chips: not used.
 #   • Epoch, "Diversion and resale: estimating compute smuggling to China":
 #     660k H100e smuggled through 2025 (290k–1.6M) — about a third of
 #     China's total compute and about 3% of the global stockpile, i.e.
@@ -12393,7 +12394,6 @@ _DC_NETWORK_OPTIONS = {
 # mostly *pipeline* (Johor ~3 GW approved; Stargate UAE 0 MW operational at
 # Epoch's last image), so today's installed share is small and poorly
 # measured.
-_WC_SOURCE_SUPERCOMPUTERS = "https://epoch.ai/data-insights/ai-supercomputers-performance-share-by-country"
 _WC_SOURCE_SMUGGLING = "https://epoch.ai/publications/chip-smuggling"
 _WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
 _WC_SOURCE_CHIP_IMPORTS = "https://epoch.ai/data/ai-chip-imports-documentation/methodology"
@@ -12414,14 +12414,15 @@ _WC_LABELS = (_WC_REGIONS[0][0], _WC_CN) + tuple(
     lab for lab, *_ in _WC_REGIONS[1:])
 _WC_NOTES = {
     "US domestic":
-        "Epoch's leading-cluster share is about 75% (May 2025, ~74.5% "
-        "re-quoted for 2026), and IFP puts the US at ~77% of the world's "
-        "AI compute at end-2026.",
+        "Epoch's AI chip imports explorer puts the US at 19.8M of 27.39M "
+        "H100e arrived worldwide by end-Jun 2026 (~72%), and IFP at ~77% of "
+        "the world's AI compute at end-2026.",
     "China domestic":
         "Computed, not set: the China tab's compute mix inside China "
         "(domestic chips, legal sales, smuggling) over the world total. "
-        "The published estimates disagree most here: Epoch's cluster share "
-        "says 14\u201315%, the AI-2027 tracker 12%, Epoch's own smuggling "
+        "The published estimates disagree most here: Epoch's chip imports "
+        "explorer says 9.6% (end-Jun 2026), the AI-2027 tracker 12%, Epoch's "
+        "own smuggling "
         "estimate about 9% at end-2025, and IFP's chip count about 7% at "
         "end-2026.",
     "SEA":
@@ -12446,14 +12447,12 @@ _WC_NOTES = {
     "Other":
         "Japan, Korea and India, plus the Gulf outside the UAE \u2014 Saudi "
         "Arabia's Humain brought twin 100 MW campuses online in 2026 and is "
-        "aiming at 1.9 GW by 2030. Sized as the remainder: Epoch puts the US "
-        "and China together at about 90%.",
+        "aiming at 1.9 GW by 2030. Sized as the remainder.",
 }
 # Growth of each region outside China, ×/yr as (central, p10, p90). They
 # split the non-China total (`_wc_split_paths`), so only their ratios matter;
 # the total itself comes from the world identity below.
-#   • US: Epoch has leading-cluster performance doubling every ~9 months
-#     (~2.5×/yr); the catalogue's US sites aggregate to ~1.9×/yr to end-2028.
+#   • US: the catalogue's US sites aggregate to ~1.9×/yr to end-2028.
 #   • Rates are power growth times compute per watt (derivations in
 #     CHINA_COMPUTE_JUDGMENTS.md). SemiAnalysis's China Datacenter Model
 #     (Sep 2026) is the power check for SEA; the catalogue's US sites put
@@ -12543,10 +12542,12 @@ _WC_US_WIDE_FROM = 2027
 _WC_US_LOW_RATIO = 60 / 74
 _WC_US_HIGH_RATIO = 109 / 74
 _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
-# Epoch's "Trends in AI supercomputers" (`_WC_SOURCE_SUPERCOMPUTERS`): China
-# ~15% of the performance of the GPU clusters it tracks in May 2025, clusters
-# estimated to hold 10-20% of the world's AI compute, so a share of a sample.
-_WC_EPOCH_CLUSTER_SHARE = (datetime(2025, 5, 1), 15.0)
+# Epoch's AI chip imports explorer (`_WC_SOURCE_CHIP_IMPORTS`): China,
+# domestic production included, at 2.637M H100e of 27.39M arrived worldwide
+# at end-Jun 2026 (China's conditional 90% 2.26-2.96M), as (date, share %,
+# China H100e, world H100e). The share chart's caption prints ours beside it
+# (`test_china_share_is_near_epochs_chip_imports_reading`).
+_WC_CHIP_IMPORTS_CHINA = (datetime(2026, 6, 30), 9.63, 2.637e6, 27.39e6)
 
 # CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
@@ -16930,8 +16931,7 @@ def _render_world_shares(today, horizon):
     _fn_caption(
         "Whiskers are 80% ranges, one region at a time; shares are by "
         "location. Sources: Epoch AI "
-        f"([by country]({_WC_SOURCE_SUPERCOMPUTERS}), "
-        f"[smuggling]({_WC_SOURCE_SMUGGLING}), "
+        f"([smuggling]({_WC_SOURCE_SMUGGLING}), "
         f"[coverage]({_WC_SOURCE_COVERAGE}), "
         f"[chip sales]({_WC_SOURCE_CHIP_SALES}), "
         f"[chip imports]({_WC_SOURCE_CHIP_IMPORTS}), "
@@ -17005,14 +17005,17 @@ def _render_world_shares(today, horizon):
     fig2.update_layout(hovermode='x unified')
     fig2.update_yaxes(ticksuffix='%')
     st.plotly_chart(fig2, width="stretch")
-    _back = _wc_central_shares(
-        today, [(_WC_EPOCH_CLUSTER_SHARE[0] - today).days / 365.25])[cn][0]
+    _ci_date, _ci_share, _ci_cn, _ci_world = _WC_CHIP_IMPORTS_CHINA
+    _ci_ours = _wc_central_shares(
+        today, [(_ci_date - today).days / 365.25])[cn][0]
     _cts_last = load_duv_production(_duv_mtime())["us"][-1][0]
     _fn_caption(
         f"China is its compute mix inside China over a world total that goes "
         f"from {world[i0]:,.0f}M H100e today to {world[-1]:,.0f}M by "
         f"{dates[-1]:%b %Y}; the other regions split the rest at their "
-        "central rates from today's split.",
+        "central rates from today's split. "
+        f"At end-{_ci_date:%b %Y} it reads China at {_ci_ours:.1f}%, "
+        f"against {_ci_share:.1f}% in Epoch's chip imports explorer.",
         ("world total", _identity + " Log-linear between year-ends; before "
                         "end-2025 the world runs back at its 2026 growth, "
                         f"and past CTS's last year ({_cts_last}) at that "
@@ -17022,11 +17025,13 @@ def _render_world_shares(today, horizon):
                      for lab, mid, _, _ in _WC_GROWTH)
          + ". Only their ratios matter. Hover the chart for each region's 80% "
            "range, one region at a time."),
-        ("today's split", "No measured history of these shares exists. The "
-                          f"back-run puts China at {_back:.0f}% in "
-                          f"{_WC_EPOCH_CLUSTER_SHARE[0]:%B %Y}, against "
-                          f"Epoch's ~{_WC_EPOCH_CLUSTER_SHARE[1]:.0f}% "
-                          "cluster-share reading then."))
+        ("today's split", "The split outside China is set from the "
+                          "published estimates; hover a bar above for its "
+                          "sources."),
+        ("chip imports explorer",
+         f"[Epoch]({_WC_SOURCE_CHIP_IMPORTS}): China {_ci_cn / 1e6:.2f}M "
+         f"H100e, domestic production included, of {_ci_world / 1e6:.2f}M "
+         "arrived worldwide. A check, not an input."))
 
 
 _CC_SOURCES_HEAD = "Where China's compute comes from"

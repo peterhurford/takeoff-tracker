@@ -5249,6 +5249,18 @@ class TestCcWorldShares:
         assert float(c["US domestic"][0]) < cat["US domestic"]
         assert float(c["China domestic"][0]) > cat["China domestic"]
 
+    def test_china_share_is_near_epochs_chip_imports_reading(self):
+        """Epoch's chip imports explorer is the check on China's share; a
+        refresh that moves ours more than 2 points off it needs a look. The
+        GPU-clusters sample is not a source."""
+        d, share, _cn, _world = vp._WC_CHIP_IMPORTS_CHINA
+        today = datetime(2026, 11, 14)
+        ours = float(vp._wc_central_shares(
+            today, [(d - today).days / 365.25])[vp._WC_CN][0])
+        assert abs(ours - share) < 2.0, ours
+        src = open(vp.__file__).read()
+        assert "ai-supercomputers" not in src and "gpu-clusters" not in src
+
 
 class TestCcHeadline:
     """The China tab's headline cards (`_cc_headline`) read the functions

@@ -425,9 +425,10 @@ not a reading of the CSVs. Six things are load-bearing:
    Europe/UK is US firms building there. The area chart opens at `_CC_X_START`
    (Jan 2025) like the rest of the tab; left of the "Today" divider China's
    stock is the mix's and the world before end-2025 is the back-run, so no
-   share there is measured. The caption quotes the May 2025 China share
-   against Epoch's ~15% cluster-share reading (`_WC_EPOCH_CLUSTER_SHARE`, which the
-   China tab's cross-check also reads). That half is
+   share there is measured. The caption prints China's end-Jun 2026 share
+   beside Epoch's chip imports explorer's 9.63% (`_WC_CHIP_IMPORTS_CHINA`,
+   `test_china_share_is_near_epochs_chip_imports_reading`); Epoch's GPU-clusters
+   data is a sample of clusters, not a chip count, and is not a source. That half is
    washed out by a white `vrect` at `layer='above'` (a shaded band would sit
    *under* the filled areas and never show), and the divider is heavier than
    the other tabs' dotted one on purpose: it is the only thing separating two
