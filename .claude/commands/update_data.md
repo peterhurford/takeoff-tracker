@@ -73,9 +73,14 @@ A roadshow slide circulated on X (2026-11), *Pre-training compute multiplier ove
 ~Mar 2026 and an arrow to ~Aug 2026; footnote "solely for illustrative purposes". It is in
 no SEC filing (checked 2026-11-13: S-1/A No. 2 and its graphics, all five FWPs); the
 prospectus says only "our accelerating pace of producing compute multipliers". Its segment
-slopes run 1× / 3.3× / ~6.8×, against Takeoff's ECI-read algorithmic pace of ~1.0× / ~1.1× /
-~1.3× (1.47× today), and taken literally it implies ~100 ECI points a year against a measured
-~24. **Trigger:** a filed version (final 424B, a later FWP or 10-Q) with axis values; check
+slopes run 1× / 3.3× / ~6.8× under any reading. Best reading ~4× per gridline (3–4.5×): the
+first segment at Epoch's 8.4-month pre-training doubling gives 4.5×, and Anthropic's own line
+(METR rows, internal models, by `produced` date, at 5.95 ECI per 10× compute) gives 4.4× / 3.4×.
+That is ~35× by Mar 2026, ~200–560× at the arrow, now doubling every 1.2–1.5 months, and ~2×
+the 2024–25 algorithmic pace (METR: 1.9×). Upper bounds: they assume all acceleration is
+pre-training, and METR's pre-training/RL split is redacted. 10× per gridline is ruled out
+(~40 ECI points a year against 27.3 measured). Takeoff's default stays at 1.47× (decided
+2026-11-13; 29.3 points a year would move RSI 1 month, ultraintelligence 3). **Trigger:** a filed version (final 424B, a later FWP or 10-Q) with axis values; check
 each run. Not to be confused with the deck's ">4x compute efficiency", which is revenue per
 dollar of compute.
 
