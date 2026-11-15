@@ -18723,8 +18723,7 @@ _PC_PHASE_HELP = {
                "model trains smaller.",
     "ban": "Adds a phase in which US labs may automate AI research but not let "
            "it run on its own: people must review each gain in capability "
-           "before research builds on it, as in the Humans in Control Act's "
-           "ban on runaway recursive self-improvement. No autopilot at RSI, "
+           "before research builds on it. No autopilot at RSI, "
            "and every new model and batch of fast improvements waits at "
            "least the review time. One month is today's validation; without "
            "the ban, AI doing the checking shrinks it toward a day.",
