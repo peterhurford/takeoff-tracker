@@ -1086,6 +1086,17 @@ class TestEciExplains:
         assert "Milestone details" not in [e.label for e in at.expander]
         assert not at.table
 
+    def test_training_finish_help_says_what_the_us_lag_rests_on(self):
+        """The toggle's help splits the US lag into METR's measured part and
+        the assumed ~14 days, and names GPT-5.5 as the one non-Claude check."""
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.run()
+        _assert_no_error(at, "eci")
+        help_ = at.toggle(key="eci_trained").help
+        assert "assumed ~14" in help_ and "GPT-5.5" in help_
+        assert "Fable 5.2's lead" in help_
+
     def test_superexp_legend_says_days_per_point(self):
         at = _fresh_app()
         at.query_params["tab"] = "eci"

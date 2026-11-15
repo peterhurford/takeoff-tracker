@@ -6097,8 +6097,15 @@ def render_eci():
                  f"Model 3 Early, {_rl_model_days('Model 3 Early')} days before "
                  "release), other US releases "
                  f"less the median Anthropic snapshot lag ({_eci_snapshot_lag_days():.0f} "
-                 "days), Chinese releases less China's lag. Evidence: the "
-                 "*Release Lag* tab.")
+                 "days), Chinese releases less China's lag. That US lag is "
+                 "measured on Claude models only, and only in part: internal "
+                 "availability to release is METR's dates (median "
+                 f"{np.median([(r['released'] - r['available']).days for r in _rl_snapshot_rows() if not r['internal_first']]):.0f} "
+                 "days); training finish to availability is an assumed ~14. "
+                 "For other labs the one check is GPT-5.5 (pretraining done "
+                 "~Mar 24, 2026, released Apr 23: under 30 days). A longer "
+                 "hold at OpenAI or Google would pull their models earlier "
+                 "and shrink Fable 5.2's lead. Evidence: the *Release Lag* tab.")
 
     # Keep the URL in sync (omit params at their defaults).
     if entity_a == "US best":
