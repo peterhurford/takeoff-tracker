@@ -12399,16 +12399,25 @@ _WC_SOURCE_COVERAGE = "https://epoch.ai/data/ai-chip-owners"
 _WC_SOURCE_CHIP_IMPORTS = "https://epoch.ai/data/ai-chip-imports-documentation/methodology"
 _WC_SOURCE_STARGATE_UAE = "https://epoch.ai/data/ai-data-centers/directory/openai-stargate-uae"
 _WC_CN = "China domestic"
-# The regions outside China as (label, central share %, 10th pct, 90th pct):
-# world shares as published, beside China's ~9%. They split whatever the
-# world total leaves outside China, so only their ratios matter.
-_WC_REGIONS = (
-    ("US domestic", 76.0, 68.0, 82.0),
+# The regions outside China as (label, central share %, 10th pct, 90th pct).
+# They split whatever the world total leaves outside China, so only their
+# ratios matter. The four besides the US are world shares as published; the
+# US is sized from Epoch's chip imports explorer to hold
+# `_WC_US_OF_NON_CHINA` of the world outside China, 19.8M of the
+# 27.39M - 2.637M H100e arrived by end-Jun 2026, its 80% range the same
+# ratio to central as before (68-82 around 76)
+# (`test_the_us_holds_chip_imports_share_of_the_world_outside_china`).
+_WC_US_OF_NON_CHINA = 19.8 / (27.39 - 2.637)
+_WC_REGIONS_EX_US = (
     ("SEA", 3.0, 1.5, 6.0),
     ("UAE", 0.6, 0.3, 1.5),
     ("Europe/UK", 6.0, 3.5, 9.0),
     ("Other", 4.0, 2.0, 7.0),
 )
+_WC_US_MID = (sum(m for _, m, _, _ in _WC_REGIONS_EX_US)
+              * _WC_US_OF_NON_CHINA / (1 - _WC_US_OF_NON_CHINA))
+_WC_REGIONS = ((("US domestic", _WC_US_MID, _WC_US_MID * 68 / 76,
+                 _WC_US_MID * 82 / 76),) + _WC_REGIONS_EX_US)
 # Chart order: the US, then China, then the rest.
 _WC_LABELS = (_WC_REGIONS[0][0], _WC_CN) + tuple(
     lab for lab, *_ in _WC_REGIONS[1:])

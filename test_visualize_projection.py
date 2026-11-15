@@ -5249,6 +5249,16 @@ class TestCcWorldShares:
         assert float(c["US domestic"][0]) < cat["US domestic"]
         assert float(c["China domestic"][0]) > cat["China domestic"]
 
+    def test_the_us_holds_chip_imports_share_of_the_world_outside_china(self):
+        """Today's central split gives the US 19.8M of the 24.75M H100e
+        Epoch's chip imports explorer has arrived outside China."""
+        c = vp._wc_central_shares(datetime(2026, 11, 14), [0.0])
+        us = float(c["US domestic"][0])
+        rest = 100 - float(c[vp._WC_CN][0])
+        split = vp._wc_central_split([0.0])["US domestic"][0]
+        assert split == pytest.approx(19.8 / (27.39 - 2.637), abs=1e-9)
+        assert us / rest == pytest.approx(split)
+
     def test_china_share_is_near_epochs_chip_imports_reading(self):
         """Epoch's chip imports explorer is the check on China's share; a
         refresh that moves ours more than 2 points off it needs a look. The
