@@ -1308,6 +1308,28 @@ class TestCcForwardMatch:
         assert got is None and fb is False
 
 
+class TestGapHover:
+    """`_gap_hover` tags a figure with its two lines as drawn, for the page
+    script that draws the gap bars."""
+
+    def test_lines_are_joined_in_date_order_with_steps_as_corners(self):
+        import plotly.graph_objects as go
+        d = lambda m: datetime(2026, m, 1)
+        ms = lambda m: int((d(m) - datetime(1970, 1, 1)).total_seconds()) * 1000
+        fig = go.Figure([
+            go.Scatter(x=[d(5), d(7)], y=[150, 160], name="later"),
+            go.Scatter(x=[d(1), d(3)], y=[140, 145], name="stepped",
+                       line=dict(shape="hv")),
+            go.Scatter(x=[d(1), d(7)], y=[130, 140], name="low"),
+            go.Scatter(x=[d(1)], y=[999], name="ignored")])
+        vp._gap_hover(fig, ["stepped", "later"], ["low"], ("a {gap}", "b {gap}"))
+        g = fig.layout.meta["vpGap"]
+        assert [list(p) for p in g["top"]] == [
+            [ms(1), 140.0], [ms(3), 140.0], [ms(3), 145.0], [ms(5), 150.0], [ms(7), 160.0]]
+        assert [list(p) for p in g["bottom"]] == [[ms(1), 130.0], [ms(7), 140.0]]
+        assert g["v"] == ["a {gap}", "b {gap}"] and g["h"] is None
+
+
 class TestTodayForward:
     """Today-forward mode: `_rel_date_label`, `_relativize_dates` and the
     figure post-process `_today_forward`."""

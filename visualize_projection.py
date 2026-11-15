@@ -853,6 +853,41 @@ def _tf(fig):
     return _today_forward(fig, _today()) if _today_fwd_on() else fig
 
 
+def _gap_series(fig, names):
+    """The traces named `names` joined into one line [(ms, y), …] as drawn:
+    an `hv` trace gets its steps as explicit corners, so straight
+    interpolation between points reads the line off the chart."""
+    segs = []
+    for tr in fig.data:
+        if tr.name not in names or tr.x is None or tr.y is None:
+            continue
+        pts = []
+        for x, y in zip(tr.x, tr.y):
+            d = _as_datetime(x)
+            if d is None or y is None or not np.isfinite(float(y)):
+                continue
+            ms = calendar.timegm(d.timetuple()) * 1000 + d.microsecond // 1000
+            if pts and tr.line.shape == 'hv':
+                pts.append((ms, pts[-1][1]))
+            pts.append((ms, round(float(y), 3)))
+        if pts:
+            segs.append(pts)
+    return [p for s in sorted(segs, key=lambda s: s[0][0]) for p in s]
+
+
+def _gap_hover(fig, top, bottom, v_label, h_label=None):
+    """Tag `fig` for the page's gap hover (`_render_gap_hover`): over the
+    plot, a vertical bar joins the `top` and `bottom` lines (trace names) at
+    the pointer's date, labelled `v_label` (ahead, behind) with `{gap}` the
+    ECI between them; with `h_label`, a horizontal bar also runs from the
+    bottom line back to where the top line first had its ECI, `{gap}` the
+    time between (`TestGapHover`)."""
+    fig.update_layout(meta=dict(vpGap=dict(
+        top=_gap_series(fig, top), bottom=_gap_series(fig, bottom),
+        v=list(v_label), h=list(h_label) if h_label else None)))
+    return fig
+
+
 # Built figures by input, shared across reruns and sessions (module globals
 # reset every rerun, so the store lives on `takeoff_model`, like the RNG lock).
 _FIG_MEMO = takeoff.__dict__.setdefault("_vp_fig_memo", {})
@@ -22964,6 +22999,9 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     for _tr in fig.data:
         if _tr.name != ' ':
             _tr.legendrank = _rank.get(_tr.name, 99) * 10
+    _gap_hover(fig, ['US (actual)', 'US, projected'],
+               ['China (actual)', 'China, projected'],
+               ("US ahead by {gap} ECI", "China ahead by {gap} ECI"))
     st.markdown("##### US and China frontier ECI")
     _fn_caption(
         "Both lines are each side's best trained model, not its best release.",
@@ -23733,6 +23771,135 @@ def _render_anchor_links(scroll_to, tab_slug):
         unsafe_allow_javascript=True,
     )
 
+
+
+def _render_gap_hover():
+    """Draw the gap bars `_gap_hover` tags a chart for. Plotly's own hover
+    cannot draw between two traces, so this page script reads the tag off
+    each chart's `layout.meta` and draws on an SVG over the plot, placed with
+    the chart's own axes (`xaxis.p2l` / `l2p`), on every pointer move."""
+    st.html(
+        """
+        <script>
+        (function () {
+          var NS = "http://www.w3.org/2000/svg", FONT = "sans-serif";
+          function at(pts, x) {
+            // The line's y at x, straight between points; null off its ends.
+            if (!pts.length || x < pts[0][0] || x > pts[pts.length - 1][0]) { return null; }
+            var lo = 0, hi = pts.length - 1;
+            while (lo < hi) {
+              var mid = (lo + hi + 1) >> 1;
+              if (pts[mid][0] <= x) { lo = mid; } else { hi = mid - 1; }
+            }
+            var a = pts[lo], b = pts[lo + 1];
+            if (!b || b[0] === a[0]) { return a[1]; }
+            return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+          }
+          function reach(pts, y) {
+            // When the line first reaches y; null if it never does.
+            for (var i = 0; i < pts.length; i++) {
+              if (pts[i][1] >= y) {
+                if (i === 0) { return pts[0][1] === y ? pts[0][0] : null; }
+                var a = pts[i - 1], b = pts[i];
+                return a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]);
+              }
+            }
+            return null;
+          }
+          function span(ms) {
+            var mo = Math.abs(ms) / (30.44 * 864e5);
+            if (mo < 1) { return Math.round(mo * 30.44) + "d"; }
+            var y = Math.floor(Math.round(mo) / 12), m = Math.round(mo) % 12;
+            return (y ? y + "y" : "") + (y && m ? " " : "") + (m ? m + "mo" : "");
+          }
+          function el(tag, attrs) {
+            var e = document.createElementNS(NS, tag);
+            for (var k in attrs) { e.setAttribute(k, attrs[k]); }
+            return e;
+          }
+          function bar(svg, x1, y1, x2, y2, text, side) {
+            var vert = x1 === x2;
+            svg.appendChild(el("line", {x1: x1, y1: y1, x2: x2, y2: y2,
+              stroke: "#333", "stroke-width": 1.5}));
+            [[x1, y1], [x2, y2]].forEach(function (p) {
+              svg.appendChild(el("line", vert
+                ? {x1: p[0] - 4, x2: p[0] + 4, y1: p[1], y2: p[1], stroke: "#333", "stroke-width": 1.5}
+                : {x1: p[0], x2: p[0], y1: p[1] - 4, y2: p[1] + 4, stroke: "#333", "stroke-width": 1.5}));
+            });
+            var t = el("text", vert
+              ? {x: x1 + (side < 0 ? -7 : 7), y: (y1 + y2) / 2, "dominant-baseline": "middle",
+                 "text-anchor": side < 0 ? "end" : "start"}
+              : {x: Math.min(x1, x2), y: y1 + 15, "text-anchor": "start"});
+            t.setAttribute("style", "font-weight: 600; font-size: 12px; fill: #222;"
+              + " font-family: " + FONT + "; paint-order: stroke; stroke: rgba(255,255,255,0.9); stroke-width: 4px;");
+            t.textContent = text;
+            svg.appendChild(t);
+          }
+          function draw(gd, ev) {
+            var svg = gd.__vpGapSvg;
+            while (svg.firstChild) { svg.removeChild(svg.firstChild); }
+            var g = gd.layout && gd.layout.meta && gd.layout.meta.vpGap;
+            var fl = gd._fullLayout;
+            if (!g || !ev || !fl || !fl.xaxis || !fl.yaxis) { return; }
+            var xa = fl.xaxis, ya = fl.yaxis, r = gd.getBoundingClientRect();
+            FONT = (fl.font && fl.font.family) || "sans-serif";
+            var px = ev.clientX - r.left, py = ev.clientY - r.top;
+            if (px < xa._offset || px > xa._offset + xa._length
+                || py < ya._offset || py > ya._offset + ya._length) { return; }
+            svg.setAttribute("width", r.width);
+            svg.setAttribute("height", r.height);
+            var x = xa.p2l(px - xa._offset);
+            var X = function (v) { return xa._offset + xa.l2p(v); };
+            var Y = function (v) { return ya._offset + ya.l2p(v); };
+            var top = at(g.top, x), bot = at(g.bottom, x);
+            if (top === null || bot === null) { return; }
+            var side = px > xa._offset + xa._length * 0.8 ? -1 : 1;
+            var gap = top - bot;
+            if (Math.abs(gap) >= 0.05) {
+              bar(svg, px, Y(top), px, Y(bot),
+                  g.v[gap >= 0 ? 0 : 1].replace("{gap}", Math.abs(gap).toFixed(1)), side);
+            }
+            if (g.h) {
+              var x0 = reach(g.top, bot);
+              if (x0 !== null && Math.abs(x - x0) > 864e5) {
+                bar(svg, X(x0), Y(bot), px, Y(bot),
+                    g.h[x >= x0 ? 0 : 1].replace("{gap}", span(x - x0)), 1);
+              }
+            }
+          }
+          function bind(gd) {
+            if (gd.__vpGapSvg && gd.contains(gd.__vpGapSvg)) { return; }
+            var svg = document.createElementNS(NS, "svg");
+            svg.setAttribute("style", "position:absolute;left:0;top:0;pointer-events:none;"
+                                      + "overflow:visible;z-index:1001");
+            if (getComputedStyle(gd).position === "static") { gd.style.position = "relative"; }
+            gd.appendChild(svg);
+            gd.__vpGapSvg = svg;
+            if (gd.__vpGapBound) { return; }
+            gd.__vpGapBound = true;
+            gd.addEventListener("mousemove", function (ev) { draw(gd, ev); });
+            gd.addEventListener("mouseleave", function () { draw(gd, null); });
+          }
+          function scan() {
+            document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+              if (gd.layout && gd.layout.meta && gd.layout.meta.vpGap) { bind(gd); }
+            });
+          }
+          if (!window.__vpGapWatch) {
+            window.__vpGapWatch = true;
+            var queued = false;
+            new MutationObserver(function () {
+              if (queued) { return; }
+              queued = true;
+              requestAnimationFrame(function () { queued = false; scan(); });
+            }).observe(document.body, {childList: true, subtree: true});
+          }
+          scan();
+        })();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
 
 # ── Takeoff: conditional research-feedback scenarios ─────────────────────
 
@@ -26853,7 +27020,11 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
                           ultra + _TK_ECI_VIEW_PAST_ULTRA]),
         legend=dict(orientation="h", y=-0.12, traceorder="normal"),
         hovermode="closest")
-    return fig
+    # Releases against releases before today, as China has no trained line.
+    return _gap_hover(fig, ["US releases", "US: projected (median)"],
+                      ["China releases", "China: projected (median)"],
+                      ("US ahead by {gap} ECI", "China ahead by {gap} ECI"),
+                      ("{gap} behind", "{gap} ahead"))
 
 
 def _cn_tk_quarters(start=datetime(2024, 1, 1), end=datetime(2030, 12, 31)):
@@ -28351,6 +28522,9 @@ def render_release_lag():
     fig.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10),
                       yaxis_title="ECI", hovermode='closest',
                       legend=dict(orientation='h', y=1.02, yanchor='bottom', x=0))
+    _gap_hover(fig, ["Trained (internal models included), at training finish"],
+               ["Released, at release"],
+               ("Trained leads released by {gap} ECI", "Released leads trained by {gap} ECI"))
     _fn_caption("The horizontal gap between the lines is the frontier lead.",
                 ("frontier lead", "How long after a level was trained a Claude "
                  "release first reached it. Internal models' ECI is projected from "
@@ -28456,6 +28630,7 @@ if not os.environ.get("_VP_TESTING"):
 
     # ── Section deep links: honour ?to=, and make every heading emit one ──
     _render_anchor_links(_url_to, _SLUG_FOR_TAB[active_tab])
+    _render_gap_hover()
 
     _render_changed_badge(_sidebar_tools)
 

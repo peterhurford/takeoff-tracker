@@ -420,6 +420,19 @@ class TestReleaseLagTab:
         assert int(row["Days, training to release"]) == 75
         assert _qp(at, "tab") == ["releaselag"]
 
+    def test_frontiers_chart_carries_its_gap_hover(self):
+        """The trained and released lines ride on the chart for the gap bars
+        (`_render_gap_hover`): the trained line never below the released."""
+        import json
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Release Lag")
+        g = json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]["meta"]["vpGap"]
+        assert len(g["top"]) > 10 and len(g["bottom"]) > 10
+        for x, y in g["bottom"]:
+            above = [ty for tx, ty in g["top"] if tx <= x]
+            assert above and max(above) >= y - 1e-6
+
 
 class TestEciTab:
     """The ECI tab carries the old ECI Company Gap tab: a leaderboard, the
@@ -5095,7 +5108,8 @@ class TestSectionDeepLinks:
               "takeoff": "co-bench"}
 
     def _script(self, at):
-        [s] = [e.body for e in at.get("html") if e.body.lstrip().startswith("<script>")]
+        [s] = [e.body for e in at.get("html")
+               if e.body.lstrip().startswith("<script>") and "__vpAnchorTab" in e.body]
         return s
 
     def _app(self, **params):

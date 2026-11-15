@@ -82,6 +82,19 @@ are load-bearing:
 
 Guarded by `TestTodayForward` (unit) and `TestTodayForwardMode` (integration).
 
+## Gap bars on hover
+
+`_gap_hover(fig, top, bottom, v_label, h_label=None)` puts two lines (trace names, `hv`
+steps made explicit) in `layout.meta.vpGap`. `_render_gap_hover()`, a page script the
+dispatch runs on every tab, draws over each tagged chart a vertical bar between the lines
+at the pointer's date, with their ECI gap, and with `h_label` a horizontal bar back to
+when the top line first had the bottom line's ECI. Plotly's own hover can't draw between
+two traces, so the script draws an SVG placed with the chart's own axes. Tagged: Release
+Lag's trained vs released, Pacing's US and China frontier ECI, and China's takeoff
+chart (`_cn_tk_fig`, both bars). That chart's top line is *US releases* before today,
+not US trained, so China's releases are compared with releases. Guarded by
+`TestGapHover` and `test_frontiers_chart_carries_its_gap_hover`.
+
 ## Caveats belong on the thing they qualify
 
 Prefer a hover to a paragraph — applied across every tab. Keep in the visible
