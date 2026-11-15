@@ -26951,7 +26951,8 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
     """China's projected ECI against the US's (median, middle 80% each, both
     trained), with each side's measured frontier since 2024 joined to where
     its projection starts today: the US's trained (`eci['trained']`, internal
-    models in) and released, China's released."""
+    models in) and released, China's releases at their estimated training
+    finish (`_ship_lag('cn')` earlier)."""
     years = cn["years"]
     keep = years <= (view_end - today).days / 365.25 + 1 / 12
     x = [today + timedelta(days=float(y) * 365.25) for y in years[keep]]
@@ -26986,13 +26987,18 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
             marker=dict(color=_CN_TK_US["light"], size=5), text=[m['name'] for m in rel],
             legendrank=13,
             hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US release</extra>"))
-    past = [r for r in cn["cal"]["cn_fr"] if r[0] >= since]
+    # China's releases at their estimated training finish, release less its
+    # trained-to-release lag, so both sides' lines are trained models.
+    off_cn = timedelta(days=_ship_lag('cn'))
+    past = [(d - off_cn, s, n, d) for d, s, n, *_ in cn["cal"]["cn_fr"] if d - off_cn >= since]
     fig.add_trace(go.Scatter(
         x=[r[0] for r in past], y=[r[1] for r in past], mode="lines+markers",
-        name="China releases", line=dict(color=_CN_TK_CN["line"], width=1.5, shape="hv"),
+        name="China trained (releases less lag)",
+        line=dict(color=_CN_TK_CN["line"], width=1.5, shape="hv"),
         marker=dict(color=_CN_TK_CN["line"], size=6, line=dict(color="white", width=1)),
-        text=[r[2] for r in past], legendrank=22,
-        hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>China release</extra>"))
+        text=[f"{r[2]}<br>released {r[3]:%b %d, %Y}" for r in past], legendrank=22,
+        hovertemplate="%{text}<br>trained ~%{x|%b %d, %Y}: %{y:.1f}"
+                      "<extra>China trained (est.)</extra>"))
     lvl = np.quantile(cn["level"], [.1, .5, .9])
     if past:
         fig.add_trace(go.Scatter(
@@ -27020,9 +27026,8 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
                           ultra + _TK_ECI_VIEW_PAST_ULTRA]),
         legend=dict(orientation="h", y=-0.12, traceorder="normal"),
         hovermode="closest")
-    # Releases against releases before today, as China has no trained line.
-    return _gap_hover(fig, ["US releases", "US: projected (median)"],
-                      ["China releases", "China: projected (median)"],
+    return _gap_hover(fig, ["US trained (internal models in)", "US: projected (median)"],
+                      ["China trained (releases less lag)", "China: projected (median)"],
                       ("US ahead by {gap} ECI", "China ahead by {gap} ECI"),
                       ("{gap} behind", "{gap} ahead"))
 

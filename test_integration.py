@@ -10,7 +10,7 @@ Run: pytest test_integration.py -v
 
 import numpy as np
 import pytest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import base64
 import json
 import re
@@ -2577,6 +2577,25 @@ class TestTakeoffTab:
         at.number_input(key="tk_cn_leak").set_value(0.0).run()
         _assert_no_error(at, "Takeoff / China without copying")
         assert all(a > b for a, b in zip(lags(at), before))
+
+    def test_china_takeoff_chart_dates_china_at_training(self):
+        """China's past line on the frontiers chart sits at each release less
+        the China lag, and the gap bars measure it against US trained."""
+        import json
+        at = self._app()
+        lag = at.number_input(key="cn_ship_lag").value
+        [spec] = [sp for sp in (json.loads(c.proto.spec) for c in at.get("plotly_chart"))
+                  if ((sp["layout"].get("meta") or {}).get("vpGap") or {}).get("h")]
+        tr = {t.get("name"): t for t in spec["data"]}
+        cn = tr["China trained (releases less lag)"]
+        assert len(cn["x"]) > 5
+        for x, txt in zip(cn["x"], cn["text"]):
+            rel = datetime.strptime(re.search(r"released (.+)$", txt).group(1), "%b %d, %Y")
+            assert datetime.fromisoformat(x[:10]) == rel - timedelta(days=lag)
+        us = tr["US trained (internal models in)"]
+        top = spec["layout"]["meta"]["vpGap"]["top"]
+        first = (datetime.fromisoformat(us["x"][0][:10]) - datetime(1970, 1, 1))
+        assert top[0] == [int(first.total_seconds()) * 1000, us["y"][0]]
 
     def test_coding_is_never_dated_after_ultraintelligence(self):
         """A model at the ultraintelligence threshold has automated coding, on

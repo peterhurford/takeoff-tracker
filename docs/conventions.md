@@ -91,9 +91,11 @@ at the pointer's date, with their ECI gap, and with `h_label` a horizontal bar b
 when the top line first had the bottom line's ECI. Plotly's own hover can't draw between
 two traces, so the script draws an SVG placed with the chart's own axes. Tagged: Release
 Lag's trained vs released, Pacing's US and China frontier ECI, and China's takeoff
-chart (`_cn_tk_fig`, both bars). That chart's top line is *US releases* before today,
-not US trained, so China's releases are compared with releases. Guarded by
-`TestGapHover` and `test_frontiers_chart_carries_its_gap_hover`.
+chart (`_cn_tk_fig`, both bars). Each pair is trained against trained: that chart
+draws China's releases at their estimated training finish (`_ship_lag('cn')` earlier),
+as Pacing does, since China has no published training dates. Guarded by `TestGapHover`,
+`test_frontiers_chart_carries_its_gap_hover` and
+`test_china_takeoff_chart_dates_china_at_training`.
 
 ## Caveats belong on the thing they qualify
 
