@@ -3326,30 +3326,6 @@ class TestPacingTab:
         assert p["China if the US kept going"]["y"] == pytest.approx(free)
         assert p["China, projected"]["y"][-1] < free[-1] - 5
 
-    def test_china_no_levers_hover_yields_to_the_median(self):
-        """China's dotted no-levers line hovers (with its gap to the unpaced
-        US line) only where it stands clear of China's median; where they
-        overlap the median's hover, with its gap to the US line, wins."""
-        import json
-        from datetime import datetime as _dt
-        for el in self._app().get("plotly_chart"):
-            d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
-            if "China, projected" in d:
-                break
-        med, dot = d["China, projected"], d["China if the US kept going"]
-        hov = d["China if the US kept going (hover)"]
-        assert dot.get("hoverinfo") == "skip"
-        assert any("behind the US line" in c for c in med["customdata"])
-        assert all("the unpaced US line" in c for c in hov["customdata"] if c)
-        assert 0 < len(hov["x"]) < len(dot["x"])
-        t = lambda xs: np.array([_dt.fromisoformat(x).timestamp() for x in xs])
-        my = np.interp(t(dot["x"]), t(med["x"]), med["y"])
-        shown = set(hov["x"])
-        lo, hi = json.loads(el.proto.spec)["layout"]["yaxis"]["range"]
-        gap = 0.04 * (hi - lo)  # _PC_HOVER_CLEAR
-        for x, y, m in zip(dot["x"], dot["y"], my):
-            assert (x in shown) == (abs(y - m) >= gap)
-
     def test_the_us_climb_starts_on_the_last_us_release(self):
         """The dashed US climb joins the actual line, with no blank stretch
         before the sim's first month (China's anchor)."""
@@ -4992,7 +4968,9 @@ class TestTodayForwardMode:
             assert (len(fwd), len(specs)) == self._ALL_FORWARD[tab], tab
         for sp in fwd:
             hovers = self._hover_strings(sp)
-            assert any("from today" in h or h == "today" for h in hovers), tab
+            # A chart whose gap bars are its hover dates them from today.
+            assert (any("from today" in h or h == "today" for h in hovers)
+                    or "today" in ((sp["layout"].get("meta") or {}).get("vpGap") or {})), tab
             assert not any(self._DATE.search(h) for h in hovers), tab
             assert sp["layout"].get("hovermode") != "x unified"
 

@@ -1329,6 +1329,19 @@ class TestGapHover:
         assert [list(p) for p in g["bottom"]] == [[ms(1), 130.0], [ms(7), 140.0]]
         assert g["v"] == ["a {gap}", "b {gap}"] and g["h"] is None
 
+    def test_today_forward_gives_the_bars_today(self):
+        """In today-forward mode the bars date the pointer relative to today."""
+        import plotly.graph_objects as go
+        fig = go.Figure([go.Scatter(x=[datetime(2026, 1, 1), datetime(2028, 1, 1)],
+                                    y=[1, 2], name="a")])
+        vp._gap_hover(fig, ["a"], ["a"], ("{gap}", "{gap}"), names=("A", "B"))
+        assert "today" not in fig.layout.meta["vpGap"]
+        vp._today_forward(fig, datetime(2026, 11, 14))
+        g = fig.layout.meta["vpGap"]
+        assert g["today"] == int((datetime(2026, 11, 14) - datetime(1970, 1, 1))
+                                 .total_seconds()) * 1000
+        assert g["names"] == ["A", "B"] and len(g["top"]) == 2
+
 
 class TestTodayForward:
     """Today-forward mode: `_rel_date_label`, `_relativize_dates` and the
@@ -5447,34 +5460,6 @@ class TestDcCtyPlanSlip:
 
 class TestPacing:
     """The Pacing tab: threshold menu, crossing math, and the entity roster."""
-
-    def test_china_hover_gap_reads_the_drawn_us_line(self):
-        """China's hover gap is the months since the US line, interpolated
-        as drawn, first reached its ECI, in whole months; dips in the US
-        line are ignored."""
-        us = [(datetime(2025, 1, 1), 100.0), (datetime(2025, 7, 1), 90.0),
-              (datetime(2026, 1, 1), 120.0)]
-        # 110 is halfway from 100 (Jan 2025) to 120 (Jan 2026), skipping the
-        # dip: early Jul 2025, 182.5 days before Jan 2026.
-        gap = vp._pc_gap_to_us(us, datetime(2026, 1, 1), 110.0)
-        assert gap == "<br>~6mo behind the US line"
-        # 6.3 months still reads 6: tenths are the medians' sampling noise.
-        assert vp._pc_gap_to_us(us, datetime(2026, 1, 10), 110.0) == \
-            "<br>~6mo behind the US line"
-        assert vp._pc_gap_to_us(us, datetime(2026, 1, 10), 120.0) == \
-            "<br>level with the US line"
-        assert vp._pc_gap_to_us(us, datetime(2025, 1, 1), 120.0) == \
-            "<br>~12mo ahead of the US line"
-        assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 130.0) == \
-            "<br>above the US line"
-        assert vp._pc_gap_to_us(us, datetime(2026, 1, 1), 50.0) == ""
-
-    def test_clear_of_keeps_points_away_from_the_reference_line(self):
-        ref_x = [datetime(2026, 1, 1), datetime(2027, 1, 1)]
-        x = [datetime(2025, 6, 1), datetime(2026, 7, 2), datetime(2026, 7, 2)]
-        # 110 sits on the line (100 -> 120); 118 is 8 clear; before it, clear.
-        assert vp._pc_clear_of(x, [0.0, 110.0, 118.0], ref_x, [100.0, 120.0],
-                               5.0) == [0, 2]
 
     def test_compute_lead_reads_china_from_its_compute_mix(self):
         """China's installed compute is the compute mix's stock: its total at

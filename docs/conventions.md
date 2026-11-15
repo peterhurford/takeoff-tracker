@@ -87,8 +87,10 @@ Guarded by `TestTodayForward` (unit) and `TestTodayForwardMode` (integration).
 `_gap_hover(fig, top, bottom, v_label, h_label=None)` puts two lines (trace names, `hv`
 steps made explicit) in `layout.meta.vpGap`. `_render_gap_hover()`, a page script the
 dispatch runs on every tab, draws over each tagged chart a vertical bar between the lines
-at the pointer's date, with their ECI gap, and with `h_label` a horizontal bar back to
-when the top line first had the bottom line's ECI. Plotly's own hover can't draw between
+at the pointer's date, with their ECI gap and, under it, the date (relative in
+today-forward mode) and each line's ECI; with `h_label` a horizontal bar back to
+when the top line first had the bottom line's ECI. The bars are the hover: the
+projected lines they read carry no tooltip, only model points and marks do. Plotly's own hover can't draw between
 two traces, so the script draws an SVG placed with the chart's own axes. Tagged: Release
 Lag's trained vs released, Pacing's US and China frontier ECI, and China's takeoff
 chart (`_cn_tk_fig`, both bars). Each pair is trained against trained: that chart
