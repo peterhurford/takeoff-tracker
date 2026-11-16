@@ -456,6 +456,23 @@ class TestEciTab:
         assert not at.session_state[vp._ECI_INTERNAL_ON]
         assert all(not m.get('internal') for m in vp._eci_entity_models("US best"))
 
+    def test_metr_toggle_puts_horizons_on_the_trend_hover(self):
+        """*ECI→METR projections* adds METR p50/p80 to the trend and
+        projection lines' hover, not only the model dots."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "ECI")
+
+        def trend_hovers():
+            return [str(t) for el in at.get("plotly_chart")
+                    for d in json.loads(el.proto.spec)["data"]
+                    for t in (d.get("hovertext") or []) if "Trend:" in str(t)]
+        assert trend_hovers()
+        assert not any("METR p50" in t for t in trend_hovers())
+        at.toggle(key="eci_eci_metr_proj").set_value(True).run()
+        _assert_no_error(at, "ECI / METR projections on")
+        assert all("METR p50" in t and "METR p80" in t for t in trend_hovers())
+
     def test_an_identical_frontier_draws_one_entity_not_a_flat_gap(self):
         at = _fresh_app()
         at.run()

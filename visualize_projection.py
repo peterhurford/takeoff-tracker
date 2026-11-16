@@ -5251,6 +5251,14 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
             return f"<br>Gap: {g:.1f} mo behind {overlay_name}"
         return f"<br>Gap: {-g:.1f} mo ahead of {overlay_name}"
 
+    def _eci_line_hover(score, at_date):
+        """A trend point's hover suffix: the gap, then (toggle on) METR horizons
+        at the subject's current-frontier lab, as the metric cards use."""
+        out = _eci_gap_hover(score, at_date)
+        if eci_metr_proj:
+            out += _eci_metr_hover(score, eci_current.get('organization', ''))
+        return out
+
     # --- Trend lines ---
     def _eci_trend_hover(params, d_start, d_end, base_dt):
         """Build hover texts for an OLS trend line on ECI scores."""
@@ -5259,7 +5267,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         y_scores = params[0] + params[1] * days_range
         texts = []
         for d, y in zip(dates, y_scores):
-            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, d)}")
+            texts.append(f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_line_hover(y, d)}")
         return dates, y_scores.tolist(), texts
 
     if eci_proj_basis in ("Linear", "Piecewise linear"):
@@ -5352,7 +5360,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         days_hist = np.arange(d_start, d_last + 1, 1)
         y_hist = _eci_se_A + _eci_se_K * 2 ** (days_hist / eci_superexp_halflife)
         dates_hist = [base_date + timedelta(days=int(d)) for d in days_hist]
-        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, dt)}" for dt, y in zip(dates_hist, y_hist)]
+        hover_hist = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_line_hover(y, dt)}" for dt, y in zip(dates_hist, y_hist)]
         fig.add_trace(go.Scatter(
             x=dates_hist, y=y_hist.tolist(),
             mode='lines', line=dict(color='#2c3e50', width=2.5),
@@ -5366,7 +5374,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         y_proj_growth = superexp_trajectory(days_proj, _eci_user_dpp, eci_superexp_halflife, eci_superexp_dpp_floor)
         y_proj = _eci_se_fitted_score + y_proj_growth
         dates_proj = [eci_current['date'] + timedelta(days=int(d)) for d in days_proj]
-        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_gap_hover(y, dt)}" for dt, y in zip(dates_proj, y_proj)]
+        hover_proj = [f"{dt.strftime('%b %d, %Y')}<br>Trend: {y:.1f}{_eci_line_hover(y, dt)}" for dt, y in zip(dates_proj, y_proj)]
         fig.add_trace(go.Scatter(
             x=dates_proj, y=y_proj.tolist(),
             mode='lines', line=dict(color='#2980b9', width=2.5),
