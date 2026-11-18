@@ -37,6 +37,9 @@ DEFAULTS = {
     "human_direction": 40.0, "human_experiments": 30.0, "human_verification": 50.0,
     "half_direction": 6.0, "half_experiments": 9.0, "half_verification": 12.0,
     "human_floor": 0.0, "full_human": 5.0,
+    # Each draw's RSI bar: lognormal, median `full_human`, 90% inside
+    # `full_human` / spread to x spread (2.5-10% by default); 1 fixes it.
+    "full_human_spread": 2.0,
     # Autopilot: from a draw's RSI, no research stage needs people at all (the
     # hours left in other stages are dropped). 0 keeps each stage's own decline.
     "rsi_autopilot": 1.0,
@@ -58,6 +61,14 @@ DEFAULTS = {
     # model's algorithmic efficiency to this power, as the same inference
     # compute runs more AI researchers. 0 leaves the number of copies fixed.
     "ai_copies": 1.0,
+    # Share (in logs) of the coding gain K that also speeds the hours people
+    # still do; the rest speeds AI's share inside Amdahl, so coding x automation
+    # is K^theta T0 / (h + (1 - h) / (s K^(1 - theta))). 1 speeds all hours
+    # alike; 0 caps the gain at Amdahl's bound. Each draw's theta is
+    # logit-normal around it, `human_uplift_spread` its 1-sigma in log-odds
+    # (the default puts 90% of draws within 0.15-0.85 at 0.5); 0 fixes it.
+    "human_uplift": 0.5,
+    "human_uplift_spread": float(np.log(.85 / .15) / NormalDist().inv_cdf(.95)),
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen; 0 leaves compute the only growing input (no hiring, experiment
     # compute growing with the frontier).
@@ -132,7 +143,8 @@ DEFAULTS = {
 # Every spread at zero: each draw uses the settings themselves.
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
                   "drift_spread": 0, "substitution_spread": 0, "scale_dependent_spread": 0,
-                  "scale_lag_spread": 0, "fast_share_spread": 0}
+                  "scale_lag_spread": 0, "fast_share_spread": 0, "full_human_spread": 1,
+                  "human_uplift_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -173,6 +185,10 @@ def validate(params):
         raise ValueError("Seed must be an integer between 0 and 2³²−1.")
     if not 0 <= p["human_floor"] <= 100 or not 0 <= p["full_human"] <= 100:
         raise ValueError("Human-work floor and automation threshold must be between 0 and 100%.")
+    if not 1 <= p["full_human_spread"] <= 10:
+        raise ValueError("The RSI bar's spread must be a factor between 1 and 10.")
+    if not 0 <= p["human_uplift"] <= 1 or not 0 <= p["human_uplift_spread"] <= 5:
+        raise ValueError("Human uplift must be between 0 and 1, its spread between 0 and 5.")
     for stage in WORKFLOW_KEYS:
         if not p["human_floor"] <= p["human_" + stage] <= 100 or p["half_" + stage] <= 0:
             raise ValueError("Each workflow's starting human work must be at least its floor, "
@@ -859,7 +875,7 @@ def _k_draw(i, d, s, a, o):
                 behind = np.exp(-_LN2 * _k_min(sy, 0.0) * 12 / half[k])
                 out[k] = _k_min(s.floor + (out[k] - s.floor) * behind, 1.0)
         if has_t and o.coding[i] > t + 1e-12:
-            out[0] = _k_max(out[0], s.full_human)
+            out[0] = _k_max(out[0], d.bar[i])
 
     def pays_off(t, software, boost_log, scale_now, trained, fast, reference_trained):
         lag = d.scale_lag[i]
@@ -1009,14 +1025,6 @@ def _k_draw(i, d, s, a, o):
             h[0] = 0.0
             h[1] = 0.0
             h[2] = 0.0
-        share_now = h[0] * _W0 + h[1] * _W1 + h[2] * _W2
-        log_speed = np.log(s.ai_speed) + s.ai_copies * _k_max(now1 + follow_log, 0.0)
-        amdahl_log = d.amdahl0[i] - _k_lae(np.log(share_now), np.log1p(-share_now) - log_speed)
-        staff_share = share_now if tr else d.human0[i]
-        staff_speed = log_speed if tr else np.log(s.ai_speed)
-        headcount_log = (_k_lae(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
-                         - _k_lae(np.log(staff_share) - head_log,
-                                  np.log1p(-staff_share) - staff_speed))
         direction = h[0]
         cf = _k_clip(mid / coding if coding > 0 else 1.0, 0.0, 1.0)
         if coding <= 0:
@@ -1029,17 +1037,29 @@ def _k_draw(i, d, s, a, o):
                 level_now / cl_i if cl_i > 0 else 1.0, 0.0, 1.0)
         rsi_coding_log = np.log((1 - s.coding_today / 100) / .05) * cf
         coding_gain = _k_max(rsi_coding_log, s.coding_slope * effective)
+        keep_log = np.log1p(-tr) if tr < 1 else -np.inf
+        coding_log = _k_lae(keep_log, np.log(tr) + coding_gain) if tr else 0.0
+        theta = d.theta[i]
+        share_now = h[0] * _W0 + h[1] * _W1 + h[2] * _W2
+        # `theta` of the coding gain speeds every hour (in `labor_log`); the rest, AI's.
+        log_speed = (np.log(s.ai_speed) + s.ai_copies * _k_max(now1 + follow_log, 0.0)
+                     + (1 - theta) * coding_log)
+        amdahl_log = d.amdahl0[i] - _k_lae(np.log(share_now), np.log1p(-share_now) - log_speed)
+        staff_share = share_now if tr else d.human0[i]
+        staff_speed = log_speed if tr else np.log(s.ai_speed)
+        headcount_log = (_k_lae(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
+                         - _k_lae(np.log(staff_share) - head_log,
+                                  np.log1p(-staff_share) - staff_speed))
         if tr:
-            keep_log = np.log1p(-tr) if tr < 1 else -np.inf
-            coding_log = _k_lae(keep_log, np.log(tr) + coding_gain)
             ai_taste_log = np.log(s.judgment_today) + _k_judgment_log(
                 effective, d.taste_slope[i], d.drift[i], tr, s.judgment_cap)
             quality_log = (_k_lae(np.log(direction), np.log1p(-direction) + ai_taste_log)
                            - d.quality0_log[i])
             automation_log = _k_lae(keep_log, np.log(tr) + amdahl_log)
         else:
-            coding_log = quality_log = automation_log = 0.0
-        labor_log = par * (compute_log + log_sh2 + coding_log + automation_log + headcount_log)
+            quality_log = automation_log = 0.0
+        labor_log = par * (compute_log + log_sh2 + theta * coding_log + automation_log
+                           + headcount_log)
         experiment_log = par * (compute_log + exp_log + log_sh1)
         ref_headcount = (d.amdahl0[i] - _k_lae(np.log(d.human0[i]) - s.hire_rate * mid,
                                                np.log1p(-d.human0[i]) - np.log(s.ai_speed)))
@@ -1129,7 +1149,7 @@ def _k_draw(i, d, s, a, o):
             follow_log = follow_log + (0.0 + f_dist + f_leak + f_theft + 0.0) / s.fol_w1
         reference_gained = advance(reference_gained, ref_log_x, ref_log_amount)
         diverged = updated > big
-        if diverged and not np.isfinite(rsi) and s.rsi_possible:
+        if diverged and not np.isfinite(rsi) and s.floor <= d.bar[i]:
             rsi = end
         software = _k_min(updated, big)
         if s.has_cpath:
@@ -1215,7 +1235,7 @@ def _k_draw(i, d, s, a, o):
         coding = o.coding[i]
         for rec in range(2):
             hit = (end >= coding and not coding_recorded) if rec == 0 else (
-                (not diverged) and end >= coding and hb[0] <= s.full_human
+                (not diverged) and end >= coding and hb[0] <= d.bar[i]
                 and not np.isfinite(rsi))
             if hit:
                 if rec == 0:
@@ -1328,16 +1348,16 @@ _KDraws = namedtuple("_KDraws", (
     "initial_stock", "train_time", "eval_time", "scale_ratio", "amdahl0", "quality0_log",
     "human0", "hire_effect", "input_rate", "exp_slope", "coding_level", "taste_slope", "drift",
     "rho", "beta", "ceiling", "scale_share", "scale_lag", "fast_fraction", "bcr", "fol_rate",
-    "fol_eci_now", "fol_slope", "fol_distill", "fol_leak"))
+    "fol_eci_now", "fol_slope", "fol_distill", "fol_leak", "bar", "theta"))
 _KSettings = namedtuple("_KSettings", (
     "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
     "sh0", "sh1", "sh2", "ai_speed", "ai_copies", "hire_rate", "after_rate",
     "judgment_today", "judgment_cap", "adoption", "coding_today", "coding_slope",
-    "reallocate", "has_slopes", "trend_weight", "trend_months", "useful", "full_human",
+    "reallocate", "has_slopes", "trend_weight", "trend_months", "useful",
     "autopilot", "serial_speedup", "fast_time", "review_from", "review_to", "review_time",
     "difficulty_on", "reference_train_compute", "own_experiments", "floor",
     "reference_half", "has_curve", "has_coding_capability", "has_coding_weights", "cw0",
-    "cw1", "rsi_possible", "has_cpath", "has_epath", "has_cut", "has_use_cut", "follower",
+    "cw1", "has_cpath", "has_epath", "has_cut", "has_use_cut", "follower",
     "fol_w0", "fol_w1", "fol_theft", "fol_absorb", "fol_ppy", "fol_software_ppy",
     "has_trained", "fol_lo", "fol_step", "has_distill_scale", "has_leak_scale",
     "has_theft_scale"))
@@ -1376,7 +1396,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
             "exp_share", "exp_growth", "initial_throughput", "initial_stock", "train_time",
             "eval_time", "scale_ratio", "amdahl0", "quality0_log", "human0", "hire_effect",
             "input_rate", "taste_slope", "drift", "rho", "beta", "ceiling", "scale_share",
-            "scale_lag", "fast_fraction", "bcr")},
+            "scale_lag", "fast_fraction", "bcr", "bar", "theta")},
         has_history=per(np.asarray(v["has_history"], dtype=float)),
         exp_slope=np.zeros(n) if experiment_slopes is None else per(experiment_slopes),
         coding_level=(np.full(n, np.inf) if coding_capability is None
@@ -1399,7 +1419,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         coding_slope=float(p["coding_slope"]), reallocate=bool(p["reallocate_compute"]),
         has_slopes=bool(experiment_slopes is not None and v["transfer"]),
         trend_weight=float(p["rsi_trend_weight"]), trend_months=float(p["rsi_trend_months"]),
-        useful=float(p["rsi_useful_growth"]), full_human=float(p["full_human"]) / 100,
+        useful=float(p["rsi_useful_growth"]),
         autopilot=bool(p["rsi_autopilot"]), serial_speedup=bool(p["serial_speedup"]),
         fast_time=float(v["fast_time"]), review_from=float(review[0]),
         review_to=float(review[1]), review_time=float(review[2]),
@@ -1411,7 +1431,6 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         has_coding_weights=coding_weights is not None,
         cw0=float(coding_weights[0]) if coding_weights is not None else 1.0,
         cw1=float(coding_weights[1]) if coding_weights is not None else 1.0,
-        rsi_possible=bool(v["floor"] <= p["full_human"] / 100),
         has_cpath=cpath is not None, has_epath=epath is not None, has_cut=cut is not None,
         has_use_cut=use_cut is not None, follower=fol is not None,
         fol_w0=float(fol["w"][0]) if raw else 1.0, fol_w1=float(fol["w"][1]) if raw else 1.0,
@@ -1490,8 +1509,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
              review=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
-    RSI is the first time research direction is at or under `full_human`% of
-    baseline human hours with the coding date arrived. Every draw runs to the
+    RSI is the first time research direction is at or under its draw's bar
+    (median `full_human`%, `full_human_spread`) of baseline human hours with
+    the coding date arrived. Every draw runs to the
     horizon (only a numerically divergent one stops), so its capability path
     (`capability_log`) covers the whole window. `compute_rates`, one log
     growth rate a year per draw, replaces `compute_growth` and its spread;
@@ -1590,7 +1610,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    raw = rng.uniform(-1, 1, (22, total))[:, keep_rows]
+    raw = rng.uniform(-1, 1, (24, total))[:, keep_rows]
     z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
@@ -1630,6 +1650,19 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                         / 100 * factors[12:15].T, 1)
     floor = p["human_floor"] / 100
     starts = np.maximum(starts, floor)
+    # Each draw's RSI bar (row 22), held inside the widget's 1-25%. Not raised to
+    # the floor: a draw whose bar sits under it never reaches RSI, as a fixed bar would.
+    median_bar = p["full_human"] / 100
+    bar = np.full(n, median_bar)
+    if p["full_human_spread"] > 1:
+        bar = median_bar * np.exp(np.log(p["full_human_spread"]) / NormalDist().inv_cdf(.95)
+                                  * z[22])
+        bar = np.clip(bar, min(.01, median_bar), max(.25, median_bar))
+    # Each draw's human uplift (row 23): logit-normal around the setting; 0 or 1 holds.
+    theta = np.full(n, float(p["human_uplift"]))
+    if 0 < p["human_uplift"] < 1 and p["human_uplift_spread"] > 0:
+        theta = 1 / (1 + np.exp(-(np.log(p["human_uplift"] / (1 - p["human_uplift"]))
+                                  + p["human_uplift_spread"] * z[23])))
     halves = np.array([p["half_" + s] for s in WORKFLOW_KEYS])[None, :] * factors[8:11].T
     # Each stage's pace along `human_curve` is the settings' weighted halving
     # time over its own (with its draw's spread).
@@ -1655,7 +1688,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # AI cannot direct research before it can code: direction holds at the
         # RSI bar until the draw's coding date at time(s) `t`.
         uncoded = coding > t + 1e-12
-        hours[uncoded, 0] = np.maximum(hours[uncoded, 0], p["full_human"] / 100)
+        hours[uncoded, 0] = np.maximum(hours[uncoded, 0], bar[uncoded])
         return hours
     baseline_capability_rate = software_rate + compute_rate
     events = {name: np.full(n, np.inf) for name in MILESTONES}
@@ -1681,7 +1714,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # model reaches `coding_capability`, whichever comes first.
     coding = onset.copy()
     record("Full coding automation", onset == 0, starts, np.ones(n), np.ones(n))
-    rsi0 = (onset <= 0) & (starts[:, 0] <= p["full_human"] / 100)
+    rsi0 = (onset <= 0) & (starts[:, 0] <= bar)
     events["RSI"][rsi0] = 0
     record("RSI", rsi0, starts, np.ones(n), np.ones(n))
     # Undeployed discoveries already in progress today. The matched reference
@@ -2020,7 +2053,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                    bcr=baseline_capability_rate, transfer=transfer, parallel=parallel,
                    shares=shares, ai_speed=ai_speed, hire_rate=hire_rate,
                    after_rate=after_rate, fast_time=fast_time, floor=floor,
-                   reference_half=reference_half, slow_at=slow_at,
+                   reference_half=reference_half, slow_at=slow_at, bar=bar, theta=theta,
                    own_experiments=own_experiments, boost=boost,
                    reference_train_compute=reference_train_compute,
                    grid=workflow_grid))
@@ -2090,21 +2123,6 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             human_now[np.isfinite(events["RSI"]) & (t >= events["RSI"] - 1e-12)
                       & ~under_review(t)] = 0.0
         share_now = human_now @ WORKFLOW_WEIGHTS
-        # More copies of the AI researcher on the same compute as its
-        # algorithms improve: AI's share of the work speeds up with them.
-        # In logs, so a runaway's copies never overflow.
-        log_speed = np.log(ai_speed) + p["ai_copies"] * np.maximum(now[1] + follow_log, 0)
-        with np.errstate(divide="ignore"):
-            amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
-                                                np.log1p(-share_now) - log_speed)
-            # More staff finish the human share of the work sooner; none of it
-            # once the share is 0. Without AI transfer the share stays today's
-            # for labor, as the frozen-AI reference has it.
-            staff_share = share_now if transfer else human0
-            staff_speed = log_speed if transfer else np.log(ai_speed)
-            headcount_log = (np.logaddexp(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
-                             - np.logaddexp(np.log(staff_share) - head_log,
-                                            np.log1p(-staff_share) - staff_speed))
         # People still directing research keep today's judgment; AI's applies
         # to the rest, so research quality is the direction-weighted mix.
         direction = human_now[:, 0]
@@ -2123,9 +2141,28 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                 level_now, coding_level, out=np.ones(n), where=coding_level > 0), 0, 1))
         rsi_coding_log = np.log((1 - p["coding_today"] / 100) / .05) * coding_fraction
         coding_gain = np.maximum(rsi_coding_log, p["coding_slope"] * effective)
+        coding_log = (np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
+                                   np.log(transfer) + coding_gain)
+                      if transfer else np.zeros(n))
+        # More copies of the AI researcher on the same compute as its
+        # algorithms improve: AI's share of the work speeds up with them.
+        # In logs, so a runaway's copies never overflow. Each draw's `theta`
+        # (`human_uplift`) of the coding gain speeds every hour (in `labor_log`);
+        # the rest speeds AI's share.
+        log_speed = (np.log(ai_speed) + p["ai_copies"] * np.maximum(now[1] + follow_log, 0)
+                     + (1 - theta) * coding_log)
+        with np.errstate(divide="ignore"):
+            amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
+                                                np.log1p(-share_now) - log_speed)
+            # More staff finish the human share of the work sooner; none of it
+            # once the share is 0. Without AI transfer the share stays today's
+            # for labor, as the frozen-AI reference has it.
+            staff_share = share_now if transfer else human0
+            staff_speed = log_speed if transfer else np.log(ai_speed)
+            headcount_log = (np.logaddexp(np.log(staff_share), np.log1p(-staff_share) - staff_speed)
+                             - np.logaddexp(np.log(staff_share) - head_log,
+                                            np.log1p(-staff_share) - staff_speed))
         if transfer:
-            coding_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
-                                     np.log(transfer) + coding_gain)
             # AI judgment against people's: today's level times its gain.
             ai_taste_log = np.log(p["judgment_today"]) + ai_judgment_log(
                 effective, taste_slope, drift, transfer, p["judgment_cap"])
@@ -2136,11 +2173,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             automation_log = np.logaddexp(np.log1p(-transfer) if transfer < 1 else -np.inf,
                                           np.log(transfer) + amdahl_log)
         else:
-            coding_log = np.zeros(n)
             quality_log = np.zeros(n)
             automation_log = np.zeros(n)
         labor_log = parallel * (compute_log + np.log(shares[2] / 0.2)
-                                + coding_log + automation_log + headcount_log)
+                                + theta * coding_log + automation_log + headcount_log)
         experiment_log = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
         with np.errstate(divide="ignore"):
             ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
@@ -2296,7 +2332,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # A runaway has automated coding whatever its inherited date says, and
         # its direction share is at the floor: RSI is reached unless the floor
         # sits above the bar, where no draw can ever reach it.
-        rsi_possible = floor <= p["full_human"] / 100
+        rsi_possible = floor <= bar
         runaway_rsi = diverged & ~np.isfinite(events["RSI"]) & rsi_possible
         events["RSI"][runaway_rsi] = end[runaway_rsi]
         software = np.minimum(updated, 1e6)
@@ -2405,7 +2441,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         coding_hit = active & (end >= coding) & ~coding_recorded
         record("Full coding automation", coding_hit, human, delivered_rate, advantage)
         coding_recorded |= coding_hit
-        hit = (live & (end >= coding) & (human[:, 0] <= p["full_human"] / 100)
+        hit = (live & (end >= coding) & (human[:, 0] <= bar)
                & ~np.isfinite(events["RSI"]))
         events["RSI"][hit] = end[hit]
         record("RSI", hit, human, delivered_rate, advantage)
@@ -2490,7 +2526,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
 
     def humans_at(j):
         ready = humans(capability_history[:, j], None,
-                       realized_history[:, j])[:, 0] <= p["full_human"] / 100
+                       realized_history[:, j])[:, 0] <= bar
         direction_ready[ready & ~np.isfinite(direction_ready)] = workflow_grid[j]
         hours = humans(capability_history[:, j], workflow_grid[j], realized_history[:, j])
         if p["rsi_autopilot"] and not under_review(workflow_grid[j]):
@@ -2575,7 +2611,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                   "judgment_drift": drift, "substitution": rho,
                   "ceiling_oom": ceiling / np.log(10), "scale_dependent": scale_share,
                   "fast_share": 100 * fast_fraction,
-                  "scale_lag_oom": scale_lag / np.log(10)},
+                  "scale_lag_oom": scale_lag / np.log(10), "full_human": 100 * bar,
+                  "human_uplift": theta},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},

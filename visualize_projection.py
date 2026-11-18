@@ -2110,6 +2110,9 @@ _RSI_AL5_TARGET = 90.0
 # measured rung. It is a stated assumption, not a fitted quantity — there is
 # nothing to fit it against.
 _RSI_AL5_TAU_HI_MULT = 2.0
+# ...and never under 4 years: a judgment (Peter, Nov 18 2026), not a fit, that the
+# unsupervised step could take that long; a longer lag read off the ladder still wins.
+_RSI_AL5_TAU_HI_MIN_DAYS = 1461.0
 # With a lag set by hand, the floor is at most this share of it.
 _RSI_AL5_FLOOR_MAX_SHARE = 0.8
 
@@ -2151,18 +2154,21 @@ def _rsi_al5_lag(rows):
 def _rsi_al5_gap_shape(lag_days, slow_days=None, floor_days=None):
     """(floor, mu, sigma) of the lag's shifted lognormal, in days: floor +
     exp(N(mu, sigma)) has its median at `lag_days` and its 90th percentile at
-    `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days). The floor is
+    `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days), at least
+    `_RSI_AL5_TAU_HI_MIN_DAYS` when `slow_days` is given. The floor is
     `floor_days`, at most `_RSI_AL5_FLOOR_MAX_SHARE` of the lag (0 if None)."""
     lag_days = float(lag_days)
     hi = max(lag_days, slow_days or 0.0) * _RSI_AL5_TAU_HI_MULT
+    if slow_days is not None:      # the ladder's own reading, not a lag set by hand
+        hi = max(hi, _RSI_AL5_TAU_HI_MIN_DAYS)
     floor = min(floor_days or 0.0, _RSI_AL5_FLOOR_MAX_SHARE * lag_days)
     return floor, np.log(lag_days - floor), np.log((hi - floor) / (lag_days - floor)) / 1.282
 
 
 def _rsi_al5_tau_draws(lag_days, n, slow_days=None, floor_days=None):
     """Draws for the lag: `floor_days` plus a lognormal, median `lag_days`,
-    90th percentile `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days)
-    (`_rsi_al5_gap_shape`).
+    90th percentile `_RSI_AL5_TAU_HI_MULT` x max(lag_days, slow_days), at
+    least `_RSI_AL5_TAU_HI_MIN_DAYS` with `slow_days` (`_rsi_al5_gap_shape`).
 
     The median is the censored central value; the long tail is the judgement
     above, applied to the slower reading of the ladder when one is given; the
@@ -7643,9 +7649,9 @@ def _render_rsi_automation(end_year):
                      "inside supervised work; the band already has a long "
                      "tail, its 90th percentile at "
                      f"{_RSI_AL5_TAU_HI_MULT:g}× whatever is set here and "
-                     f"never below {lag['slow'] * _RSI_AL5_TAU_HI_MULT / 30.44:.0f} "
-                     "months: twice the lag read off the AL4 months since "
-                     "May alone. No draw is shorter than "
+                     f"never below {max(lag['slow'] * _RSI_AL5_TAU_HI_MULT, _RSI_AL5_TAU_HI_MIN_DAYS) / 30.44:.0f} "
+                     "months: the larger of twice the lag read off the AL4 months "
+                     "since May alone and 4 years, a judgment rather than a fit. No draw is shorter than "
                      f"{lag['floor'] / 30.44:.1f} months, the shortest step "
                      "measured between rungs.")
         lag_days = max(float(lag_mo) * 30.44, 1.0)
@@ -19397,6 +19403,21 @@ def _tk_seed():
         and 0 <= value < 2**32 else takeoff.DEFAULTS["seed"]
 
 
+def _pc_al5_lag_days():
+    """The AL5 card's hand-set lag in days, or None for the ladder's own
+    reading (slow tail, floor, 4-year minimum). The *Months AL5 trails AL4*
+    box at its default (the ladder's lag, rounded as the box shows it) counts
+    as the ladder's, so visiting the RSI evidence does not change the card
+    (`test_the_al5_card_keeps_the_ladder_tail_once_the_lag_box_exists`)."""
+    mo = st.session_state.get("rsi_al5_lag_mo")
+    if mo is None:
+        return None
+    lag = _rsi_al5_lag(load_rsi_automation())
+    if lag is not None and float(mo) == float(round(lag['lag'] / 30.44, 1)):
+        return None
+    return max(float(mo) * 30.44, 1.0)
+
+
 @st.cache_data(show_spinner=False, max_entries=24)
 def _pc_milestone_components(timing_label, today, condition, ramp_days, n, data_key,
                              seed=None, us_lag=None):
@@ -19489,11 +19510,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  "as the fit's, not the world's."))
     _cap.append((f"al5_{_RSI_AL5_TARGET:.0f}",
                  f"AL5: {_RSI_AL5_TARGET:.0f}% of R&D fully autonomous",
-                 _pc_rsi_al5_eta(
-                     load_rsi_automation(),
-                     lag_days=(st.session_state.get("rsi_al5_lag_mo") or 0) * 30.44
-                     or None,
-                     samples=True), False,
+                 _pc_rsi_al5_eta(load_rsi_automation(), lag_days=_pc_al5_lag_days(),
+                                 samples=True), False,
                  "The AL5 fan above: the AL4 fit shifted by the ladder's own "
                  "step, extrapolated one rung and raised until AL5 would still "
                  "be invisible in the last rated month. **AL5 has no "
@@ -19584,7 +19602,7 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
 def _pc_rsi_components(today, timing_label, condition, ramp_days):
     data_key = repr((frontier_all, rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
                      load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
-                     _OPENAI_REVENUE, _ANTHROPIC_REVENUE))
+                     _OPENAI_REVENUE, _ANTHROPIC_REVENUE, _pc_al5_lag_days()))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
                                     N_SAMPLES, data_key, _tk_seed(), _ship_lag("us"))
 
@@ -23863,7 +23881,22 @@ def _render_gap_hover():
 # ── Takeoff: conditional research-feedback scenarios ─────────────────────
 
 # Model settings the app sets itself rather than offering as widgets.
-_TK_NOT_WIDGETS = ("onset_low", "onset_high", "years", "compute_slow_years")
+_TK_NOT_WIDGETS = ("onset_low", "onset_high", "years", "compute_slow_years",
+                   "full_human_spread", "human_uplift_spread")
+# The RSI bar's per-scenario spread, a factor either side of its median (`tk_full_human`).
+_TK_BAR_SPREAD = takeoff.DEFAULTS["full_human_spread"]
+
+
+def _tk_uplift_band(centre, spread=takeoff.DEFAULTS["human_uplift_spread"]):
+    """The 90% range of the scenarios' human uplift around `centre`, as
+    `takeoff.simulate` draws it (logit-normal; 0 and 1 hold)."""
+    if not 0 < centre < 1 or spread <= 0:
+        return float(centre), float(centre)
+    z = statistics.NormalDist().inv_cdf(.95) * spread
+    mid = np.log(centre / (1 - centre))
+    return tuple(float(1 / (1 + np.exp(-(mid + d)))) for d in (-z, z))
+
+
 # Compute growth slows from the end of this year (the edge of Epoch's
 # feasibility analysis); `tk_compute_slowdown` sets by how much.
 _TK_COMPUTE_SLOW_YEAR = 2030
@@ -25995,7 +26028,8 @@ def _tk_humans_fig(result, today, ladder=None, markers=()):
             hovertemplate="%{x|%b %Y}<br>%{y:.0f}%<extra>" + name + "</extra>"))
     full_human = result["params"]["full_human"]
     fig.add_hline(y=full_human, line_dash="dash", line_color="#777",
-                  annotation_text=f"RSI: research direction at or under {full_human:g}%",
+                  annotation_text=f"RSI bar: research direction at or under {full_human:g}% "
+                                  "(median; each scenario draws its own)",
                   annotation_position="top right")
     if ladder:
         fig.add_trace(go.Scatter(
@@ -27589,10 +27623,14 @@ def _render_takeoff(loading):
             number("Human work at RSI (%)", "full_human", 1.0, 25.0, 1.0,
                    "RSI is when research direction (choosing what to try next) falls "
                    "to this share of its baseline human hours, after coding is "
-                   "automated. Human hours only approach the persistent floor under "
+                   "automated. This is the median: each scenario draws its own bar, "
+                   "90% of them within "
+                   f"{float(st.session_state.get('tk_full_human', 5.0)) / _TK_BAR_SPREAD:g}-"
+                   f"{float(st.session_state.get('tk_full_human', 5.0)) * _TK_BAR_SPREAD:g}% "
+                   "(kept inside 1-25%). Human hours only approach the persistent floor under "
                    "Advanced (now "
-                   f"{float(st.session_state.get('tk_human_floor', 0.0)):g}%), so a bar "
-                   "at or below it is never reached and RSI reads *Beyond horizon*.")
+                   f"{float(st.session_state.get('tk_human_floor', 0.0)):g}%), so a scenario's bar "
+                   "below it is never reached and RSI reads *Beyond horizon*.")
             st.checkbox("Autopilot from RSI", key="tk_rsi_autopilot",
                         help="On: once research direction crosses the bar, no research "
                              "stage needs people at all; the hours left in experiment "
@@ -27759,9 +27797,10 @@ def _render_takeoff(loading):
                        "future acceleration shortens calendar time.")
             number("Persistent human-work floor (%)", "human_floor", 0.0, 25.0, 1.0,
                    "The share of baseline human hours each stage never drops below. "
-                   "At or above *Human work at RSI* (now "
-                   f"{float(st.session_state.get('tk_full_human', 5.0)):g}%), RSI is never "
-                   "reached.")
+                   "A scenario whose RSI bar sits under it never reaches RSI; each "
+                   "scenario draws its bar around *Human work at RSI* (now "
+                   f"{float(st.session_state.get('tk_full_human', 5.0)):g}%, the median), so "
+                   "a floor above that rules RSI out in most of them.")
             st.markdown("**Validated research progress**")
             number("Baseline software doubling time (months)", "software_months", 1.0, 60.0, 1.0,
                    "Validated algorithmic progress at the 2024–25 average pace, "
@@ -27791,6 +27830,15 @@ def _render_takeoff(loading):
                    "the human share h falls, research labor speeds up by "
                    "(h\u2080 + (1\u2212h\u2080)/s) / (h + (1\u2212h)/s): Amdahl's law, "
                    "so the last stretch to RSI matters most.")
+            uplift_lo, uplift_hi = _tk_uplift_band(float(st.session_state["tk_human_uplift"]))
+            number("Human uplift from AI coding", "human_uplift", 0.0, 1.0, 0.05,
+                   "Share of AI's coding gain that also speeds up the work people still "
+                   "do; the rest speeds only AI's share. 1: every hour speeds up alike. "
+                   "0: only AI's share does, so the hours people still do hold research "
+                   "back (Amdahl's law). Each scenario draws its own value around this "
+                   f"one: 90% between {uplift_lo:.2f} and {uplift_hi:.2f} at this "
+                   "setting. Human review held for safety is a separate scenario: "
+                   "Pacing's *Ban runaway RSI* phases.")
             number("Non-AI input growth (% of steady state)", "baseline_inputs", 0.0, 200.0, 10.0,
                    "Growth in researchers and spending. 100% is the growth that would "
                    "hold today's research pace with AI frozen, as the past trend has; "
@@ -27927,7 +27975,8 @@ def _render_takeoff(loading):
                     if np.isfinite(at_rsi["human_" + k]).any() else float("nan")
                     for k in ("experiments", "verification")}
         _card(b, "RSI: AI directs research", rsi,
-              f"Research direction at or under {params['full_human']:g}% of its baseline "
+              f"Research direction at or under its scenario's bar (median "
+              f"{params['full_human']:g}%) of its baseline "
               "human hours, after coding automation: the AI chooses what to try next. "
               f"At that point experiment design still needs {left['experiments']:.0f}% of its "
               f"human hours and verification {left['verification']:.0f}% (medians); "

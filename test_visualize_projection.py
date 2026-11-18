@@ -3371,8 +3371,19 @@ class TestRsiAl5:
         lag = vp._rsi_al5_lag(vp.load_rsi_automation())
         assert lag['slow'] > lag['lag']
         draws = vp._rsi_al5_tau_draws(lag['lag'], 20000, lag['slow'], lag['floor'])
-        assert np.percentile(draws, 90) == pytest.approx(
-            lag['slow'] * vp._RSI_AL5_TAU_HI_MULT, rel=0.05)
+        assert np.percentile(draws, 90) == pytest.approx(max(
+            lag['slow'] * vp._RSI_AL5_TAU_HI_MULT, vp._RSI_AL5_TAU_HI_MIN_DAYS), rel=0.05)
+
+    def test_lag_tail_is_at_least_four_years(self):
+        """The 90th percentile never falls under `_RSI_AL5_TAU_HI_MIN_DAYS` (a
+        judgment), and a lag set long enough to imply a longer tail still sets it."""
+        lag = vp._rsi_al5_lag(vp.load_rsi_automation())
+        assert lag['slow'] * vp._RSI_AL5_TAU_HI_MULT < vp._RSI_AL5_TAU_HI_MIN_DAYS == 1461
+        floor, mu, sigma = vp._rsi_al5_gap_shape(lag['lag'], lag['slow'], lag['floor'])
+        assert floor + np.exp(mu + 1.282 * sigma) == pytest.approx(1461)
+        assert floor + np.exp(mu) == pytest.approx(lag['lag'])
+        floor, mu, sigma = vp._rsi_al5_gap_shape(1000.0, None, lag['floor'])
+        assert floor + np.exp(mu + 1.282 * sigma) == pytest.approx(2000)
 
     def test_lag_band_is_a_long_tail_above_the_shortest_measured_step(self):
         """Median on the censored lag, no draw below the shortest step any

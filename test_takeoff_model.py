@@ -153,9 +153,15 @@ def test_rsi_turns_on_research_direction_alone():
 
 
 def test_persistent_human_floor_above_the_bar_prevents_rsi():
-    """A human-work floor above the RSI bar rules RSI out in every draw."""
-    r = tk.simulate(dict(human_floor=6.0), n=30)
+    """A human-work floor above the RSI bar rules RSI out: in every draw when
+    the bar is fixed, in each draw whose own bar sits under it when drawn."""
+    r = tk.simulate(dict(human_floor=6.0, full_human_spread=1), n=30)
     assert np.isinf(r["events"]["RSI"]).all()
+    r = tk.simulate(dict(human_floor=6.0), n=100)
+    under = r["draws"]["full_human"] < 6.0
+    assert 0 < under.mean() < 1
+    assert np.isinf(r["events"]["RSI"][under]).all()
+    assert np.isfinite(r["events"]["RSI"][~under]).any()
 
 
 def test_research_difficulty_is_sampled_with_the_other_rates():
@@ -604,12 +610,13 @@ def test_resource_growth_alone_creates_no_compute_matched_advantage():
 
 
 def test_rsi_outcomes_meet_the_human_hours_bar():
-    """Every draw reaching RSI has research direction at or under the bar there."""
+    """Every draw reaching RSI has research direction at or under its own bar there."""
     r = tk.simulate(n=100)
     observed = r["outcomes"]["RSI"]
     reached = np.isfinite(r["events"]["RSI"])
     assert reached.any()
-    assert np.all(observed["human_direction"][reached] <= tk.DEFAULTS["full_human"] / 100)
+    assert np.all(observed["human_direction"][reached]
+                  <= r["draws"]["full_human"][reached] / 100)
     assert np.isnan(observed["human_direction"][~reached]).all()
 
 
@@ -634,8 +641,9 @@ def test_research_direction_waits_for_coding():
     """AI cannot direct research before it can code: until a draw's coding
     date its direction hours hold at the RSI bar, then fall past it."""
     bar = tk.DEFAULTS["full_human"] / 100
-    early = tk.simulate(dict(years=6), n=200, onset_years=np.zeros(200))
-    late = tk.simulate(dict(years=6), n=200, onset_years=np.full(200, 3.0))
+    fixed = dict(years=6, full_human_spread=1)
+    early = tk.simulate(fixed, n=200, onset_years=np.zeros(200))
+    late = tk.simulate(fixed, n=200, onset_years=np.full(200, 3.0))
     years = early["workflow_progress"]["years"]
     before = years < 3 - 1e-9
     low_early = early["workflow_progress"]["human_quantiles"][:, 0, 0]
@@ -1098,7 +1106,8 @@ def test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost():
     parallelization power, trend proxy included), a zero
     cut changes nothing, and a cut that ends hands back the uncut level, no
     higher, after RSI as before it."""
-    params = dict(tk.POINT_ESTIMATE, years=5, rsi_compute_boost=3.0)
+    # Full human uplift, so the ended cut's RSI lands on the uncut date below.
+    params = dict(tk.POINT_ESTIMATE, years=5, rsi_compute_boost=3.0, human_uplift=1.0)
     n, grid = 6, np.linspace(0, 5, 481)
     kw = dict(n=n, onset_years=np.full(n, 1.5), compute_rates=np.full(n, np.log(2.5)),
               experiment_slopes=np.full(n, 1.0))
@@ -1176,6 +1185,88 @@ def test_fast_share_is_drawn_per_scenario_around_its_setting():
     for share, spread in ((25.0, 0.0), (0.0, 100.0), (100.0, 100.0)):
         d = tk.simulate(dict(base, fast_share=share, fast_share_spread=spread), n=50)["draws"]["fast_share"]
         assert np.allclose(d, share)
+
+
+def test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones():
+    """A `human_uplift` centre of 1 puts every draw at 1, the labor equation as it
+    was, whatever the spread; 0 confines the coding gain to AI's share of the hours
+    (inside Amdahl), so milestones come no sooner."""
+    onset = np.random.default_rng(5).uniform(0, 3, 200)
+    base = dict(years=8, full_human_spread=1)
+    one = tk.simulate(dict(base, human_uplift=1.0), n=200, onset_years=onset)
+    fixed = tk.simulate(dict(base, human_uplift=1.0, human_uplift_spread=0), n=200,
+                        onset_years=onset)
+    np.testing.assert_array_equal(one["draws"]["human_uplift"], 1.0)
+    for key in ("software_log", "coding_at"):
+        np.testing.assert_array_equal(one[key], fixed[key])
+    np.testing.assert_array_equal(one["events"]["RSI"], fixed["events"]["RSI"])
+    zero = tk.simulate(dict(base, human_uplift=0.0), n=200, onset_years=onset)
+    np.testing.assert_array_equal(zero["draws"]["human_uplift"], 0.0)
+    rsi1, rsi0 = one["events"]["RSI"], zero["events"]["RSI"]
+    assert tk.quantile(rsi0, 0.5) >= tk.quantile(rsi1, 0.5)
+    assert np.mean(np.isfinite(rsi0)) <= np.mean(np.isfinite(rsi1))
+    assert np.median(zero["software_log"]) < np.median(one["software_log"])
+    with pytest.raises(ValueError, match="Human uplift"):
+        tk.validate(dict(human_uplift=1.5))
+    with pytest.raises(ValueError, match="Human uplift"):
+        tk.validate(dict(human_uplift_spread=-1))
+
+
+def test_each_scenario_draws_its_own_human_uplift():
+    """Logit-normal around `human_uplift`, 90% within 0.15-0.85 at 0.5, from a row
+    of its own so every other draw is unchanged; spread 0 holds the centre."""
+    kw = dict(n=400, onset_years=np.full(400, 0.5))
+    drawn = tk.simulate(dict(years=4), **kw)
+    fixed = tk.simulate(dict(years=4, human_uplift_spread=0), **kw)
+    theta = drawn["draws"]["human_uplift"]
+    assert tk.DEFAULTS["human_uplift"] == 0.5
+    assert np.median(theta) == pytest.approx(0.5, abs=0.04)
+    assert np.mean((theta > 0.15) & (theta < 0.85)) == pytest.approx(0.9, abs=0.04)
+    assert theta.min() > 0 and theta.max() < 1 and len(np.unique(theta)) == 400
+    np.testing.assert_array_equal(fixed["draws"]["human_uplift"], 0.5)
+    for k in ("taste_slope", "difficulty", "fast_share", "scale_lag_oom", "full_human"):
+        np.testing.assert_array_equal(drawn["draws"][k], fixed["draws"][k])
+    # A draw's own theta moves its path: above the centre, more software by year 4.
+    gain = drawn["software_log"] - fixed["software_log"]
+    assert np.median(gain[theta > 0.6]) > 0 > np.median(gain[theta < 0.4])
+    assert tk.POINT_ESTIMATE["human_uplift_spread"] == 0
+
+
+def test_each_scenario_draws_its_own_rsi_bar():
+    """Lognormal around `full_human`, 90% within / and x `full_human_spread`,
+    inside 1-25%, from a row of its own so every other draw is unchanged; each
+    draw's RSI meets its own bar, a lower bar never comes sooner and the hold
+    before coding sits at it."""
+    kw = dict(n=400, onset_years=np.full(400, 0.5))
+    fixed = tk.simulate(dict(years=6, full_human_spread=1), **kw)
+    drawn = tk.simulate(dict(years=6), **kw)
+    bar = drawn["draws"]["full_human"]
+    assert np.median(bar) == pytest.approx(5.0, rel=0.08)
+    assert np.mean((bar > 2.5) & (bar < 10)) == pytest.approx(0.9, abs=0.04)
+    assert bar.min() >= 1 and bar.max() <= 25 and len(np.unique(bar)) == 400
+    np.testing.assert_array_equal(fixed["draws"]["full_human"], 5.0)
+    for k in ("taste_slope", "difficulty", "fast_share", "scale_lag_oom"):
+        np.testing.assert_array_equal(drawn["draws"][k], fixed["draws"][k])
+    rsi, rsi5 = drawn["events"]["RSI"], fixed["events"]["RSI"]
+    reached = np.isfinite(rsi) & np.isfinite(rsi5)
+    assert reached.mean() > 0.9
+    at = drawn["outcomes"]["RSI"]["human_direction"]
+    assert np.all(at[reached] <= bar[reached] / 100)
+    # A lower bar is met later, a higher one sooner; the bar's hold before coding
+    # feeds back into the path, so only to within two weekly steps per draw.
+    low, high = reached & (bar < 5), reached & (bar > 5)
+    assert np.all(rsi[low] >= rsi5[low] - 2 / 52) and np.all(rsi[high] <= rsi5[high] + 2 / 52)
+    assert np.median(rsi[low] - rsi5[low]) > 0 > np.median(rsi[high] - rsi5[high])
+    # Before coding, direction holds at the draw's own bar.
+    # Each draw at or over its own bar puts the hours' 10th percentile at or over
+    # the bars'; under the fixed 5% median, so the gate does not use the median.
+    late = tk.simulate(dict(years=6), n=400, onset_years=np.full(400, 3.0))
+    years = late["workflow_progress"]["years"]
+    low = late["workflow_progress"]["human_quantiles"][(years > 2) & (years < 3 - 1e-9), 0, 0]
+    floor10 = np.quantile(late["draws"]["full_human"] / 100, .1)
+    assert np.all(low >= floor10 - 1e-12) and np.all(low < 0.05)
+    with pytest.raises(ValueError, match="RSI bar"):
+        tk.validate({"full_human_spread": 0.5})
 
 
 def test_a_review_rule_ends_autopilot_and_holds_each_gain_for_review():
@@ -1259,7 +1350,8 @@ def _per_draw_curves(n, rng):
 
 @pytest.mark.parametrize("case", [
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
-    "cut_and_review", "paths", "follower", "follower_scales"])
+    "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
+    "human_uplift"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1286,6 +1378,13 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     elif case == "no_difficulty":
         _loops_agree(monkeypatch, dict(years=4, difficulty=0, transfer=0), n,
                      onset_years=onset)
+    elif case == "bar_spread":
+        r = _loops_agree(monkeypatch, dict(years=6, full_human_spread=4.0, human_floor=3.0),
+                         n, **app)
+        assert (r["draws"]["full_human"] < 3.0).any()
+    elif case == "human_uplift":
+        r = _loops_agree(monkeypatch, dict(years=6, human_uplift=0.3), n, **app)
+        assert len(np.unique(r["draws"]["human_uplift"])) == n
     elif case == "runaway":
         r = _loops_agree(monkeypatch, dict(years=6, ceiling_high_oom=0, returns_spread=150,
                                            substitution=0.5), n, onset_years=onset)

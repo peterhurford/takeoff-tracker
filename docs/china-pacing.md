@@ -258,7 +258,7 @@ over the quarters from 2025 on, with `_rsi_code_dt_ci()` and
 `_RSI_CODE_POS_FACTOR`; R&D automation: single OLS in logit space over the six
 labelled months, odds-doubling over `_rsi_auto_dt_ci()`, position over the
 figure's own 90% interval on the latest month; AL5: that same draw shifted by a
-lag drawn over [censored ladder, `_RSI_AL5_TAU_HI_MULT`x it]; next-step: single OLS in
+lag drawn over [censored ladder, max(`_RSI_AL5_TAU_HI_MULT`x it, 4 years)]; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()` (widened to span every frontier
 step's rate), position on the fit ± `_RSI_DIR_POS_CI` points widened to reach
 the measured score (the study's own binomial SE at n=`_RSI_DIR_N`) — rather

@@ -2385,6 +2385,78 @@ class TestTakeoffTab:
         assert fresh.number_input(key="tk_cal_validated").value == 1.0
         assert fresh.number_input(key="tk_human_verification").value == 25.0
 
+    def test_human_uplift_is_a_setting_both_runs_read(self, monkeypatch):
+        """`tk_human_uplift` defaults to 0.5, its help gives the drawn 90% range at
+        the current value, the US and China runs both get it, and it survives a
+        shared URL and goes back on reset."""
+        import takeoff_model as tk
+        import visualize_projection as vp
+        seen = []
+        original = tk.simulate
+
+        def capture(params, **kwargs):
+            seen.append((kwargs.get("follower") is not None, params["human_uplift"]))
+            return original(params, **kwargs)
+
+        monkeypatch.setattr(tk, "simulate", capture)
+        at = self._app()
+        box = at.number_input(key="tk_human_uplift")
+        assert box.value == 0.5 and box.min == 0.0 and box.max == 1.0
+        lo, hi = vp._tk_uplift_band(0.5)
+        assert (round(lo, 2), round(hi, 2)) == (0.15, 0.85)
+        assert "between 0.15 and 0.85" in box.help
+        assert "human_uplift_spread" in vp._TK_NOT_WIDGETS
+        assert not [n for n in at.number_input if n.key == "tk_human_uplift_spread"]
+        seen.clear()
+        box.set_value(0.8).run()
+        _assert_no_error(at, "Takeoff / human uplift 0.8")
+        assert {follower for follower, _ in seen} == {False, True}
+        assert all(u == 0.8 for _, u in seen)
+        assert _qp(at, "tk_human_uplift") == ["0.8"]
+        assert "between 0.41 and 0.96" in at.number_input(key="tk_human_uplift").help
+        fresh = _fresh_app()
+        fresh.query_params.update(dict(at.query_params))
+        fresh.run()
+        assert fresh.number_input(key="tk_human_uplift").value == 0.8
+        at.button(key="tk_reset").click().run()
+        assert at.number_input(key="tk_human_uplift").value == 0.5
+
+    @staticmethod
+    def _al5_card(at):
+        """(median, 80% CI caption) of the Capabilities Milestones AL5 card."""
+        want = None
+        for e in _in_order(at._tree):
+            if e.type == "metric" and e.label.startswith("AL5:"):
+                want = e.value
+            elif want and e.type == "caption" and e.value.startswith("80% CI"):
+                return want, e.value
+        raise AssertionError("no AL5 card")
+
+    def test_the_al5_card_keeps_the_ladder_tail_once_the_lag_box_exists(self):
+        """Once the lag box has stored its default, a recomputed AL5 card (here a
+        new seed) is the one a fresh session at that seed shows: the ladder's
+        long tail, not a hand-set lag's."""
+        at = self._app()
+        assert "rsi_al5_lag_mo" in at.session_state
+        at.number_input(key="tk_seed").set_value(9173).run()
+        card = self._al5_card(at)
+        fresh = _fresh_app()
+        fresh.query_params["tab"] = "takeoff"
+        fresh.query_params["tk_seed"] = "9173"
+        fresh.run()
+        assert self._al5_card(fresh) == card
+        med, ci = card
+        late = ci.split(" \u2013 ")[-1]
+        gap = datetime.strptime(late, "%b %Y") - datetime.strptime(med, "%b %Y")
+        assert gap.days > 2 * 365
+
+    def test_setting_the_al5_lag_moves_the_al5_card(self):
+        at = self._app()
+        med = datetime.strptime(self._al5_card(at)[0], "%b %Y")
+        at.number_input(key="rsi_al5_lag_mo").set_value(24.0).run()
+        _assert_no_error(at, "Takeoff / AL5 lag 24 months")
+        assert datetime.strptime(self._al5_card(at)[0], "%b %Y") > med
+
     def test_grounded_thresholds_and_workflow_floor(self):
         """A human-work floor above the RSI bar rules RSI out, and reset restores it."""
         at = self._app()
@@ -2579,8 +2651,10 @@ class TestTakeoffTab:
             text = [c.value for c in at.caption if c.value.startswith("80% CI")][4]
             return text
         wide = ci80()
+        import visualize_projection as vp
         for key in tk.POINT_ESTIMATE:
-            at.number_input(key="tk_" + key).set_value(0)
+            if key not in vp._TK_NOT_WIDGETS:       # the RSI bar's spread is no widget
+                at.number_input(key="tk_" + key).set_value(0)
         at.run()
         _assert_no_error(at, "Takeoff / point estimates")
         assert ci80() != wide

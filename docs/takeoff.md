@@ -29,9 +29,15 @@ pairing only, never the CDF
 (`test_coding_dates_pair_with_direction_without_changing_their_distribution`). The
 first run stops a month past `_TK_PAIRING_YEARS`, all the pairing reads
 (`test_the_pairing_run_stops_where_the_pairing_reads`). RSI is the first time research direction is at
-or under `full_human`% of baseline human hours with the coding date arrived
+or under its draw's bar of baseline human hours with the coding date arrived
 (`test_capability_paths_span_the_grid_and_rsi_waits_for_coding`); until that date direction's
-hours hold at the bar (`test_research_direction_waits_for_coding`).
+hours hold at the bar (`test_research_direction_waits_for_coding`). Row 22 draws each bar,
+lognormal around `full_human` (the *Human work at RSI* widget, the median) with 90% within
+÷/× `full_human_spread` (2, not a widget: `_TK_NOT_WIDGETS`), clipped to 1–25% but not raised
+to the floor, so a draw whose bar sits under the floor never reaches RSI; the RSI event, the
+coding hold, `rsi_possible`, `rsi0` and `direction_ready` all read the draw's own bar, and a
+spread of 1 is master's fixed bar (`test_each_scenario_draws_its_own_rsi_bar`,
+`test_persistent_human_floor_above_the_bar_prevents_rsi`).
 
 Every factor is lognormal: `z` is fixed uniform draws mapped to normal scores. r,
 the judgment elasticity, its drift and ρ each carry their own literature-sized spread
@@ -43,6 +49,12 @@ Append new factor rows to `z`, never insert, so earlier draws stay paired across
 Row 21 draws each scenario's `fast_share`, logit-normal around the setting with
 `fast_share_spread` its 1σ in log-odds (80%: about 8–55% around 25%;
 `test_fast_share_is_drawn_per_scenario_around_its_setting`).
+Row 23 draws each scenario's `human_uplift` (theta), logit-normal around the
+*Human uplift from AI coding* widget (`tk_human_uplift`, default 0.5) with
+`human_uplift_spread` its 1σ in log-odds (1.05, not a widget: 90% within 0.15–0.85 at 0.5;
+`_tk_uplift_band` prints that range in the help); a centre of 0 or 1, or spread 0, holds
+every draw at the centre (`test_each_scenario_draws_its_own_human_uplift`). China's run
+passes `draw_rows`, so each Chinese twin uses its US scenario's theta.
 Row 18 draws each scenario's software ceiling (`ceiling_low_oom`–`ceiling_high_oom`, default
 6–16 orders of magnitude above today's efficiency, Forethought's range): difficulty rises so
 returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceiling_step` is the
@@ -96,7 +108,15 @@ Amdahl term by the deployed model's paid-off algorithmic efficiency to that powe
 copies on the same compute (log space, so a runaway cannot overflow;
 `test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its ~4%/yr of
 today's labor growth out of the staff-survey coding fit, and `_tk_automation_growth` credits
-it over the evidence window before research judgment is fitted. `judgment_cap` (default 0,
+it over the evidence window before research judgment is fitted. Each draw's theta is
+the share of the coding gain's log that multiplies labor directly, speeding people's hours
+too; `1 - theta` of it instead multiplies AI's speed inside the Amdahl and headcount terms,
+so 0 keeps the gain under Amdahl's h0/h bound. `coding_log` is computed before `log_speed`
+for this; theta 1 is the old step bit for bit
+(`test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones`, the
+compiled-loop `human_uplift` case). It is not deliberate human review held for safety,
+which is Pacing's ban scenario (`review=`). `_tk_copies_yearly`, the survey's coding fit and
+the judgment calibration do not read theta. `judgment_cap` (default 0,
 none) caps AI research judgment at a multiple of today's
 (`test_a_judgment_cap_only_ever_slows_research`); AI Futures caps taste near 4× the best
 human, which maps to a larger, unmeasured number here. Coding counts as automated at the
@@ -624,12 +644,21 @@ Nine things are load-bearing.
    `_RSI_AUTO_REF_SWEEP` (`floor`, at most `_RSI_AL5_FLOOR_MAX_SHARE` of the
    median), and its 90th percentile `_RSI_AL5_TAU_HI_MULT`x the larger of the
    lag and `slow`, the same censored lag read off the recent AL4 months alone
-   (`test_lag_slow_edge_reads_the_recent_al4_months`). A median at the
+   (`test_lag_slow_edge_reads_the_recent_al4_months`), but never under
+   `_RSI_AL5_TAU_HI_MIN_DAYS` (4 years: a judgment, Peter, Nov 18 2026, not a fit;
+   it binds today, `test_lag_tail_is_at_least_four_years`). A lag set by hand with
+   no `slow` keeps 2x itself, so a zero lag still reproduces AL4
+   (`test_al5_is_the_al4_curve_shifted`). A median at the
    measured spacing with the slow reading only in the tail; three pinned
-   points leave the far tail no freedom (95th percentile near 4.5 years), so
+   points leave the far tail no freedom, so
    move the 90th percentile to change it
    (`test_lag_band_is_a_long_tail_above_the_shortest_measured_step`).
-   `rsi_al5_lag_mo` sets the median.
+   `rsi_al5_lag_mo` sets the median. The AL5 milestone card reads it through
+   `_pc_al5_lag_days`: at its default (the ladder's lag as the box rounds it) the card
+   takes the ladder's own tail, as on a first load before the box exists; a value set by
+   hand keeps 2x itself, and is in `_pc_rsi_components`' `data_key` so the cached card
+   follows it (`test_the_al5_card_keeps_the_ladder_tail_once_the_lag_box_exists`,
+   `test_setting_the_al5_lag_moves_the_al5_card`).
 9. **Both fans come off the same sampled AL4 paths**, AL5's being those paths
    shifted per sample, so the two cannot tell different stories about the rung
    they share; `_pc_rsi_al5_eta` likewise calls `_pc_rsi_auto_eta` and shifts
