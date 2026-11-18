@@ -10078,6 +10078,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-11-13: no TickerTrends post since 11-06.
     # Rechecked 2026-11-17: no TickerTrends post since 11-06; press has only The Information's Q3 revenue
     # (~$10B, quarterly) and the ~$70B year-end target (forecast).
+    # Rechecked 2026-11-18: no TickerTrends post since 11-06.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10198,6 +10199,8 @@ _ANTHROPIC_REVENUE = [
     # or 424B. Pricing and the final 424B are due ~11-18/19 (Nasdaq trading "on or about November 19").
     # Rechecked 2026-11-17: S-1/A No. 3 (0001628280-26-074338, filed 11-17) restates the $81B / 10-31 and
     # +$10B, with no newer as-of date; the 8-A12B the same day carries no financials. Still no 424B.
+    # Rechecked 2026-11-18: an FWP (0001628280-26-074628, the Japanese prospectus in English) restates the
+    # $81B / 10-31 and +$10B; a CERT the same day carries no financials. Still no 424B.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10290,6 +10293,7 @@ _CN_REVENUE = {
             # Checked 2026-11-13: September-quarter results and call land 2026-11-19, the
             # next likely MaaS ARR point; convert at that release's 2026-09-30 rate.
             # Rechecked 2026-11-17: confirmed for 2026-11-19, call 7:00a ET; no MaaS ARR since Yunqi.
+            # Rechecked 2026-11-18: results not yet out.
         ],
     },
     "Moonshot (Kimi)": {
