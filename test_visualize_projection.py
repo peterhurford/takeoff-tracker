@@ -4974,13 +4974,13 @@ class TestDuvProduction:
         """The figure's aria-labels state the 2035 values in prose; the
         table must reproduce them."""
         d = self._data()
-        assert d["us"][-1] == (2035, 422, 974, 3566)
-        assert d["continue_ceiling"][-1][1:] == (306, 532, 1071)
-        assert d["continue_push"][-1][1:] == (204, 378, 784)
-        assert d["continue_trend"][-1][1:] == (56, 114, 251)
-        assert d["banned_ceiling"][-1][1:] == (87, 153, 321)
-        assert d["banned_push"][-1][1:] == (58, 110, 235)
-        assert d["banned_trend"][-1][1:] == (17, 33, 72)
+        assert d["us"][-1] == (2035, 578, 1252, 5404)
+        assert d["continue_ceiling"][-1][1:] == (365, 634, 1276)
+        assert d["continue_push"][-1][1:] == (189, 354, 733)
+        assert d["continue_trend"][-1][1:] == (52, 107, 235)
+        assert d["banned_ceiling"][-1][1:] == (104, 182, 382)
+        assert d["banned_push"][-1][1:] == (54, 103, 220)
+        assert d["banned_trend"][-1][1:] == (16, 31, 67)
 
     def test_table_is_complete_and_ordered(self):
         d = self._data()
@@ -5174,20 +5174,20 @@ class TestCcWorldShares:
     def test_the_band_draws_cts_scenarios_and_the_mix_s_ranges(
             self, monkeypatch):
         """CTS's low and high read as 10th and 90th, from 2027 widened to
-        the forecasts' ratios to its central where those are wider; the
+        the forecasts' ratios to its central where those are wider (the low
+        only, since CTS's 2027 high is above both forecasts); the
         mix's low and high domestic and smuggled stocks at their source's
         percentiles: 5th-95th for Epoch's years, 10th-90th from IFP's."""
         t = (datetime(2027, 12, 31) - self._T).days / 365.25
         us = {y: (lo, c, hi) for y, lo, c, hi
               in vp.load_duv_production(vp._duv_mtime())["us"]}
-        # 2026 keeps CTS's range; 2027's is the forecasts', CTS's being
-        # narrower.
+        # 2026 keeps CTS's range; 2027's low is AI-2027's, its high CTS's.
         assert vp._WC_US_WIDE_FROM == 2027
         c27 = us[2027][1]
+        assert c27 * vp._WC_US_LOW_RATIO == pytest.approx(60)
         assert us[2027][0] > c27 * vp._WC_US_LOW_RATIO
-        assert us[2027][2] < c27 * vp._WC_US_HIGH_RATIO
-        us[2027] = (c27 * vp._WC_US_LOW_RATIO, c27,
-                    c27 * vp._WC_US_HIGH_RATIO)
+        assert us[2027][2] > c27 * vp._WC_US_HIGH_RATIO
+        us[2027] = (c27 * vp._WC_US_LOW_RATIO, c27, us[2027][2])
         # Chip life off, so the gap is the band's alone (the pre-2025
         # cohorts' backcast moves with the 2026 draw).
         monkeypatch.setattr(vp, "_CHIP_LIFE_YEARS", 100)
@@ -5734,19 +5734,19 @@ class TestPacing:
             self, monkeypatch):
         """Chips made: the world at each year-end is Epoch's end-2025
         chip-sales total plus CTS's US-and-allied output and China's
-        domestic output since, and Epoch's mid-2026 sales
-        reading (31.7M, 27.8-36.0M) is a check on it, not a pin. Chips
-        arrived: the same with everything but China's domestic stock read
-        two months earlier, checked by Epoch's 27.39M (24.64-30.21M)
-        arrived by mid-2026. Both checks hold with retirements too (the
+        domestic output since, and Epoch's mid-2026 sales reading (31.7M)
+        is a knot that splits CTS's 2026 total. Chips arrived: the same with
+        everything but China's domestic stock read two months earlier,
+        checked by Epoch's 27.39M (24.64-30.21M) arrived by mid-2026, a
+        separate Epoch dataset. The check holds with retirements too (the
         first lines); the identity is read with the chip life off."""
         today = datetime(2026, 11, 10)
         yt = lambda d: (d - today).days / 365.25
         d26 = yt(vp._WC_WORLD_MID2026[0])
         made_ret, _ = vp._wc_stocks(today, [d26], lag=0.0)
         arr_ret, _ = vp._wc_stocks(today, [d26])
-        assert (vp._WC_WORLD_MID2026[2] < float(made_ret[0, 0])
-                < vp._WC_WORLD_MID2026[3])
+        assert float(made_ret[0, 0]) == pytest.approx(
+            vp._WC_WORLD_MID2026[1], rel=0.01)
         assert (vp._WC_WORLD_ARRIVED_MID2026[2] < float(arr_ret[0, 0])
                 < vp._WC_WORLD_ARRIVED_MID2026[3])
         monkeypatch.setattr(vp, "_CHIP_LIFE_YEARS", 100)
@@ -5761,9 +5761,9 @@ class TestPacing:
             assert w[k] - w[k - 1] == pytest.approx(
                 us[y] * 1e6 + dom[str(y)]["domestic"][0]
                 - dom[str(y - 1)]["domestic"][0]), y
-        d, _mid, lo, hi = vp._WC_WORLD_MID2026
+        d, mid, _lo, _hi = vp._WC_WORLD_MID2026
         mid26, _ = vp._wc_stocks(today, [yt(d)], lag=0.0)
-        assert lo < float(mid26[0, 0]) < hi
+        assert float(mid26[0, 0]) == pytest.approx(mid, rel=1e-3)
         d, _mid, lo, hi = vp._WC_WORLD_ARRIVED_MID2026
         arr, _ = vp._wc_stocks(today, [yt(d)])
         assert lo < float(arr[0, 0]) < hi
@@ -7445,7 +7445,10 @@ class TestTkPaceComparison:
         t = vp._tk_pace_comparison(vp._TK_ECI_TODAY)
         for pts, ratio in zip(t["Points a year"], t["Ratio"]):
             num, den = (float(x) for x in pts.split(" vs "))
-            assert num / den == pytest.approx(float(ratio.rstrip("×")), abs=0.01)
+            # Both points print to one decimal, the ratio from unrounded values.
+            q = num / den
+            slack = q * (0.05 / num + 0.05 / den) + 0.005
+            assert q == pytest.approx(float(ratio.rstrip("×")), abs=slack)
 
     def test_compute_comes_off_both_numerator_and_denominator(self):
         pts = [tuple(float(x) for x in p.split(" vs "))

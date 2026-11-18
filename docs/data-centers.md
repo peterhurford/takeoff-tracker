@@ -365,10 +365,8 @@ not a reading of the CSVs. Six things are load-bearing:
    Pacing and China's takeoff read one stock
    (`test_each_cohort_retires_after_the_chip_life`). China is the mix's
    in-China stock (domestic + legal + smuggled); remote access stays abroad.
-   CTS counts dense FP16 H100e and Epoch dense 8-bit; they are taken as one
-   unit, which holds chip by chip for Nvidia and AMD and is unverifiable for
-   TPUs and Trainium (`CHINA_COMPUTE_JUDGMENTS.md` §5, basis check). Stocks are
-   log-linear between year-ends (Dec 31); past the mix's last year China and
+   CTS (since its 2026-11-16 revision) and Epoch both count dense 8-bit H100e.
+   Stocks are log-linear between year-ends (Dec 31); past the mix's last year China and
    its domestic stock keep their last-year growth, past CTS's last year the
    world keeps its, and before end-2025 the world runs back at its 2026
    growth. That is chips made; installed is chips arrived, so the US-and-allied
@@ -376,22 +374,24 @@ not a reading of the CSVs. Six things are load-bearing:
    `_WC_ARRIVAL_LAG_YEARS` (two months) earlier, the delay Epoch's chip imports
    explorer assumes (an assumption, not a measurement). China's in-China stock
    is not lagged: its legal and smuggled channels are customs- or
-   arrival-based and its domestic chips never ship. Epoch's mid-2026 sales
-   reading (31.7M, 27.8–36.0M, `_WC_WORLD_MID2026`) checks the unlagged series
-   (`lag=0`) and its arrivals reading (27.39M, 24.64–30.21M,
-   `_WC_WORLD_ARRIVED_MID2026`) the lagged one; neither is the anchor: CTS
-   gives calendar-year output only, so pinning mid-2026 would need a guess at
-   its H1/H2 split
+   arrival-based and its domestic chips never ship. CTS gives calendar-year
+   output only, so Epoch's mid-2026 sales reading (31.7M, 27.8–36.0M,
+   `_WC_WORLD_MID2026`) is a knot in the US-and-allied series that splits
+   2026 between H1 and H2. Its arrivals reading
+   (27.39M, 24.64–30.21M, `_WC_WORLD_ARRIVED_MID2026`), a separate dataset,
+   checks the lagged series
    (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`;
    `test_world_is_china_plus_the_rest_and_shares_sum_to_100`). The published
    China estimates (Epoch's cluster share 14–15%, AI-2027 12%, the smuggling
    report's ~9%, IFP's ~7%) are now its check, in `_WC_NOTES`. Two other
    forecasts bracket CTS's output and set its band from 2027 (item 3): AI-2027's
-   compute forecast has 25M H100e made in 2026 and 60M in 2027 (CTS 35M and
-   74M; its world stock is 100M at end-2027 against the identity's 131M (chips made, retired), on a
+   compute forecast has 25M H100e made in 2026 and 60M in 2027 (CTS 44M and
+   119M; its world stock is 100M at end-2027 against the identity's 185M (chips made, retired), on a
    TPP basis with a ~4-year chip life), and Epoch's measured 3.3×/yr
    (2.7–4.1×) carried forward from >10M sold in 2025 gives ~33M and ~109M.
-   CTS's own low-to-high for 2027 (67–81M) is narrower than that spread.
+   Against CTS's own 2027 low-to-high (107–131M), AI-2027's sits below and
+   Epoch's inside, so the band takes AI-2027's level as its low and keeps
+   CTS's high.
 2. **Outside China, published shares split the rest.** `_WC_REGIONS` carries
    `(label, central, p10, p90)` for the US, SEA, the UAE, Europe/UK and Other,
    as published beside China's ~9%; only their ratios are used

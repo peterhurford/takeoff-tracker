@@ -1271,8 +1271,9 @@ _RLI_RAW = [
     # Date is Epoch's catalogued release. New frontier point, above GPT-6 Astra.
     {"name": "Opus 5.5",        "date": "2026-09-22", "rli_score": 21.25},
     # Added 2026-10-23: Scale only, as "Gemini Argon 4" (isNew, createdAt 2026-10-22T22:16Z); not yet in
-    # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon. Below the frontier.
-    {"name": "Gemini 4 Argon",  "date": "2026-09-30", "rli_score": 17.08},
+    # the CAIS API (rechecked 2026-10-28). Date is Epoch's catalogued release of Gemini 4 Argon, which Epoch
+    # moved from 09-30 (limited access) to 10-13 (API access) on 2026-11-17. Below the frontier.
+    {"name": "Gemini 4 Argon",  "date": "2026-10-13", "rli_score": 17.08},
     {"name": "Fable 5.2",       "date": "2026-11-09", "rli_score": 41.25},
     # Added 2026-11-11: Scale only, as "Deepseek V4.1 Flash" (isNew, createdAt 2026-11-11T18:24Z); not in
     # the CAIS API. Date is Epoch's catalogued release; Scale does not say whether it ran that checkpoint
@@ -10075,6 +10076,8 @@ _OPENAI_REVENUE = [
     # no OpenAI total; press has only the same ~$50B for September and a ~$70B year-end target (forecast).
     # Rechecked 2026-11-11: no TickerTrends post since 11-06.
     # Rechecked 2026-11-13: no TickerTrends post since 11-06.
+    # Rechecked 2026-11-17: no TickerTrends post since 11-06; press has only The Information's Q3 revenue
+    # (~$10B, quarterly) and the ~$70B year-end target (forecast).
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10193,6 +10196,8 @@ _ANTHROPIC_REVENUE = [
     # Rechecked 2026-11-11: no EDGAR filing since S-1/A No. 2; the 11-10 roadshow post states no run rate.
     # Rechecked 2026-11-13: five FWPs since (11-10, 11-11) restate the $81B / 10-31 and +$10B; no S-1/A No. 3
     # or 424B. Pricing and the final 424B are due ~11-18/19 (Nasdaq trading "on or about November 19").
+    # Rechecked 2026-11-17: S-1/A No. 3 (0001628280-26-074338, filed 11-17) restates the $81B / 10-31 and
+    # +$10B, with no newer as-of date; the 8-A12B the same day carries no financials. Still no 424B.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10229,6 +10234,9 @@ _CN_REVENUE = {
              "was $116.6M. SCMP (2026-09-03, one person familiar) reports the "
              "CEO later said it was one August week × 52, which would make it "
              "weekly-annualized, unlike Zhipu's monthly $1.6B."),
+            # Excluded (checked 2026-11-17): EqualOcean (2026-11-05) relays Goldman and Citi notes that
+            # management said Q4 ARR "had already reached" the $1B year-end target before M3.1 Flash
+            # (10-19). Second-hand, no as-of date or annualization basis; Goldman's ~$1.2B end-2026 is a forecast.
         ],
     },
     "Zhipu (Z.ai)": {
@@ -10281,6 +10289,7 @@ _CN_REVENUE = {
             # 2026-09-21), a third-party estimate for a month already carried.
             # Checked 2026-11-13: September-quarter results and call land 2026-11-19, the
             # next likely MaaS ARR point; convert at that release's 2026-09-30 rate.
+            # Rechecked 2026-11-17: confirmed for 2026-11-19, call 7:00a ET; no MaaS ARR since Yunqi.
         ],
     },
     "Moonshot (Kimi)": {
@@ -12571,12 +12580,11 @@ _WC_GROWTH = (
 # Huawei, Cambricon), plus each later year's US-and-allied chip output from
 # the CTS report (`load_duv_production()["us"]`) and China's domestic output
 # from its compute mix, each year's chips retired `_CHIP_LIFE_YEARS` later.
-# CTS counts dense FP16 H100e: the two are taken as one
-# unit, an assumption (an H100e reads about the same on both bases,
-# CHINA_COMPUTE_JUDGMENTS.md §5). Epoch's mid-2026 reading is a check, not a
-# pin (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`):
-# CTS gives only calendar-year output, so pinning mid-2026 would need a guess
-# at its H1/H2 split.
+# Both count dense 8-bit H100e (CTS since its 2026-11-16
+# revision). CTS gives only calendar-year output, so Epoch's mid-2026 sales
+# reading is a knot that splits 2026 between H1 and H2; Epoch's arrived count
+# below stays an independent check
+# (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`).
 _WC_SOURCE_CHIP_SALES = "https://epoch.ai/data/ai-chip-sales"
 # Every year's chips retire this many years later, on both sides: the world
 # (`_wc_stocks`) and China's compute mix (`_cn_src_retired`), so the China
@@ -12593,19 +12601,20 @@ _WC_WORLD_MID2026 = (datetime(2026, 6, 30), 31.7e6, 27.8e6, 36.0e6)
 # 24.64-30.21M). `_wc_stocks` reads the US-and-allied part of the world that
 # much earlier; China's in-China stock is not lagged (its legal and smuggled
 # channels are customs- or arrival-based, and its domestic chips never ship).
-# `_WC_WORLD_MID2026` checks the unlagged series, this the lagged one
-# (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`).
+# `_WC_WORLD_MID2026` is a knot in the unlagged series, this checks the
+# lagged one (`test_world_stock_is_epochs_anchor_plus_every_chip_made_since`).
 _WC_ARRIVAL_LAG_YEARS = 2 / 12
-# CTS's low-to-high US-and-allied output for 2027 (67-81M H100e around 74M)
-# is narrower than the spread between forecasts: AI-2027's compute forecast
-# has 60M made in 2027, and Epoch's measured 3.3×/yr carried from >10M sold
-# in 2025 gives ~109M. From `_WC_US_WIDE_FROM` on, the band's low and high
-# are the wider of CTS's own ratio to central and these two
+# CTS's low-to-high US-and-allied output for 2027 (107-131M H100e around
+# 119M) tops both other forecasts: AI-2027's compute forecast has 60M
+# made in 2027, and Epoch's measured 3.3×/yr carried from >10M sold in 2025
+# gives ~109M. From `_WC_US_WIDE_FROM` on, the band's low and high are the
+# wider of CTS's own ratio to central and these two levels over CTS's 2027
+# central, so the low is AI-2027's and the high CTS's own
 # (`test_the_band_draws_cts_scenarios_and_the_mix_s_ranges`); 2026 keeps
 # CTS's range.
 _WC_US_WIDE_FROM = 2027
-_WC_US_LOW_RATIO = 60 / 74
-_WC_US_HIGH_RATIO = 109 / 74
+_WC_US_LOW_RATIO = 60 / 119
+_WC_US_HIGH_RATIO = 109 / 119
 _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
 # Epoch's AI chip imports explorer (`_WC_SOURCE_CHIP_IMPORTS`): China,
 # domestic production included, at 2.637M H100e of 27.39M arrived worldwide
@@ -12614,7 +12623,7 @@ _WC_WORLD_ARRIVED_MID2026 = (datetime(2026, 6, 30), 27.39e6, 24.64e6, 30.21e6)
 # (`test_china_share_is_near_epochs_chip_imports_reading`).
 _WC_CHIP_IMPORTS_CHINA = (datetime(2026, 6, 30), 9.63, 2.637e6, 27.39e6)
 
-# CTS lithography report (Brown & Khan, Sep 2026): US AI chip output against
+# CTS lithography report (Brown & Khan, Sep 2026, revised Nov 2026): US AI chip output against
 # China's *lithography-bounded ceiling*, with DUVi imports continuing or banned
 # from 2027. The China rows assume every other bottleneck solved, so their
 # levels are never China's path: China's realized output follows its own
@@ -16277,7 +16286,8 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
     Past the mix's last year China and its domestic stock continue at their
     own last-year growth, and the US-and-allied cumulative past CTS's last
     year at its last; before end-2025 the world runs back at its 2026
-    growth. All are log-linear between year-ends (Dec 31).
+    growth. All are log-linear between year-ends (Dec 31), the US-and-allied
+    part also through Epoch's mid-2026 sales count (`_WC_WORLD_MID2026`).
     """
     m = dict(mix or {})
     m.pop("remote_cut", None)
@@ -16318,21 +16328,34 @@ def _wc_stocks(today, years, mix=None, z_us=0.0, z_dom=0.0, z_smug=0.0,
                  stock[str(y)]["domestic"][0] if str(y) in stock else 0.0)
         made[y] = np.maximum(w0 * g ** (y - y0) - dom_y, 1.0)
     allied = {y: made[y] - made[y - life] for y in ys}
-    t = np.array([(datetime(y, 12, 31) - today).days / 365.25 for y in ys])
+    t_dom = np.array([(datetime(y, 12, 31) - today).days / 365.25 for y in ys])
+    # Epoch's mid-2026 sales count (90% range at the z's ±1.645) is a knot in
+    # the US-and-allied series: CTS gives only 2026's total, so the knot sets
+    # its H1/H2 split, less China's domestic stock and the retired cohort then.
+    d, mid, lo, hi = _WC_WORLD_MID2026
+    h = (d - datetime(y0, 12, 31)).days / 365.0
+    at = lambda s, y: np.exp((1 - h) * np.log(s[y]) + h * np.log(s[y + 1]))
+    allied["mid"] = (_wc_skew((mid, lo, hi), z_us, 1.6449)
+                     - at(dom, y0) - at(made, y0 - life))
+    k = ys.index(y0) + 1
+    keys = ys[:k] + ["mid"] + ys[k:]
+    t = np.insert(t_dom, k, (d - today).days / 365.25)
     yrs = np.atleast_1d(np.asarray(years, dtype=float))
 
-    def _interp(series, at):
+    def _interp(series, at, ks=None, tt=None):
         # Each point's segment, the first or last one outside the span, so
         # the same line extends it.
-        i = np.clip(np.searchsorted(t, at) - 1, 0, len(t) - 2)
-        f = ((at - t[i]) / (t[i + 1] - t[i]))[:, None]
-        lv = np.log(np.array([series[y] for y in ys]))     # (len(ys), n)
+        ks, tt = (keys, t) if ks is None else (ks, tt)
+        i = np.clip(np.searchsorted(tt, at) - 1, 0, len(tt) - 2)
+        f = ((at - tt[i]) / (tt[i + 1] - tt[i]))[:, None]
+        lv = np.log(np.array([np.broadcast_to(series[y], z_us.shape)
+                              for y in ks]))     # (len(ks), n)
         return np.exp(lv[i] * (1.0 - f) + lv[i + 1] * f)
     # Everything but China's domestic chips arrives `lag` after it is made.
     # That part is interpolated on its own, so a domestic cut, which moves
     # `dom` alone, leaves it exactly where it was.
-    return (_interp(allied, yrs - lag) + _interp(dom, yrs),
-            _interp(cn, yrs))
+    return (_interp(allied, yrs - lag) + _interp(dom, yrs, ys, t_dom),
+            _interp(cn, yrs, ys, t_dom))
 
 
 def _wc_shares(world, china, split):
@@ -16940,8 +16963,7 @@ def _render_world_shares(today, horizon):
         f"year's chips retired {_CHIP_LIFE_YEARS} years later. Chips outside China count "
         f"{_WC_ARRIVAL_LAG_YEARS * 12:.0f} months after they are made, the "
         "arrival delay Epoch's chip imports explorer assumes (an assumption, "
-        "not a measurement). CTS counts dense 16-bit H100e and Epoch dense "
-        "8-bit; they are taken as the same unit, an assumption.")
+        "not a measurement). Both count dense 8-bit H100e.")
 
     _fn_line(
         f"About **{med[us]:.0f}% ({_wc_range(shares[us])}) of the world's AI "

@@ -19,9 +19,9 @@ things are load-bearing:
    `_DUV_CN_OUTPUT_GROWTH` over a deterministic quantile grid (`_duv_realized_grid()`),
    takes min(trend, ceiling), and returns 1 − (growth under the policy ÷ growth with
    neither ban) over today → the Pacing horizon. That path starts ~4× under the banned
-   ceiling, so an import ban binds only once output grows into it: ~3% to 2031 at the
+   ceiling, so an import ban binds only once output grows into it: ~4% to 2031 at the
    default 1.6×/yr. **That number is set mostly by the output growth rate**
-   (1% at 1.2×/yr, ~10% at 2.4×, ~17% at 4×), which is chip output, not installed compute, so it is
+   (1% at 1.2×/yr, ~10% at 2.4×, ~18% at 4×), which is chip output, not installed compute, so it is
    its own constant, and Pacing exposes it as `pc_duv_growth`
    (`test_faster_output_growth_reaches_the_ceiling_sooner`). Don't revert to the
    ceiling-to-ceiling ratio; it charged the ban ~24% for a limit China hasn't reached.

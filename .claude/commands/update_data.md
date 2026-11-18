@@ -26,7 +26,7 @@ Four downloadable feeds, three hardcoded tables, and hand-read, transcribed or d
 | `aisi_cyber_narrow.csv` (UK Cyber) | **digitized figure — verify, don't download** | AISI blog post, [open-weight cyber gap](https://www.aisi.gov.uk/blog/how-far-behind-the-frontier-are-leading-open-weight-models-on-cyber) |
 | `aisi_cyber_tlo.csv` (UK Cyber cross-check) | **digitized figure + quoted prose** | Same post's Figure 2, plus the [UK AISI/CAISI Kimi K3 assessment](https://www.aisi.gov.uk/blog/preliminary-assessment-of-kimi-k3s-cyber-capabilities) |
 | `china_compute_sources.csv` (China tab, Pacing, China's takeoff) | **hand-assembled** | Epoch chip owners and smuggling estimate, SemiAnalysis, IFP; recipe and derivations in `docs/data-sources.md` and the file's `#` header |
-| `cts_duv_production.csv` (China tab, Pacing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. The values sit base64-encoded in the `<script>` after Figure 1 (`const US = …`, `CHINA = {continue, banned}`); decode and diff. A one-off report: expect "already current" unless CTS re-versions it |
+| `cts_duv_production.csv` (China tab, Pacing DUVi lever) | **transcribed from the page's chart script** | CTS, [*DUV Immersion Lithography*](https://techstatecraft.org/duv), Table 45. Since the 2026-11-16 revision the values live in the figure's plain HTML `table.cts-source` (Year, US, then China ceiling/push/trend with imports continuing, then banned; each cell `P10 / P50 / P90`); the base64 `<script>` after Figure 1 only reads it. Fetch with a browser User-Agent and a trailing slash (`/duv/`), else mod_security returns 406. Extract and diff. A one-off report: expect "already current" unless CTS re-versions it |
 
 Note: Employment, the ECI tab's company gap and Pacing have NO feed of their own, and the China tab has only the CTS and China-compute tables above — they derive from RLI / ECI / data centers, so updating those feeds updates them automatically. Don't hunt for separate data for them.
 
@@ -61,6 +61,9 @@ Check each run for a **second round**; that, not the first, is the trigger to pi
   2026-10-08): 11 Epoch tasks, rubric % of an Epoch employee's standard, one run, one grader.
   Round 1 averages: Fable 5.1 65, GPT-6 Astra 65, Grok 4.6 59, Qwen 3.8 Max 53, Kimi K3 52,
   Gemini 3.8 Flash 42. Epoch says it will add models as they ship.
+  **2026-11-17 update is a re-cut, not a second round:** new tasks, prompts and a 1-4 rubric; Fable
+  5.2 82, Opus 5.5 78, Gemini 4 Argon 67, GPT-6.2 Astra 65, Fable 5.1 64 (was 65), GPT-6 Astra 56
+  (was 65). The trigger is now a second round on this setup.
 - **InnovationEval** ([report](https://epoch.ai/publications/innovationeval), 2026-10-07):
   rediscover SDPO unsupervised. Only GPT-5.6 Sol, uncontaminated, made real progress (~35%
   short-answer, ~15% coding of SDPO's gain); Fable 5.1 and GPT-6 Astra memorized the paper.
@@ -144,6 +147,7 @@ The NIST mirror serves figures at full resolution if you strip the `styles/<pres
 - **CAISI "Overall Cyber Capability" Elo series** (`Kimi K3 Over Time.png`), a US-vs-PRC trend with 9 labelled PRC points from DeepSeek R1 through Kimi K3 (~2020 Elo). Different metric and different institution from the narrow tasks — don't conflate the two scales.
 - **Figure 1 error bars.** Every marker carries a CI whisker; the CSV stores point estimates only. Digitizable from the same image.
 - **Cost figures (prose only).** Per-task at 100% reliability: Opus 4.6 $15.17 vs GLM-5.2 $6.12; Opus 4.5 $12.50 vs DeepSeek-V4-Pro $0.28. Per 100M-token range run: ~$85 Opus 4.5/4.6, ~$46 GLM-5.2, $1.19 DeepSeek-V4-Pro.
+- **CAISI GLM-5.3 assessment** ([2026-09-17](https://www.nist.gov/node/1920486)): SEC-Bench Pro, ExploitBench, ExploitGym, OSS-Fuzz (GLM-5.3 / US best / PRC best: 40.4/90.2/27.3, 61.1/100/32.2, 9.4/44.4/2.6, 7.7/23.2/2.4%); "lags the U.S. frontier by about four months". No narrow-suite or TLO numbers.
 - **GPT-5.3-Codex is absent by AISI's choice**, not by oversight — the Figure 1 footnote says it was "omitted for legibility; released same day as Opus 4.6 with similar performance." It has no plottable value. Don't hunt for it.
 
 **Kimi K3:** released 2026-07-16 (Epoch now lists it as open weights, non-commercial). Evaluated on ExploitBench and TLO only, so it yields **no narrow-task row**. If AISI later runs the 70-task suite on it, that *would* be a genuine new CSV row — check for that specifically. Note it will be the first open-weight model to enter the CSV from a post other than the original.
