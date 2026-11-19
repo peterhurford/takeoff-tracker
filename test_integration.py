@@ -2377,7 +2377,10 @@ class TestTakeoffTab:
         at.number_input(key="tk_measure_now").set_value(2.5).run()
         at.button(key="tk_fit_verification").click().run()
         assert at.number_input(key="tk_human_verification").value == 25.0
-        assert at.number_input(key="tk_half_verification").value < 12.0
+        # One halving over the evidence window: faster than the index's default.
+        import visualize_projection as vp
+        assert (at.number_input(key="tk_half_verification").value
+                < vp._TK_DEFAULTS["tk_half_verification"])
         _assert_no_error(at, "Takeoff / matched intervention hours")
         fresh = _fresh_app()
         fresh.query_params.update(dict(at.query_params))
@@ -3885,7 +3888,7 @@ class TestPacingTab:
         assert at.session_state["pc_win_n"] == 1
         assert not [w for w in at.selectbox if w.key == "pc_win1_pace"]
         assert at.selectbox(key="pc_win1_train").value == 50
-        assert at.selectbox(key="pc_win1_exp").value == 150
+        assert at.selectbox(key="pc_win1_exp").value == vp._PC_REALLOC_EXP
         assert any("total is unchanged" in str(c.value) for c in at.caption)
         (race,) = charts(at, "China, projected")
         assert race["US, no compute cut"]["line"]["dash"] == "dot"
@@ -3893,13 +3896,13 @@ class TestPacingTab:
             race["US, no compute cut"]["y"][-1])
         notes = [a.get("text", "") for el in at.get("plotly_chart")
                  for a in json.loads(el.proto.spec)["layout"].get("annotations", [])]
-        assert any("training 50%, experiments 150%" in t for t in notes)
+        assert any(f"training 50%, experiments {vp._PC_REALLOC_EXP}%" in t for t in notes)
 
         preset(at, "Two years of half training compute")
         assert at.session_state["pc_win_n"] == 2
         (plan,) = charts(at, "US pace")
         assert min(plan["Training"]["y"]) == pytest.approx(25)
-        assert max(plan["Experiments"]["y"]) == pytest.approx(150)
+        assert max(plan["Experiments"]["y"]) == pytest.approx(vp._PC_REALLOC_EXP)
 
         # A phase's X removes that phase and moves the later ones up.
         preset(at, "Clear plan")

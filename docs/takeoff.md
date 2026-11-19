@@ -49,6 +49,14 @@ Append new factor rows to `z`, never insert, so earlier draws stay paired across
 Row 21 draws each scenario's `fast_share`, logit-normal around the setting with
 `fast_share_spread` its 1σ in log-odds (80%: about 8–55% around 25%;
 `test_fast_share_is_drawn_per_scenario_around_its_setting`).
+Row 24 draws each scenario's agent share today (`agent0`), logit-normal within the
+non-training pool around `100 − training_share − experiment_share` (6.3%, the geometric mean of
+OpenAI's measured 2% and the earlier 20%) with `agent_share_spread` its 1σ in log-odds (110:
+80% about 1.7–19%); experiments take the rest of the pool, training stays fixed. Labor and
+experiment inputs are normalized at each draw's own split, never a fixed reference split, so
+today's pace stays the ECI-calibrated one; a fixed reference split would scale today's research
+by the split (0.59× at 2%) and move dates through that alone. Without re-splitting, 2% and 20%
+run identically (`test_each_scenario_draws_its_own_agent_share`).
 Row 23 draws each scenario's `human_uplift` (theta), logit-normal around the
 *Human uplift from AI coding* widget (`tk_human_uplift`, default 0.5) with
 `human_uplift_spread` its 1σ in log-odds (1.05, not a widget: 90% within 0.15–0.85 at 0.5;
@@ -97,7 +105,7 @@ AI*) shrinks each validation by the verification stage's people/AI mix against t
 each new training run by today's capability growth over the current one (capped at 1), so
 cycles shorten once research outpaces today; `reallocate_compute` (default on, *Labs
 re-split compute as AI changes*) re-splits the non-training compute between agents and
-experiments by the CES first-order condition, anchored at today's 20/40 split and driven
+experiments by the CES first-order condition, anchored at each draw's split today and driven
 only by AI's change against the frozen-AI reference
 (`test_reallocation_follows_what_ai_changes`); section 1's *How the compute is split*
 (`_tk_split_fig`, from `agent_share_quantiles`) draws it, and the workforce chart scales its AI copies by each draw's `agent_share` (kept per draw, float32). It moves FOOM about a point, since

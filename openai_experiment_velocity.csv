@@ -1,41 +1,53 @@
-# Source: https://openai.com/index/research-acceleration-view-inside-openai/
-# Chart: Experiment velocity has increased; published 2026-09-06.
-# All 32 values transcribed from browser-hover tooltips on 2026-09-07.
+# Source: https://openai.com/index/research-acceleration-jagged-frontier/
+# Chart: Research experiments per active experimenter; published 2026-11-18,
+# superseding the 2026-09-06 post's series (research-acceleration-view-inside-openai).
+# All 41 values read from the chart's per-point accessibility labels on 2026-11-18.
 # Four-week trailing average of weekly experiments per active experimenter.
-# Multiples relative to the 2025 baseline (2025 = 1x); tooltip precision: 0.01x.
+# Multiples relative to the 2025 baseline (2025 = 1x); label precision: 0.01x.
+# Dates are each window's ending Sunday (the September series used week labels
+# six days earlier); that post's points reappear here, 13 revised by 0.01-0.03x.
 # Neptune experiments exclude evals/automated runs; each owner namespace is
 # capped at 100 experiments/day. Compute growth and changes in the active
-# experimenter population are not controlled for. Dates are source week labels.
+# experimenter population are not controlled for.
 date,mult
-2026-01-05,0.72
-2026-01-12,0.71
-2026-01-19,0.76
-2026-01-26,0.83
-2026-02-02,0.86
-2026-02-09,0.92
-2026-02-16,0.93
-2026-02-23,0.94
-2026-03-02,0.98
-2026-03-09,0.99
-2026-03-16,1.03
-2026-03-23,1.07
-2026-03-30,1.05
-2026-04-06,1.04
-2026-04-13,1.11
-2026-04-20,1.18
-2026-04-27,1.24
-2026-05-04,1.31
-2026-05-11,1.35
-2026-05-18,1.38
-2026-05-25,1.37
-2026-06-01,1.36
-2026-06-08,1.35
-2026-06-15,1.30
-2026-06-22,1.33
-2026-06-29,1.30
-2026-07-06,1.26
-2026-07-13,1.31
-2026-07-20,1.37
-2026-07-27,1.50
-2026-08-03,1.61
-2026-08-10,1.60
+2026-01-11,0.72
+2026-01-18,0.71
+2026-01-25,0.76
+2026-02-01,0.83
+2026-02-08,0.86
+2026-02-15,0.92
+2026-02-22,0.93
+2026-03-01,0.94
+2026-03-08,0.98
+2026-03-15,0.99
+2026-03-22,1.03
+2026-03-29,1.07
+2026-04-05,1.05
+2026-04-12,1.04
+2026-04-19,1.11
+2026-04-26,1.18
+2026-05-03,1.25
+2026-05-10,1.32
+2026-05-17,1.36
+2026-05-24,1.39
+2026-05-31,1.38
+2026-06-07,1.37
+2026-06-14,1.35
+2026-06-21,1.30
+2026-06-28,1.33
+2026-07-05,1.31
+2026-07-12,1.28
+2026-07-19,1.33
+2026-07-26,1.40
+2026-08-02,1.52
+2026-08-09,1.63
+2026-08-16,1.62
+2026-08-23,1.59
+2026-08-30,1.52
+2026-09-06,1.51
+2026-09-13,1.53
+2026-09-20,1.57
+2026-09-27,1.62
+2026-10-04,1.63
+2026-10-11,1.68
+2026-10-18,1.68

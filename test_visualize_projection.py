@@ -5636,7 +5636,7 @@ class TestPacing:
         vp._pc_add_phase("realloc")      # training compute to experiments
         assert state["pc_win_n"] == 3 and state["pc_win2_pace"] == 50
         assert state["pc_win3_kind"] == "realloc"
-        assert vp._pc_compute_total(vp._pc_plan_phases(today)[2][3]) == pytest.approx(1.0)
+        assert vp._pc_compute_total(vp._pc_plan_phases(today)[2][3]) == pytest.approx(1.0, abs=0.005)
         monkeypatch.setattr(vp, "_PC_WIN_MAX", 5)
         vp._pc_apply_preset(presets["Step down: 75%, 50%, 25%"])   # only two rows left
         assert state["pc_win_n"] == 5

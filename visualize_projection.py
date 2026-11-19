@@ -2201,17 +2201,25 @@ def _pc_rsi_al5_eta(rows, target_pct=_RSI_AL5_TARGET, lag_days=None, n=None,
 
 
 _RSI_EXPERIMENT_SOURCE_URL = (
-    "https://openai.com/index/research-acceleration-view-inside-openai/")
+    "https://openai.com/index/research-acceleration-jagged-frontier/")
 _RSI_EXPERIMENT_TARGET = 10.0
 _RSI_EXPERIMENT_POS_FACTOR = 1.3  # illustrative 80% position interval
 
 
 def load_rsi_experiments():
-    """Source week labels and tooltip multiples; 2025 is the 1x baseline."""
+    """Window-ending dates and multiples; 2025 is the 1x baseline."""
     with Path(__file__).with_name('openai_experiment_velocity.csv').open() as f:
         return [{'date': datetime.strptime(r['date'], '%Y-%m-%d'),
                  'mult': float(r['mult'])}
                 for r in csv.DictReader(line for line in f if not line.startswith('#'))]
+
+
+def _rsi_experiment_window():
+    """The experiment series' span as 'Jan–Oct 2026', the evidence window every
+    calibration reading is measured over."""
+    ex = load_rsi_experiments()
+    a, b = ex[0]['date'], ex[-1]['date']
+    return (f"{a:%b}–{b:%b %Y}" if a.year == b.year else f"{a:%b %Y}–{b:%b %Y}")
 
 
 @st.cache_data
@@ -8294,13 +8302,14 @@ def _render_rsi_experiments(end_year):
     st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
     _fn_caption(
         f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
-        "‘Experiment velocity has increased’; values read from all 32 tooltips. "
+        "‘Research experiments per active experimenter’ (Nov 2026); values read from "
+        "all 41 of the chart's point labels. "
         "Experiment volume is a proxy for research progress. Projection bands are illustrative.",
         ("Experiment volume is a proxy for research progress",
          "The source does not control for compute growth or changes in who runs "
          "experiments. More experiments do not necessarily imply more useful results."),
         ("Projection bands are illustrative",
-         "OLS on log(multiple), January–August 2026. An 80% doubling-time range "
+         "OLS on log(multiple), January–October 2026. An 80% doubling-time range "
          "of half to twice the fitted value and an 80% position range of fitted "
          "value divided/multiplied by 1.3. These are modeling assumptions, not "
          "source error bars; overlapping four-week averages are correlated."))
@@ -18401,7 +18410,11 @@ _PC_WIN_MAX = 10  # phases the plan builder offers
 # suffix of each use's kept-share setting and its name on the page.
 _PC_USES = {"train": "training", "exp": "experiments", "agents": "AI researchers"}
 # Percent of its baseline compute a use keeps; over 100 is compute moved in.
-_PC_USE_OPTIONS = [10, 17, 25, 33, 50, 67, 75, 100, 125, 150, 200, 300]
+# A reallocating phase opens on half of training's compute moved to experiments,
+# at the experiments multiple that leaves the total unchanged at Takeoff's split.
+_PC_REALLOC_EXP = round(100 * (1 + 0.5 * takeoff.DEFAULTS["training_share"]
+                               / takeoff.DEFAULTS["experiment_share"]))
+_PC_USE_OPTIONS = sorted({10, 17, 25, 33, 50, 67, 75, 100, 125, 150, 200, 300, _PC_REALLOC_EXP})
 # A phase's ban on runaway RSI: the least human review, in months, each
 # capability gain waits for before research builds on it (a successor
 # model's validation and each batch of fast improvements); 0 is no ban.
@@ -18495,8 +18508,7 @@ _PC_SEC_ON_OPTIONS = ["Distillation and US software", "Distillation only",
 
 # A thief with the US's software no longer runs its own experiments on the
 # stolen compartments, so it moves that compute into training: Takeoff's
-# 40/20/40 training/agents/experiments split puts all of it at 2.5x the
-# training compute.
+# 40% training share puts all of it at 2.5x the training compute.
 _PC_THEFT_REALLOC = 2.5
 _PC_WT_MODES = ["Once", "Ongoing"]
 
@@ -18890,7 +18902,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                     (f"pc_win{i}_end", min(_pc_pause_default_mo() + 12 * i,
                                            _PC_PAUSE_MO_MAX)),
                     # Reallocating opens on training compute moved to experiments.
-                    (f"pc_win{i}_train", 50), (f"pc_win{i}_exp", 150),
+                    (f"pc_win{i}_train", 50), (f"pc_win{i}_exp", _PC_REALLOC_EXP),
                     (f"pc_win{i}_agents", 100), (f"pc_win{i}_ban", 1))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = list(range(2027, 2036))
@@ -25055,8 +25067,8 @@ def _tk_flow_dot(v):
         node("e_cv", f"less compute's {c['c_pts']:.1f},\\n÷ 2024–25's {c['a_pts']:.1f}", p),
         node("pt", f"Today's pace\\n{c['pace']:.2f}×", p),
         # The yardstick every elasticity divides by.
-        node("y_ev", f"Training compute ×{c['compute']:.2f}\\nover Jan–Aug 2026\\n(Data Centers trend,\\n×{c['compute_y']:.1f}/yr)", blu),
-        node("y_sw", f"Algorithms ×{c['software']:.2f}\\nover Jan–Aug 2026\\n(doubling every\\n{c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} mo)", blu),
+        node("y_ev", f"Training compute ×{c['compute']:.2f}\\nover {_rsi_experiment_window()}\\n(Data Centers trend,\\n×{c['compute_y']:.1f}/yr)", blu),
+        node("y_sw", f"Algorithms ×{c['software']:.2f}\\nover {_rsi_experiment_window()}\\n(doubling every\\n{c['sw_base_months']:g} ÷ {c['pace']:.2f} = {c['sw_months']:.1f} mo)", blu),
         node("y_me", f"Effective compute\\n×{c['compute']:.2f} × {c['software']:.2f}\\n= ×{c['cap']:.2f} over the window", blu),
         node("y_cv", f"= ×{c['cap_y']:.1f}/yr\\n(×{c['cap']:.2f} over {c['years']:.2f} yr):\\nwhat each reading\\nis measured against", blu),
         # Judgment readings.
@@ -25072,7 +25084,7 @@ def _tk_flow_dot(v):
                     else f"Judgment used {c['judgment_used']:.2f}"), pur),
         # Experiment calibration.
         node("x_ev", "OpenAI experiments\\nper researcher", p),
-        node("x_me", f"×{c['exp_growth']:.2f}\\nJan–Aug 2026", p),
+        node("x_me", f"×{c['exp_growth']:.2f}\\n{_rsi_experiment_window()}", p),
         node("x_cv", (f"÷ compute ×{c['compute_part']:.2f}\\n÷ labor → fit {c['fitted']:.2f}"
                       if c["fitted"] is not None else "calibration off"), p),
         # Coding labor.
@@ -27755,7 +27767,8 @@ def _render_takeoff(loading):
             number("Compute growth over evidence window (×)", "cal_compute", 1.0, 20.0, 0.1,
                    "Assumption: OpenAI reports compute growth but does not quantify it here.")
             number("Effective compute growth over evidence window (×)", "cal_capability", 1.01, 20.0, 0.1,
-                   "Training compute × algorithmic efficiency over Jan–Aug 2026, the yardstick "
+                   f"Training compute × algorithmic efficiency over {_rsi_experiment_window()}, "
+                   "the yardstick "
                    "every evidence reading is measured against. Default: the Data Centers "
                    "compute trend times algorithms at today's pace.")
             number("Useful yield per experiment: end / start (×)", "cal_yield", 0.1, 5.0, 0.1,
@@ -27856,7 +27869,8 @@ def _render_takeoff(loading):
                         help="On: the compute not used for training is re-split between "
                              "running AI researchers and running experiments as AI changes "
                              "what each is worth (the labor-compute mean's first-order "
-                             "condition, anchored at today's 20/40 split). When AI labor is "
+                             "condition, anchored at each scenario's split today). When AI "
+                             "labor is "
                              "abundant and the two are complements, compute moves to "
                              "experiments. Off: the split stays fixed.")
             st.checkbox("Cycles speed up with AI", key="tk_serial_speedup",
@@ -27868,10 +27882,20 @@ def _render_takeoff(loading):
                              "cycle keeps the settings above. Today's first run is the same "
                              "either way.")
             number("Compute for training (%)", "training_share", 5, 90, 5)
-            number("Compute for experiments (%)", "experiment_share", 5, 90, 5)
+            number("Compute for experiments (%)", "experiment_share", 5.0, 90.0, 0.5,
+                   "The median scenario's share today; each scenario moves compute "
+                   "between experiments and agents by the spread below. The default leaves "
+                   "agents 6.3%, the geometric mean of OpenAI's measured 2% of research "
+                   "compute (Nov 2026) and the 20% assumed before it.")
             agents = 100 - st.session_state["tk_training_share"] \
                 - st.session_state["tk_experiment_share"]
-            st.caption(f"Remaining compute for agents: {agents}%.")
+            st.caption(f"Remaining compute for agents, at the median: {agents:g}%.")
+            number("Spread on the agents' share (%)", "agent_share_spread", 0, 400, 10,
+                   "1\u03c3 of the agents' share of the non-training compute in log-odds, "
+                   "\u00d7100. 110 gives an 80% range of about 1.7\u201319% of all compute "
+                   "around 6.3%. Each scenario's inputs are measured from its own split, so "
+                   "the share moves dates only through re-splitting: from 2% to 20% it "
+                   "moves ultraintelligence under a week.")
             st.markdown("**Uncertainty**")
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
                    "Independent lognormal spread on research rates, compute growth, cycle "

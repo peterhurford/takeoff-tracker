@@ -484,12 +484,13 @@ def test_reallocation_follows_what_ai_changes():
     a = tk.simulate(dict(frozen, reallocate_compute=1.0), n=50, onset_years=onset)
     b = tk.simulate(frozen, n=50, onset_years=onset)
     np.testing.assert_allclose(a["software_log"], b["software_log"])
-    np.testing.assert_allclose(a["workflow_progress"]["agent_share"], 0.2)
+    share0 = 1 - (tk.DEFAULTS["training_share"] + tk.DEFAULTS["experiment_share"]) / 100
+    np.testing.assert_allclose(a["workflow_progress"]["agent_share"], share0)
     base = dict(years=4, reallocate_compute=1.0, **tk.POINT_ESTIMATE)
     comp = tk.simulate(dict(base, substitution=-0.5), n=50, onset_years=onset)
     subs = tk.simulate(dict(base, substitution=0.5), n=50, onset_years=onset)
-    assert np.median(comp["workflow_progress"]["agent_share"][:, -1]) < 0.2
-    assert np.median(subs["workflow_progress"]["agent_share"][:, -1]) > 0.2
+    assert np.median(comp["workflow_progress"]["agent_share"][:, -1]) < share0
+    assert np.median(subs["workflow_progress"]["agent_share"][:, -1]) > share0
 
 
 def test_a_nearer_ceiling_comes_with_lower_returns():
@@ -1205,7 +1206,9 @@ def test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones():
     rsi1, rsi0 = one["events"]["RSI"], zero["events"]["RSI"]
     assert tk.quantile(rsi0, 0.5) >= tk.quantile(rsi1, 0.5)
     assert np.mean(np.isfinite(rsi0)) <= np.mean(np.isfinite(rsi1))
-    assert np.median(zero["software_log"]) < np.median(one["software_log"])
+    # Draw by draw: by year 8 most draws near their ceiling, so medians nearly tie.
+    behind = np.mean(zero["software_log"] < one["software_log"] - 1e-6)
+    assert behind > 2 * np.mean(zero["software_log"] > one["software_log"] + 1e-6)
     with pytest.raises(ValueError, match="Human uplift"):
         tk.validate(dict(human_uplift=1.5))
     with pytest.raises(ValueError, match="Human uplift"):
@@ -1256,7 +1259,10 @@ def test_each_scenario_draws_its_own_rsi_bar():
     # feeds back into the path, so only to within two weekly steps per draw.
     low, high = reached & (bar < 5), reached & (bar > 5)
     assert np.all(rsi[low] >= rsi5[low] - 2 / 52) and np.all(rsi[high] <= rsi5[high] + 2 / 52)
-    assert np.median(rsi[low] - rsi5[low]) > 0 > np.median(rsi[high] - rsi5[high])
+    # About half the draws tie, RSI held at the coding date, so count signs.
+    up, down = rsi - rsi5 > 1e-9, rsi - rsi5 < -1e-9
+    assert np.mean(up[low]) > 5 * np.mean(down[low])
+    assert np.mean(down[high]) > 5 * np.mean(up[high])
     # Before coding, direction holds at the draw's own bar.
     # Each draw at or over its own bar puts the hours' 10th percentile at or over
     # the bars'; under the fixed 5% median, so the gate does not use the median.
@@ -1412,3 +1418,27 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
                      software_scale=np.full(n, 0.15), coding_capability=coder - fol["eci_now"],
                      coding_weights=fol["weights"], follower=fol,
                      experiment_rates=np.full(n, 0.8), historical_experiment_rate=0.9)
+
+
+def test_each_scenario_draws_its_own_agent_share():
+    """The agents' share of the non-training compute is logit-normal per draw
+    (row 24, so every other draw is unchanged), around the setting's 6.3%;
+    spread 0 holds it there. Inputs are normalized at each draw's own split, so
+    today's research pace is 1 at any split and the split moves the run only
+    through re-splitting: without it, 2% and 20% run identically."""
+    kw = dict(n=400, onset_years=np.full(400, 0.5))
+    drawn = tk.simulate(dict(years=2), **kw)
+    fixed = tk.simulate(dict(years=2, agent_share_spread=0), **kw)
+    share = drawn["draws"]["agent_share"]
+    assert abs(np.median(share) - 6.3) < 0.6
+    lo, hi = np.quantile(share, [.1, .9])
+    assert 1.2 < lo < 2.5 and 15 < hi < 24
+    np.testing.assert_allclose(fixed["draws"]["agent_share"], 6.3)
+    for key in ("taste_slope", "difficulty", "fast_share", "human_uplift"):
+        np.testing.assert_array_equal(drawn["draws"][key], fixed["draws"][key])
+    still = dict(years=2, reallocate_compute=0.0, agent_share_spread=0)
+    two = tk.simulate(dict(still, experiment_share=58.0), **kw)
+    twenty = tk.simulate(dict(still, experiment_share=40.0), **kw)
+    np.testing.assert_allclose(two["software_log"], twenty["software_log"])
+    with pytest.raises(ValueError, match="agent share"):
+        tk.validate(dict(agent_share_spread=-1))

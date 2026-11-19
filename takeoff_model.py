@@ -30,7 +30,12 @@ DEFAULTS = {
     "onset_low": 6, "onset_high": 24, "years": 10, "seed": 42,
     "software_months": 8.4, "compute_growth": 2.0,
     "training_months": 3.0, "validation_months": 1.0,
-    "training_share": 40, "experiment_share": 40,
+    # Agents get the rest: 6.3% at the median, the geometric mean of OpenAI's
+    # measured 2% of research compute (Nov 2026) and the 20% assumed before.
+    # Each draw's agent share is logit-normal within the non-training pool;
+    # `agent_share_spread` is the 1-sigma of its log-odds x 100 (110 is an
+    # 80% range of about 1.7-19% of all compute). Training's share is fixed.
+    "training_share": 40, "experiment_share": 53.7, "agent_share_spread": 110.0,
     "taste_slope": 0.8, "coding_slope": 0.8,
     "transfer": 60, "difficulty": 0.5, "parallelization": 0.5,
     "uncertainty": 40,
@@ -144,7 +149,7 @@ DEFAULTS = {
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
                   "drift_spread": 0, "substitution_spread": 0, "scale_dependent_spread": 0,
                   "scale_lag_spread": 0, "fast_share_spread": 0, "full_human_spread": 1,
-                  "human_uplift_spread": 0}
+                  "human_uplift_spread": 0, "agent_share_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -196,6 +201,8 @@ def validate(params):
     if not 0 <= p["fast_share"] <= 100 or p["fast_months"] <= 0 \
             or not 0 <= p["fast_share_spread"] <= 400:
         raise ValueError("Fast feedback needs a share in [0, 100] and a positive validation cycle.")
+    if not 0 <= p["agent_share_spread"] <= 400:
+        raise ValueError("The agent share's spread must be between 0 and 400.")
     if not 0 <= p["coding_today"] < 95:
         raise ValueError("Today's coding automation must be below the 95% coding milestone.")
     if not 0 <= p["pipeline_months"] <= 12:
@@ -811,8 +818,7 @@ def _k_draw(i, d, s, a, o):
     beta, ceil, rho = d.beta[i], d.ceiling[i], d.rho[i]
     capped = np.isfinite(ceil)
     par = s.parallel
-    sh0, sh1, sh2 = s.sh0, s.sh1, s.sh2
-    log_sh2, log_sh1 = np.log(sh2 / 0.2), np.log(sh1 / 0.4)
+    sh0, sh1, sh2 = s.sh0, d.exp0[i], d.agent0[i]
     h = np.empty(3)
     hb = np.empty(3)
     seen = np.full(G, np.inf)
@@ -1058,9 +1064,9 @@ def _k_draw(i, d, s, a, o):
             automation_log = _k_lae(keep_log, np.log(tr) + amdahl_log)
         else:
             quality_log = automation_log = 0.0
-        labor_log = par * (compute_log + log_sh2 + theta * coding_log + automation_log
+        labor_log = par * (compute_log + theta * coding_log + automation_log
                            + headcount_log)
-        experiment_log = par * (compute_log + exp_log + log_sh1)
+        experiment_log = par * (compute_log + exp_log)
         ref_headcount = (d.amdahl0[i] - _k_lae(np.log(d.human0[i]) - s.hire_rate * mid,
                                                np.log1p(-d.human0[i]) - np.log(s.ai_speed)))
         agent_shift = shift(a.agents_logs, mid)
@@ -1068,7 +1074,7 @@ def _k_draw(i, d, s, a, o):
         agent_share = sh2
         if s.reallocate:
             gap = (labor_log - experiment_log) - par * (
-                log_sh2 + ref_headcount - exp_log - log_sh1)
+                ref_headcount - exp_log)
             log_ratio = np.log(sh2 / sh1) + rho / (1 - par * rho) * gap
             pool = sh1 + sh2
             agent_share = pool / (1 + np.exp(-_k_clip(log_ratio, -700.0, 700.0)))
@@ -1079,8 +1085,8 @@ def _k_draw(i, d, s, a, o):
         experiment_log = experiment_log + par * exp_shift
         research_log = _k_ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log
-        exp_in = par * (compute_log + exp_shift + exp_log + log_sh1)
-        agent_in = par * (compute_log + agent_shift + log_sh2)
+        exp_in = par * (compute_log + exp_shift + exp_log)
+        agent_in = par * (compute_log + agent_shift)
         bare = _k_ces_log(agent_in, exp_in, rho)
         compute_part = bare
         labor_part = _k_ces_log(agent_in + par * headcount_log, exp_in, rho) - bare
@@ -1102,8 +1108,8 @@ def _k_draw(i, d, s, a, o):
         log_x, penalty = difficulty(gained)
         ref_log_x, ref_penalty = difficulty(reference_gained)
         ref_research = _k_ces_log(
-            par * (base + agent_shift + log_sh2 + ref_headcount),
-            par * (base + exp_shift + exp_log + log_sh1), rho)
+            par * (base + agent_shift + ref_headcount),
+            par * (base + exp_shift + exp_log), rho)
         reference_pace = np.exp(_k_min(ref_research - ref_penalty, 700.0))
         log_dt = np.log(dt) if dt > 0 else -np.inf
         ref_log_amount = np.log(sr) + ref_research + log_dt
@@ -1348,10 +1354,10 @@ _KDraws = namedtuple("_KDraws", (
     "initial_stock", "train_time", "eval_time", "scale_ratio", "amdahl0", "quality0_log",
     "human0", "hire_effect", "input_rate", "exp_slope", "coding_level", "taste_slope", "drift",
     "rho", "beta", "ceiling", "scale_share", "scale_lag", "fast_fraction", "bcr", "fol_rate",
-    "fol_eci_now", "fol_slope", "fol_distill", "fol_leak", "bar", "theta"))
+    "fol_eci_now", "fol_slope", "fol_distill", "fol_leak", "bar", "theta", "agent0", "exp0"))
 _KSettings = namedtuple("_KSettings", (
     "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
-    "sh0", "sh1", "sh2", "ai_speed", "ai_copies", "hire_rate", "after_rate",
+    "sh0", "ai_speed", "ai_copies", "hire_rate", "after_rate",
     "judgment_today", "judgment_cap", "adoption", "coding_today", "coding_slope",
     "reallocate", "has_slopes", "trend_weight", "trend_months", "useful",
     "autopilot", "serial_speedup", "fast_time", "review_from", "review_to", "review_time",
@@ -1396,7 +1402,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
             "exp_share", "exp_growth", "initial_throughput", "initial_stock", "train_time",
             "eval_time", "scale_ratio", "amdahl0", "quality0_log", "human0", "hire_effect",
             "input_rate", "taste_slope", "drift", "rho", "beta", "ceiling", "scale_share",
-            "scale_lag", "fast_fraction", "bcr", "bar", "theta")},
+            "scale_lag", "fast_fraction", "bcr", "bar", "theta", "agent0", "exp0")},
         has_history=per(np.asarray(v["has_history"], dtype=float)),
         exp_slope=np.zeros(n) if experiment_slopes is None else per(experiment_slopes),
         coding_level=(np.full(n, np.inf) if coding_capability is None
@@ -1411,8 +1417,8 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         years=float(p["years"]), step=float(step), boost=float(v["boost"]),
         rsi_delay=float(p["rsi_compute_delay"]) / 12, rsi_ramp=float(p["rsi_compute_ramp"]) / 12,
         slow_at=float(v["slow_at"]), transfer=float(v["transfer"]),
-        parallel=float(v["parallel"]), sh0=float(shares[0]), sh1=float(shares[1]),
-        sh2=float(shares[2]), ai_speed=float(v["ai_speed"]), ai_copies=float(p["ai_copies"]),
+        parallel=float(v["parallel"]), sh0=float(shares[0]), ai_speed=float(v["ai_speed"]),
+        ai_copies=float(p["ai_copies"]),
         hire_rate=float(v["hire_rate"]), after_rate=float(v["after_rate"]),
         judgment_today=float(p["judgment_today"]), judgment_cap=float(p["judgment_cap"]),
         adoption=float(p["direction_adoption"]), coding_today=float(p["coding_today"]),
@@ -1582,8 +1588,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     Improvements discovered during either phase enter the next run. A fixed
     effective-compute reference prevents longer runs making the target easier.
 
-    40/40/20 compute shares normalize training/experiments/agents to one today.
-    The software doubling input is the initial rate under this reference split.
+    Labor and experiment inputs are normalized to one at each draw's split
+    today, so the software doubling input is the initial rate at any split.
     Transfer discounts *additional* coding/judgment beyond today, so observed
     assistance is not multiplied into the starting rate a second time.
     """
@@ -1610,7 +1616,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    raw = rng.uniform(-1, 1, (24, total))[:, keep_rows]
+    raw = rng.uniform(-1, 1, (25, total))[:, keep_rows]
     z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
@@ -1782,6 +1788,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     last_experiments = np.ones(n)
     shares = np.array([p["training_share"], p["experiment_share"],
                        100 - p["training_share"] - p["experiment_share"]]) / 100
+    # Each draw's agent share of the non-training pool, logit-normal around the
+    # setting's (row 24); experiments get the rest of the pool.
+    pool0 = shares[1] + shares[2]
+    agent0 = pool0 / (1 + np.exp(-(np.log(shares[2] / shares[1])
+                                   + p["agent_share_spread"] / 100 * z[24])))
+    exp0 = pool0 - agent0
+    agent_share_history[:] = agent0[:, None]
     # Frontier compute (log, vs today) when the current run, the pending
     # model's run and the deployed model's run started: a model's scale.
     run_start_scale = np.zeros(n)
@@ -1813,8 +1826,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # The compute growth (natural log) a scale-dependent gain waits for (row 20).
     scale_lag = np.log(10) * p["scale_lag_oom"] * np.exp(p["scale_lag_spread"] / 100 * z[20])
     parallel = p["parallelization"]
-    initial_throughput = np.broadcast_to(_ces((shares[2] / 0.2) ** parallel,
-                                              (shares[1] / 0.4) ** parallel, rho), (n,)).copy()
+    # Each draw's inputs are normalized at its own split today, so today's
+    # research pace is the calibrated one whatever the split; the split moves
+    # only where re-splitting can take it.
+    initial_throughput = np.ones(n)
     # Today's pace has held steady while compute grew at its historical rate.
     # The other research inputs grow (or lag) by whatever holds that steady
     # state, d(software)/dt = rate * pace with pace = inputs^parallel /
@@ -2054,6 +2069,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                    shares=shares, ai_speed=ai_speed, hire_rate=hire_rate,
                    after_rate=after_rate, fast_time=fast_time, floor=floor,
                    reference_half=reference_half, slow_at=slow_at, bar=bar, theta=theta,
+                   agent0=agent0, exp0=exp0,
                    own_experiments=own_experiments, boost=boost,
                    reference_train_compute=reference_train_compute,
                    grid=workflow_grid))
@@ -2175,15 +2191,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         else:
             quality_log = np.zeros(n)
             automation_log = np.zeros(n)
-        labor_log = parallel * (compute_log + np.log(shares[2] / 0.2)
+        labor_log = parallel * (compute_log
                                 + theta * coding_log + automation_log + headcount_log)
-        experiment_log = parallel * (compute_log + exp_log + np.log(shares[1] / 0.4))
+        experiment_log = parallel * (compute_log + exp_log)
         with np.errstate(divide="ignore"):
             ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
                                                     np.log1p(-human0) - np.log(ai_speed)))
         agent_shift = use_shift("agents", mid_t)
         exp_shift = use_shift("experiments", mid_t)
-        agent_share = np.full(n, shares[2])
+        agent_share = agent0.copy()
         if p["reallocate_compute"]:
             # How far AI has moved labor against experiments, beyond the
             # frozen-AI reference (compute and its boost cancel; zero without
@@ -2192,14 +2208,14 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # toward experiments when AI labor is abundant and they are
             # complements, toward more AI researchers when they substitute.
             gap = (labor_log - experiment_log) - parallel * (
-                np.log(shares[2] / 0.2) + ref_headcount - exp_log - np.log(shares[1] / 0.4))
-            log_ratio = (np.log(shares[2] / shares[1])
+                ref_headcount - exp_log)
+            log_ratio = (np.log(agent0 / exp0)
                          + rho / (1 - parallel * rho) * gap)
-            pool = shares[1] + shares[2]
+            pool = pool0
             agent_share = pool / (1 + np.exp(-np.clip(log_ratio, -700, 700)))
             agent_share = np.clip(agent_share, 1e-9 * pool, pool * (1 - 1e-9))
-            labor_log = labor_log + parallel * np.log(agent_share / shares[2])
-            experiment_log = experiment_log + parallel * np.log((pool - agent_share) / shares[1])
+            labor_log = labor_log + parallel * np.log(agent_share / agent0)
+            experiment_log = experiment_log + parallel * np.log((pool - agent_share) / exp0)
         labor_log = labor_log + parallel * agent_shift
         experiment_log = experiment_log + parallel * exp_shift
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
@@ -2208,8 +2224,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # more staff, staff what they add to that (nothing once people do no
         # work), and AI help the rest (zero without transfer).
         staff_alone = headcount_log
-        exp_in = parallel * (compute_log + exp_shift + exp_log + np.log(shares[1] / 0.4))
-        agent_in = parallel * (compute_log + agent_shift + np.log(shares[2] / 0.2))
+        exp_in = parallel * (compute_log + exp_shift + exp_log)
+        agent_in = parallel * (compute_log + agent_shift)
         # At today's split: any gain from re-splitting is AI's doing.
         bare = _ces_log(agent_in, exp_in, rho)
         compute_part = bare
@@ -2251,9 +2267,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # integrated step by step like the actual path, never reaching RSI.
         ref_log_x, ref_penalty = difficulty_at(reference_gained)
         ref_research = _ces_log(
-            parallel * (base_compute_log + agent_shift + np.log(shares[2] / 0.2)
-                        + ref_headcount),
-            parallel * (base_compute_log + exp_shift + exp_log + np.log(shares[1] / 0.4)), rho)
+            parallel * (base_compute_log + agent_shift + ref_headcount),
+            parallel * (base_compute_log + exp_shift + exp_log), rho)
         reference_pace = np.exp(np.minimum(ref_research - ref_penalty, 700))
         ref_log_amount = np.log(software_rate) + ref_research + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
@@ -2573,7 +2588,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         "events": events, "acceleration_events": acceleration_events,
         "time_origin": "today",
         "compute_limited": last_experiments <= last_labor,
-        "budget": total_budget, "allocated": shares[:, None] * total_budget,
+        "budget": total_budget,
+        "allocated": np.array([np.full(n, shares[0]), exp0, agent0]) * total_budget,
         "training_used": training_used,
         "software_log": software, "deployed_log": deployed,
         "deployed_software_log": deployed_software, "fast_software_log": fast_deployed,
@@ -2612,7 +2628,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                   "ceiling_oom": ceiling / np.log(10), "scale_dependent": scale_share,
                   "fast_share": 100 * fast_fraction,
                   "scale_lag_oom": scale_lag / np.log(10), "full_human": 100 * bar,
-                  "human_uplift": theta},
+                  "human_uplift": theta, "agent_share": 100 * agent0},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},

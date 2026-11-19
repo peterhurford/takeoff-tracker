@@ -133,11 +133,15 @@ against Jan 2029) and doubles the share making 10 years of progress in RSI's fir
 year (20% against 10%).
 Labs re-split the compute not used for training between running AI researchers and
 experiments as AI changes what each is worth, following the labor-compute mean's
-first-order condition from today's split (on by default). With AI labor abundant and the
-two complements, the agents' share falls from 20% to about 7% by 2030 at the median. It
-moves little (the share making 10 years of progress in RSI's first year by about a point),
-because experiments can gain at most half again on their 40% share while training keeps its
-own. A scenario's software ceiling is also tied to its returns to research (correlation
+first-order condition from today's split (on by default). Today's agent share is 6.3% at the
+median, the geometric mean of OpenAI's measured 2% of research compute (Nov 2026) and the
+20% assumed before, drawn per scenario (logit-normal in the non-training pool, 80% about
+1.7–19%). Each scenario's labor and experiment inputs are normalized at its own split, so
+today's pace is the calibrated one at any split and the share acts only through re-splitting:
+2% and 20% give the same ultraintelligence median. With AI labor abundant and the two
+complements, the agents' share falls to about 1% by 2030 at the median. Re-splitting moves
+little (the share making 10 years of progress in RSI's first year by about three points),
+because experiments already hold most of the pool while training keeps its own. A scenario's software ceiling is also tied to its returns to research (correlation
 0.5): a nearer ceiling comes with lower r. That leaves the median alone and makes the
 high-r tail more explosive: among r > 2 scenarios where labor substitutes for compute, 87%
 make 10+ years of progress in RSI's first year, against 76% unlinked.
@@ -334,9 +338,10 @@ partly a property of the benchmark's own score curves (and it slows at shorter b
 The coding elasticity is the staff survey's output growth. Each is divided through the same
 transfer form by assumed effective-capability growth.
 
-`openai_experiment_velocity.csv` contains 32 source-tooltip observations, already used by
-the RSI tab. OpenAI experiments per active researcher rise from 0.72× on January 5, 2026 to
-1.60× on August 10: 2.22× growth between these endpoints. Values are four-week averages and
+`openai_experiment_velocity.csv` holds OpenAI's 41 weekly points (Nov 2026 post), already used
+by the RSI tab. OpenAI experiments per active researcher rise from 0.72× in the window ending
+January 11, 2026 to 1.68× in the one ending October 18: 2.33× between these endpoints, most of it
+by August (1.63×). Values are four-week averages and
 use 2025 as the normalization baseline. The calibration uses that endpoint ratio; it is
 not a causal regression, and overlapping observations do not become independent evidence.
 
@@ -364,8 +369,9 @@ A supplied ratio of independently validated fixed-quality efficiency gains per m
 the experiment proxy. Zero means no such evidence was supplied. The baseline software
 doubling-time control can separately be set from measured current validated progress.
 
-OpenAI reports interventions in more than half of successful 4–8 hour tasks. That observation
-does not identify human hours per complete project. Users can instead enter matched-project
+OpenAI's zero-intervention success on research tasks a person would take 4–8 hours rose from
+13% (Mar 2026) to 35% (Oct). That observation does not identify human hours per complete
+project. Users can instead enter matched-project
 baseline, earlier, and current human hours, including interventions, corrections, and rescue.
 Fit buttons set a selected stage's current human share and halving time using the assumed
 capability growth over the observation period. Empty inputs default to zero (unavailable),
@@ -377,7 +383,8 @@ multiplier. Whole-project success and independently validated gain series are no
 by these reports. Those parameters remain assumptions until measurements are provided.
 RSI and calibration partly share evidence and are not independent confirmations.
 
-Sources: [OpenAI](https://openai.com/index/research-acceleration-view-inside-openai/),
+Sources: OpenAI ([Sept](https://openai.com/index/research-acceleration-view-inside-openai/),
+[Nov](https://openai.com/index/research-acceleration-jagged-frontier/)),
 [Anthropic](https://www.anthropic.com/institute/recursive-self-improvement).
 
 ## Followers: a country behind the frontier
