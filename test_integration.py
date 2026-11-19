@@ -4759,6 +4759,25 @@ class TestPacingTab:
             assert (datetime.strptime(after[:8], "%b %Y")
                     > datetime.strptime(before[:8], "%b %Y"))
 
+    def test_milestone_marks_sit_at_the_shared_level(self):
+        """Each milestone's US and China marks sit at the one median level
+        both sides reach it at (the hover's ECI), not at the median line's
+        height on the median date, which put China's RSI ~2 points high."""
+        at = _fresh_app().run()
+        _switch_tab(at, "Pacing")
+        spec = next(json.loads(c.proto.spec) for c in at.get("plotly_chart")
+                    if "China, 80% range" in [t.get("name") for t in json.loads(c.proto.spec)["data"]])
+        marks = {}
+        for tr in spec["data"]:
+            sym = tr.get("marker", {}).get("symbol")
+            if sym in ("star", "hexagram") and tr["x"][0] is not None:
+                lvl = float(re.search(r"ECI ~(\d+)", tr["hovertemplate"]).group(1))
+                assert abs(tr["y"][0] - lvl) <= 0.5, tr["hovertemplate"]
+                marks.setdefault(sym, []).append(tr["y"][0])
+        assert len(marks.get("hexagram", [])) == 2, marks
+        for ys in marks.values():
+            assert len(set(ys)) == 1, marks
+
     def test_china_runs_its_own_takeoff(self):
         """China's path is China's takeoff, twinned with the US scenarios: the
         method hover says so, and unpaced China dates each milestone after the

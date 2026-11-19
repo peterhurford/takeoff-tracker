@@ -462,7 +462,7 @@ Takeoff scenario's ECI path (`_pc_tk_interp`), the trained bar a ship lag ahead;
 marks when the paced US reaches automated coding and RSI (`us_ms`): each scenario's own
 Takeoff date (`_pc_takeoff_us`'s `when`) run through the pacing clock, so unpaced they are
 Takeoff's cards to the month, not where the path re-reaches that ECI, which lands early
-wherever ECI is flat before the event (`test_unpaced_us_milestones_match_takeoff`; the coder is `coding_at` on both). Without a Takeoff run the compute-derived straight climb stands in. **China's path is China's takeoff** (`_pc_cn_takeoff_paths`, with a Takeoff run; the channel
+wherever ECI is flat before the event (`test_unpaced_us_milestones_match_takeoff`; the coder is `coding_at` on both). Each mark sits at its median date and the median level, which both sides share, so a milestone's two marks are level (`test_milestone_marks_sit_at_the_shared_level`). Without a Takeoff run the compute-derived straight climb stands in. **China's path is China's takeoff** (`_pc_cn_takeoff_paths`, with a Takeoff run; the channel
 sim below is the fallback without one): Takeoff's follower model (`_cn_tk_run`, section 5 of
 `docs/takeoff.md`) under this panel's levers, put on the sim's grid and channel names by
 `_pc_cn_on_grid`, so the cards, the *Why* breakdown, the state of play and the milestone table

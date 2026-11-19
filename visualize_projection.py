@@ -23020,33 +23020,30 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            bgcolor='rgba(255,255,255,0.8)',
                            text=_txt,
                            font=dict(size=11, color=_PC_PACE_COLOR))
-    # The US's automated coder and RSI, each where the paced trained
-    # frontier reaches the ECI that sample's Takeoff scenario had at it.
-    # Marks carry no on-chart text, which collided wherever the two sides'
-    # milestones bunch up: the hover and the table under the chart say it.
+    # The US's automated coder and RSI, then China's: the median date at
+    # the median level, which both sides share, so a milestone's two marks
+    # sit level (the median line at the median date strays a few points,
+    # `test_milestone_marks_sit_at_the_shared_level`). Marks carry no
+    # on-chart text, which collided wherever the two sides' milestones
+    # bunch up: the hover and the table under the chart say it.
     for _ms_name, (_ms_t, _ms_e) in us_ms.items():
         _d = _date_of(_ms_t)
         if _d > x_end:
             continue
-        _k = min(int(np.searchsorted(grid_yrs, _ms_t)), len(grid_yrs) - 1)
-        _y = float(np.median(us_tr_grid[:, _k]))
         fig.add_trace(go.Scatter(
-            x=[_d], y=[_y], mode='markers',
+            x=[_d], y=[_ms_e], mode='markers',
             marker=dict(symbol=_PC_MS_SYMBOL[_ms_name], size=13,
                         color='#1F77B4', line=dict(color='white', width=1)),
             showlegend=False,
             hovertemplate=(f"<b>US {_ms_name}</b><br>%{{x|%b %Y}} (median)"
                            f"<br>at ECI ~{_ms_e:.0f}, from the Takeoff tab"
                            "<extra></extra>")))
-    # China's own automated coder and RSI: the median month its path first
-    # reaches the ECI its paired scenario had at each.
     for _ms_name, (_ms_t, _ms_e) in cn_ms.items():
         _d = anchor_d + off_cn + timedelta(days=_ms_t * 365.25)
         if _d > x_end:
             continue
-        _k = min(int(np.searchsorted(grid_yrs, _ms_t)), len(grid_yrs) - 1)
         fig.add_trace(go.Scatter(
-            x=[_d], y=[float(np.median(traj[:, _k]))], mode='markers',
+            x=[_d], y=[_ms_e], mode='markers',
             marker=dict(symbol=_PC_MS_SYMBOL[_ms_name], size=13,
                         color='#D62728', line=dict(color='white', width=1)),
             showlegend=False,
