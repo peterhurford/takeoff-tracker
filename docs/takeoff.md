@@ -558,7 +558,7 @@ pair. `test_default_render_and_stable_rerun` lists them.
 
 `render_rsi()` runs the R&D automation index, then CoBench,
 then the staff survey, then
-merged code per person, OpenAI experiment velocity, research direction, then TasteVal
+merged code per person, OpenAI experiment velocity, OpenAI's internal task horizon, research direction, then TasteVal
 (`_render_rsi_tasteval()`), then *Capabilities Milestones* + *Automated coder projection* (`_pc_render_milestones()`,
 moved here from the Pacing tab), then METR's assessment and the research pace it implies
 (`_render_rsi_metr`), last; the pace it implies opens section 1 (`_tk_render_pace_so_far`).
@@ -811,6 +811,13 @@ own gap (2.9) instead of the trend's (~4.4), since it sits under the line where 
 5.1 sit on it), other labs' record-setting
 AECI points, METR's fit carried to today, and where the takeoff model's ECI starts. Its
 caption says why the indexes differ (shape is the index, colour the models, grey diamonds today's estimates). `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4.
+
+`_render_rsi_horizon()` charts OpenAI's internal 50% task horizon (`openai_task_success.csv`,
+`load_rsi_horizon`): each month's horizon is fitted here, an OLS of log-odds success on log2
+duration across the post's seven bins at their geometric midpoints (`_rsi_horizon_of`), with
+error bars from the same fit through every bin's sampling-envelope bound at once. The fan and
+its 40h card share `_rsi_horizon_draws`, on its own generator so the cards after it keep their
+draws; the card is in the coder blend at equal weight (`TestRsiHorizon`).
 
 The RSI blend's *Capabilities Milestones* row dates the CoBench and next-step
 bars through `_pc_rsi_eta()` and `_pc_nextstep_eta()`, which reuse this tab's own

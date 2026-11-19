@@ -2036,7 +2036,7 @@ class TestRsiTab:
         helps = {str(m.label): (m.proto.help or "") for m in at.metric}
         t = next(x.value for x in at.table if "Milestone" in x.value.columns)
         milestones = list(t["Milestone"])
-        assert len(milestones) == 9
+        assert len(milestones) == 10
         for lab in milestones:
             assert lab in helps, lab
             h = helps[lab]
@@ -2128,7 +2128,7 @@ class TestTakeoffTab:
         naming its latest reading; the chart sits inside."""
         at = self._app()
         folds = [e for e in at.expander if e.label.endswith("*chart and details*")]
-        assert len(folds) == 7
+        assert len(folds) == 8
         assert all(e.label.startswith("Latest **") for e in folds)
         assert all(e.get("plotly_chart") for e in folds)
         heads = [h.value for h in at.subheader]

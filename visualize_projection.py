@@ -2223,6 +2223,79 @@ def _rsi_experiment_window():
     return (f"{a:%b}–{b:%b %Y}" if a.year == b.year else f"{a:%b %Y}–{b:%b %Y}")
 
 
+# OpenAI's internal task horizon (same post): the human task length at which
+# its coding agents' sessions succeed with no intervention half the time.
+_RSI_HORIZON_TARGET_HRS = 40.0
+
+
+def _rsi_horizon_of(mid_min, success_pct):
+    """Minutes at 50% success: OLS of log-odds on log2 duration over the bins,
+    METR's horizon definition applied to OpenAI's binned rates."""
+    icpt, slope = fit_line(np.log2(mid_min),
+                           _logit(np.clip(success_pct, 0.5, 99.5) / 100))
+    return float(2 ** (-icpt / slope)) if slope < 0 else float('inf')
+
+
+def load_rsi_horizon():
+    """One row per month (`openai_task_success.csv`): its window, its date at
+    the window's midpoint, the 50% horizon in minutes and, as `lo_min` /
+    `hi_min`, the same fit through every bin's sampling-envelope bound at
+    once, so wider than a per-month interval."""
+    with Path(__file__).with_name('openai_task_success.csv').open() as f:
+        raw = list(csv.DictReader(line for line in f if not line.startswith('#')))
+    out = []
+    for start in dict.fromkeys(r['start'] for r in raw):
+        rs = [r for r in raw if r['start'] == start]
+        a = datetime.strptime(start, '%Y-%m-%d')
+        b = datetime.strptime(rs[0]['end'], '%Y-%m-%d')
+        mid = np.array([float(r['mid_min']) for r in rs])
+        h = {k: _rsi_horizon_of(mid, np.array([float(r[k]) for r in rs]))
+             for k in ('success', 'env_lo', 'env_hi')}
+        out.append({'start': a, 'end': b, 'date': a + (b - a) / 2,
+                    'h50_min': h['success'], 'lo_min': h['env_lo'],
+                    'hi_min': h['env_hi']})
+    return out
+
+
+def _rsi_horizon_fit(rows):
+    """OLS of log(horizon) on the months' midpoint dates."""
+    base = rows[0]['date']
+    days = np.array([(r['date'] - base).days for r in rows], dtype=float)
+    icpt, slope = fit_line(days, np.log([r['h50_min'] for r in rows]))
+    return base, icpt, slope
+
+
+def _rsi_horizon_draws(rows, n=None):
+    """The fan's and card's (log-minute start, slope per day) draws: doubling
+    time lognormal over DT/2..DT*2 at 80%, the start on the fit with the
+    latest month's envelope read as a 95% interval and widened to reach that
+    month. Its own generator, so the cards drawn after it keep their draws."""
+    base, icpt, slope = _rsi_horizon_fit(rows)
+    if slope <= 0:
+        return None
+    n = n or N_SAMPLES
+    rng = np.random.default_rng(20261118)
+    slopes = np.log(2) / np.maximum(
+        rng.lognormal(np.log(np.log(2) / slope), np.log(2) / 1.282, n), 1.0)
+    cur = rows[-1]
+    fitted = icpt + slope * (cur['date'] - base).days
+    sigma = (np.log(cur['hi_min']) - np.log(cur['lo_min'])) / (2 * 1.96)
+    starts = rng.normal(*_fan_start_on_trend(fitted, np.log(cur['h50_min']), sigma), n)
+    return starts, slopes
+
+
+def _pc_rsi_horizon_eta(rows, target_hrs=_RSI_HORIZON_TARGET_HRS, n=None,
+                        samples=False):
+    """Dates OpenAI's internal 50% horizon reaches `target_hrs`, off the
+    section's own draws."""
+    draws = _rsi_horizon_draws(rows, n=n)
+    if draws is None:
+        return None
+    starts, slopes = draws
+    days = np.maximum((np.log(target_hrs * 60) - starts) / slopes, 0.0)
+    return _pc_eta_out(rows[-1]['date'], days, samples)
+
+
 @st.cache_data
 def load_rsi_data():
     models = [{
@@ -7266,6 +7339,11 @@ def _rsi_evidence_summary(key):
         return reading(f"{r['mult']:g}×", f"experiments per week vs. 2025, {when(r)}",
                        f"{_RSI_EXPERIMENT_TARGET:g}×",
                        r['mult'] >= _RSI_EXPERIMENT_TARGET)
+    if key == "horizon":
+        r = load_rsi_horizon()[-1]
+        return reading(f"{r['h50_min'] / 60:.1f}h", f"50% horizon, {r['start']:%b %Y}",
+                       f"{_RSI_HORIZON_TARGET_HRS:g}h",
+                       r['h50_min'] >= _RSI_HORIZON_TARGET_HRS * 60)
     if key == "direction":
         r = rsi_dir_frontier_all[-1]
         return reading(f"{r['better']:.0f}%", f"better next step, {r['name']}",
@@ -7296,6 +7374,7 @@ _TK_JUMP_ROWS = (
                   ("Anthropic internal staff survey on speedup", "Staff survey"),
                   ("Code merged per Anthropic engineer", "Code merged"),
                   ("Experiment velocity at OpenAI", "Experiments"),
+                  ("OpenAI internal task horizon", "Internal horizon"),
                   ("Research direction", "Direction"),
                   ("Research taste (TasteVal)", "TasteVal"),
                   ("Capabilities Milestones", "Milestones"),
@@ -7519,6 +7598,8 @@ def render_rsi(end_year):
         _render_rsi_code(rsi_end_year)
     with _evidence_section("Experiment velocity at OpenAI", "experiments"):
         _render_rsi_experiments(rsi_end_year)
+    with _evidence_section("OpenAI internal task horizon", "horizon"):
+        _render_rsi_horizon(rsi_end_year)
     with _evidence_section("Research direction", "direction"):
         _render_rsi_direction(rsi_end_year)
     with _evidence_section("Research taste (TasteVal)", "tasteval"):
@@ -8314,6 +8395,100 @@ def _render_rsi_experiments(end_year):
          "of half to twice the fitted value and an 80% position range of fitted "
          "value divided/multiplied by 1.3. These are modeling assumptions, not "
          "source error bars; overlapping four-week averages are correlated."))
+
+
+def _render_rsi_horizon(end_year):
+    _fn_line(
+        "The human task length at which OpenAI's coding agents finish half their "
+        f"internal sessions with no intervention. Threshold: {_RSI_HORIZON_TARGET_HRS:g}h.",
+        ("half their internal sessions",
+         "Each month's 50% horizon is fitted here, not published: a logistic fit "
+         "of the post's success rate on log duration across its seven duration "
+         "bins, at each bin's geometric midpoint. Uncertain outcomes count as "
+         "half a success, the post's own midpoint."))
+    rows = load_rsi_horizon()
+    base, icpt, slope = _rsi_horizon_fit(rows)
+    cur = rows[-1]['date']
+    end = max(datetime(min(end_year, _RSI_MAX_END_YEAR), 12, 31), cur)
+    def _build():
+        fig = go.Figure()
+        draws = _rsi_horizon_draws(rows)
+        y_top = _RSI_HORIZON_TARGET_HRS * 2
+        if draws is not None:
+            starts, slopes = draws
+            days = _fan_days((end - cur).days)
+            dates = [cur + timedelta(days=float(d)) for d in days]
+            pct = {k: v / 60 for k, v in _fan_pctiles(
+                starts, slopes, days, (5, 10, 25, 50, 75, 90, 95)).items()}
+            for lo, hi, alpha in [(5, 95, 0.10), (10, 90, 0.18), (25, 75, 0.28)]:
+                fig.add_trace(go.Scatter(
+                    x=dates + dates[::-1], y=list(pct[hi]) + list(pct[lo][::-1]),
+                    fill='toself', fillcolor=f'rgba(52,152,219,{alpha})',
+                    line=dict(width=0), name=f'{hi - lo}% CI', hoverinfo='skip'))
+            fig.add_trace(go.Scatter(
+                x=dates, y=pct[50], mode='lines', name='Median projection',
+                line=dict(color='#2c3e50', dash='dash'),
+                hovertemplate='%{x|%b %d, %Y}<br>Median: %{y:.1f}h<extra></extra>'))
+            fit_dates = [r['date'] for r in rows]
+            fig.add_trace(go.Scatter(
+                x=fit_dates,
+                y=np.exp(icpt + slope * np.array([(d - base).days for d in fit_dates])) / 60,
+                mode='lines',
+                name=f'Fitted trend (2×: {np.log(2) / slope / 30.44:.1f} mo)',
+                line=dict(color='#2c3e50'), hoverinfo='skip'))
+        h = np.array([r['h50_min'] for r in rows]) / 60
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in rows], y=h, mode='markers',
+            name='OpenAI, fitted per month',
+            marker=dict(color='#4F8DFD', size=8),
+            error_y=dict(type='data', symmetric=False,
+                         array=np.array([r['hi_min'] for r in rows]) / 60 - h,
+                         arrayminus=h - np.array([r['lo_min'] for r in rows]) / 60,
+                         color='rgba(79,141,253,0.5)'),
+            customdata=[[f"{r['start']:%b %-d}–{r['end']:%b %-d}"] for r in rows],
+            hovertemplate='%{customdata[0]}<br>50% horizon: %{y:.1f}h<extra></extra>'))
+        fig.add_hline(y=_RSI_HORIZON_TARGET_HRS, line=dict(color='#e74c3c', dash='dash'))
+        fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_HORIZON_TARGET_HRS),
+                           text=f'{_RSI_HORIZON_TARGET_HRS:g}h, one work-week',
+                           showarrow=False, xanchor='left', yanchor='bottom',
+                           font=dict(color='#e74c3c'))
+        _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}h",
+                           label="trend", log=True)
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=480, margin=dict(l=50, r=60, t=50, b=40),
+            xaxis=dict(title='Month', range=[base - timedelta(days=20), end],
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            yaxis=dict(title='50% task horizon (hours of human work)', type='log',
+                       range=[np.log10(0.3), np.log10(y_top)],
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
+            font=dict(color='#1a1a2e'),
+            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
+                        font=dict(color='#1a1a2e')),
+            hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
+                            bordercolor='#5c6370'))
+        return fig
+    st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
+    first, last = rows[0], rows[-1]
+    _fn_caption(
+        f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
+        "‘Zero-intervention success by estimated human task duration’ (Nov 2026), "
+        f"{first['start']:%B}–{last['end']:%B %-d, %Y}, from the chart's point labels. "
+        "About a tenth of METR's horizon for the same models. Projection bands are illustrative.",
+        ("About a tenth of METR's horizon",
+         f"METR put GPT-5.4's 50% horizon at 342 minutes in March 2026; OpenAI's own "
+         f"sessions that month give {first['h50_min']:.0f}. Internal sessions are "
+         "real research work, judged on whether it needed a human at all, so the bar "
+         "sits higher than on a benchmark's self-contained tasks."),
+        ("Projection bands are illustrative",
+         f"OLS on log(horizon) over the {len(rows)} months; 80% doubling-time range "
+         "half to twice the fit. The error bars refit each month with every bin at "
+         "its sampling-envelope bound at once, wider than a per-month interval. "
+         "The mix of tasks people delegate is lengthening, which this does not "
+         "control for."))
 
 
 # ── METR's acceleration assessment (AECI) against public ECI ─────────────
@@ -18379,7 +18554,7 @@ def _pc_ramp_for(timing_label, ramp_days, us_lag=None):
 # late-but-uncertain milestone widens the answer instead of just shifting it.
 # Keyed by slug because the card labels are built from the target constants.
 _PC_RSI_WEIGHTS = {
-    # Equal credence across the nine research cards. AL5 is a card only
+    # Equal credence across the ten research cards. AL5 is a card only
     # (`_PC_RSI_CARD_ONLY`), outside the blend.
     "metr_p50": 10.0,
     "metr_p80": 10.0,
@@ -18388,6 +18563,7 @@ _PC_RSI_WEIGHTS = {
     "staff_10x": 10.0,
     "code_30x": 10.0,
     "experiments_10x": 10.0,
+    "oai_horizon_40h": 10.0,
     "rdauto_90": 10.0,
     "nextstep_90": 10.0,
 }
@@ -19455,6 +19631,8 @@ def _pc_passed():
          lambda r, v: f"{v:g}\u00d7 ({r.get('other') or r['q']})"),
         (f"experiments_{_RSI_EXPERIMENT_TARGET:.0f}x", load_rsi_experiments(),
          'mult', _RSI_EXPERIMENT_TARGET, lambda r, v: f"{v:g}\u00d7"),
+        (f"oai_horizon_{_RSI_HORIZON_TARGET_HRS:.0f}h", load_rsi_horizon(), 'h50_min',
+         _RSI_HORIZON_TARGET_HRS * 60, lambda r, v: f"{v / 60:.1f}h ({r['start']:%b %Y})"),
         (f"cobench_{_RSI_SUBSTITUTION_BAR:.0f}", rsi_frontier_all, 'cobench',
          _RSI_SUBSTITUTION_BAR, lambda r, v: f"{v:g}% ({r['name']})"),
         (f"nextstep_{_RSI_DIR_TARGET:.0f}", rsi_dir_frontier_all, 'better',
@@ -19559,11 +19737,22 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
                  f"OpenAI experiment velocity reaches {_RSI_EXPERIMENT_TARGET:.0f}×",
                  _pc_rsi_experiment_eta(load_rsi_experiments(), n=n, samples=True), False,
                  "The experiment-velocity fan above, at its defaults: OLS on "
-                 "log(multiple) over all 32 displayed weeks; doubling time "
+                 "log(multiple) over every displayed week; doubling time "
                  "over [DT/2, DT*2], position divided/multiplied by 1.3. "
                  "10× means experiments per active experimenter relative to 2025. "
                  "Four-week trailing averages overlap; the bands are illustrative. "
                  "Compute growth and changes in the active population are not controlled for."))
+    _cap.append((f"oai_horizon_{_RSI_HORIZON_TARGET_HRS:.0f}h",
+                 f"OpenAI internal horizon reaches {_RSI_HORIZON_TARGET_HRS:.0f}h",
+                 _pc_rsi_horizon_eta(load_rsi_horizon(), n=n, samples=True), False,
+                 "The internal task-horizon fan above, at its defaults: OLS on "
+                 "log(50% horizon) over the monthly fits, doubling time over "
+                 "[DT/2, DT\u00d72], position on the fit, its band reaching the "
+                 "latest month. The horizon is the human task length at which "
+                 "OpenAI's coding agents finish half their internal research "
+                 "sessions with no intervention; "
+                 f"{_RSI_HORIZON_TARGET_HRS:.0f}h is one work-week. One lab, eight "
+                 "months, and a delegated task mix that is lengthening."))
     _cap.append((f"nextstep_{_RSI_DIR_TARGET:.0f}",
                  f"Next-step judgment reaches {_RSI_DIR_TARGET:.0f}%",
                  _pc_nextstep_eta(rsi_dir_frontier_all, n=n, samples=True), True,
@@ -19614,7 +19803,8 @@ def _pc_milestone_draws(timing_label, today, condition, ramp_days, n, us_lag=Non
 
 def _pc_rsi_components(today, timing_label, condition, ramp_days):
     data_key = repr((frontier_all, rli_frontier_all, rsi_frontier_all, load_rsi_survey(),
-                     load_rsi_code(), load_rsi_experiments(), rsi_dir_frontier_all,
+                     load_rsi_code(), load_rsi_experiments(), load_rsi_horizon(),
+                     rsi_dir_frontier_all,
                      _OPENAI_REVENUE, _ANTHROPIC_REVENUE, _pc_al5_lag_days()))
     return _pc_milestone_components(timing_label, today, condition, ramp_days,
                                     N_SAMPLES, data_key, _tk_seed(), _ship_lag("us"))

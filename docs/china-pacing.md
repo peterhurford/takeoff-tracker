@@ -242,7 +242,7 @@ human in the loop — reaching `_RSI_AL5_TARGET`, the same 90% bar, which is
 **not a fitted series** but the AL4 rung shifted by the ladder's own step (see
 the R&D automation section in `docs/takeoff.md`; it is a card only, `_PC_RSI_CARD_ONLY`, outside the projection,
 its weights and Takeoff's coding blend, and carries the loudest caveat; its hover adds `_tk_staff_al5_note()`, the AL4-to-AL5 gaps Anthropic's staff survey implies through Takeoff's hours per level, `TestStaffAl5Check`), `_pc_nextstep_eta()` for the detour study's frontier reaching
-`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section in `docs/takeoff.md`), and `_pc_tasteval_predict_eta()` for TasteVal's experiment-prediction error closing `_TASTEVAL_PREDICT_TARGET`% of its gap to the noise floor (section 3.6). That last is **the paper's sigmoid refit with the models P-Zero scored since** (`_TASTEVAL_PREDICT_DATES`: the refit's crossing, the paper's interval scaled by the same ratio): its 95% interval is read as an 80% band (the bootstrap holds the four tasks fixed), drawn off a quantile grid and appended last so the other cards keep their seeded draws (`test_tasteval_prediction_card_reproduces_the_papers_dates`). Like AL5 it is card-only (`_PC_RSI_CARD_ONLY`): predicting results is a research skill, not coding; the TasteVal section above it draws its curve undated. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so eleven cards read 4–4–3 (`TestMilestoneCardLayout`). Each reproduces
+`_RSI_DIR_TARGET` (that study's own practical ceiling — see the RSI tab section in `docs/takeoff.md`), and `_pc_tasteval_predict_eta()` for TasteVal's experiment-prediction error closing `_TASTEVAL_PREDICT_TARGET`% of its gap to the noise floor (section 3.6). That last is **the paper's sigmoid refit with the models P-Zero scored since** (`_TASTEVAL_PREDICT_DATES`: the refit's crossing, the paper's interval scaled by the same ratio): its 95% interval is read as an 80% band (the bootstrap holds the four tasks fixed), drawn off a quantile grid and appended last so the other cards keep their seeded draws (`test_tasteval_prediction_card_reproduces_the_papers_dates`). Like AL5 it is card-only (`_PC_RSI_CARD_ONLY`): predicting results is a research skill, not coding; the TasteVal section above it draws its curve undated. They render at most `_PC_CARDS_PER_ROW` (4) to a row — wider and a label truncates mid-word — with the rows **balanced** rather than filled greedily, so twelve cards read 4–4–4 (`TestMilestoneCardLayout`). Each reproduces
 its own tab at that tab's defaults — METR: GPT-4o-broken segment, DT over
 [DT/2, DT*2], position over the current model's CI, p50 slope fits the trend; RLI: single OLS in
 logit space, odds-doubling time over [DT/2, DT*2] floored at 5 days, position
@@ -261,17 +261,17 @@ figure's own 90% interval on the latest month; AL5: that same draw shifted by a
 lag drawn over [censored ladder, max(`_RSI_AL5_TAU_HI_MULT`x it, 4 years)]; next-step: single OLS in
 logit space, odds-doubling over `_rsi_dir_dt_ci()` (widened to span every frontier
 step's rate), position on the fit ± `_RSI_DIR_POS_CI` points widened to reach
-the measured score (the study's own binomial SE at n=`_RSI_DIR_N`) — rather
+the measured score (the study's own binomial SE at n=`_RSI_DIR_N`); OpenAI's internal horizon (`_pc_rsi_horizon_eta()`, to `_RSI_HORIZON_TARGET_HRS`): OLS on log(50% horizon) over the monthly fits, DT over [DT/2, DT*2], position on the fit with the latest month's envelope read as 95%, on its own generator — rather
 than fitting its own, so the tabs can't quote different dates for the same milestone. `test_metr_eta_reproduces_the_metr_tab_defaults`,
 `test_rli_eta_reproduces_the_rli_tab_defaults` and
 `test_rsi_eta_reproduces_the_rsi_tab_defaults` pin that.
 
-Five of the eleven are dated off *released* models (METR p50 and p80, RLI, the detour
+Five of the twelve are dated off *released* models (METR p50 and p80, RLI, the detour
 study and TasteVal's prediction fit — publicly benchmarked or run on shipped models); CoBench, the staff survey, merged code, experiment
-velocity and both R&D-automation cards (AL4 and AL5) are internal
+velocity, OpenAI's internal horizon and both R&D-automation cards (AL4 and AL5) are internal
 measurements, driven by work on models the lab has internal access to
 before release. So `_pc_report_lag()` pulls the five back
-by `_pc_report_lag_days()` (0.7–1.3× the US trained-to-release lag, sampled so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other six
+by `_pc_report_lag_days()` (0.7–1.3× the US trained-to-release lag, sampled so the spread lands in the CI) whenever *Milestone dates point at* is not `_PC_TIMING_RELEASE`; the other seven
 are already on that clock and must not be shifted twice.
 
 A checkbox (`rsi_notyet`, default on, in the blend's *Set your own weights*

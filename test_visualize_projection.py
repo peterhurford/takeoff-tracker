@@ -3063,6 +3063,49 @@ class TestRsiExperiments:
         assert vp._pc_rsi_experiment_eta(rows) is None
 
 
+class TestRsiHorizon:
+    """OpenAI's internal 50% task horizon, fitted per month from its binned
+    zero-intervention success rates."""
+
+    def test_each_month_fits_a_horizon_inside_its_envelope(self):
+        rows = vp.load_rsi_horizon()
+        assert len(rows) == 8
+        assert [round(r['h50_min']) for r in rows] == [36, 41, 45, 67, 87, 89, 97, 133]
+        assert all(r['lo_min'] < r['h50_min'] < r['hi_min'] for r in rows)
+        # October covers the 1st to the 18th, dated at that window's middle.
+        assert rows[-1]['date'] == datetime(2026, 10, 9, 12)
+
+    def test_the_horizon_is_where_the_fitted_curve_crosses_half(self):
+        mid = np.array([10.0, 20.0, 40.0, 80.0])
+        # log-odds falling one per doubling, zero at 40 min.
+        p = 100 * vp._inv_logit(np.log2(40.0 / mid))
+        assert vp._rsi_horizon_of(mid, p) == pytest.approx(40.0)
+        assert vp._rsi_horizon_of(mid, p[::-1]) == float('inf')
+
+    def test_the_card_reads_the_fans_draws_without_touching_global_rng(self, monkeypatch):
+        rows = vp.load_rsi_horizon()
+        before = np.random.get_state()
+        vp._rsi_horizon_draws(rows, n=20)
+        after = np.random.get_state()
+        np.testing.assert_array_equal(before[1], after[1])
+        # 60 min doubling every 100 days reaches 40h (2400 min) in 100*log2(40) days.
+        monkeypatch.setattr(vp, '_rsi_horizon_draws',
+                            lambda rows, n=None: (np.full(20, np.log(60.0)),
+                                                   np.full(20, np.log(2) / 100)))
+        anchor, days = vp._pc_rsi_horizon_eta(rows, samples=True)
+        assert anchor == rows[-1]['date']
+        assert days == pytest.approx(np.full(20, 100 * np.log2(40)))
+
+    def test_the_card_joins_the_coder_blend_at_equal_weight(self):
+        assert vp._PC_RSI_WEIGHTS["oai_horizon_40h"] == vp._PC_RSI_WEIGHTS["experiments_10x"]
+        assert "oai_horizon_40h" not in vp._PC_RSI_CARD_ONLY
+
+    def test_declining_series_has_no_future_crossing(self):
+        rows = [{'date': datetime(2026, 3, 15), 'h50_min': 60.0, 'lo_min': 40.0, 'hi_min': 90.0},
+                {'date': datetime(2026, 4, 15), 'h50_min': 30.0, 'lo_min': 20.0, 'hi_min': 45.0}]
+        assert vp._pc_rsi_horizon_eta(rows) is None
+
+
 class TestRsiCode:
     """Merged code per Anthropic contributor, the RSI tab's fourth series."""
 
@@ -5735,7 +5778,7 @@ class TestPacing:
             assert k in keys and defaults[k] == v, k
         for slug, w in vp._PC_RSI_WEIGHTS.items():
             assert defaults[vp._PC_RSI_W_KEY + slug] == w, slug
-        assert sum(vp._PC_RSI_WEIGHTS.values()) == 90       # nine research cards
+        assert sum(vp._PC_RSI_WEIGHTS.values()) == 100      # ten research cards
         assert 0 <= defaults["pc_win1_start"] < vp._PC_PAUSE_MO_MAX
         assert isinstance(defaults["pc_win1_start"], int)
         assert "rsi_notyet" in keys and defaults["rsi_notyet"] is True
@@ -6300,7 +6343,7 @@ class TestPacing:
             "Training run finished", today, False, 0.0, 200, "test")
         assert set(notes) == set(vp._PC_RSI_WEIGHTS) | set(vp._PC_RSI_CARD_ONLY)
         internal = ("cobench_", "rdauto_", "al5_", "staff_", "code_",
-                    "experiments_")
+                    "experiments_", "oai_horizon_")
         released = ("metr_", "rli_", "nextstep_", "tasteval_")
         for slug, note in notes.items():
             if slug.startswith(internal):
@@ -6840,11 +6883,11 @@ class TestMilestoneCardLayout:
             # Balanced: no row carries two more cards than another.
             assert max(sizes) - min(sizes) <= 1, (n, sizes)
 
-    def test_the_live_card_count_lays_out_four_four_three(self):
+    def test_the_live_card_count_lays_out_four_four_four(self):
         """The shape the RSI tab actually renders today. If a milestone is
         added or dropped, retarget this deliberately."""
-        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 11
-        assert vp._pc_card_rows(11) == [4, 4, 3]
+        assert len(vp._PC_RSI_WEIGHTS) + len(vp._PC_RSI_CARD_ONLY) == 12
+        assert vp._pc_card_rows(12) == [4, 4, 4]
 
 
 class TestTakeoffUltraThreshold:
