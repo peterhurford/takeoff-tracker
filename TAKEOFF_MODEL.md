@@ -149,7 +149,7 @@ median, the geometric mean of OpenAI's measured 2% of research compute (Nov 2026
 today's pace is the calibrated one at any split and the share acts only through re-splitting:
 2% and 20% give the same ultraintelligence median. With AI labor abundant and the two
 complements, the agents' share falls to about 1% by 2030 at the median. Re-splitting moves
-little (the share making 10 years of progress in RSI's first year by about three points),
+little (the share making 10 years of progress in RSI's first year by about 1.4 points),
 because experiments already hold most of the pool while training keeps its own. A scenario's software ceiling is also tied to its returns to research (correlation
 0.5): a nearer ceiling comes with lower r. That leaves the median alone and makes the
 high-r tail more explosive: among r > 2 scenarios where labor substitutes for compute, 87%

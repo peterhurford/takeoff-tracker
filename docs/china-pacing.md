@@ -447,8 +447,8 @@ and fast batch finishing in that span for at least that much human review (1 mon
 validation, which AI verification otherwise shrinks toward a day). `_pc_takeoff_us(cut,
 review)` and `_tk_run_cut(run, cut, review)` take both, so the two stack; the labels
 name whichever is on (`_lever`: "US, no RSI ban", "At the RSI ban"). Seed 42, 2,000 samples, ban from Jul 2027: the ultraintelligence
-median moves late Sep 2028 to late Nov 2028 at 1 month (about 85% pace for 12 months),
-Feb 2029 at 2, Apr 2029 at 3, Dec 2029 at 6 (30% for 17 months): a review is a delay per step,
+median moves early Nov 2028 to mid Jan 2029 at 1 month (about 85% pace for 13 months),
+Apr 2029 at 2, Jun 2029 at 3, late Dec 2029 at 6 (25% for 15 months): a review is a delay per step,
 not a cap on how big a step is. Caps on AI instances are not modeled
 (`test_an_rsi_ban_slows_the_us_and_quotes_a_pacing_plan`,
 `test_an_rsi_ban_delays_ultraintelligence_more_for_longer_reviews`).

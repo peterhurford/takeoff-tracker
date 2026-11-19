@@ -28021,7 +28021,7 @@ def _render_takeoff(loading):
                    "\u00d7100. 110 gives an 80% range of about 1.7\u201319% of all compute "
                    "around 6.3%. Each scenario's inputs are measured from its own split, so "
                    "the share moves dates only through re-splitting: from 2% to 20% it "
-                   "moves ultraintelligence under a week.")
+                   "moves ultraintelligence about a week and a half.")
             st.markdown("**Uncertainty**")
             number("Parameter uncertainty (%)", "uncertainty", 0, 100, 5,
                    "Independent lognormal spread on research rates, compute growth, cycle "
