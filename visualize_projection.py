@@ -16570,12 +16570,22 @@ def _wc_central_shares(today, years):
             for lab, v in _wc_shares(world, china, split).items()}
 
 
+def _wc_stock_z(n):
+    """Standard normals (3, n) for CTS output, China's domestic and smuggled
+    stocks: seeded and the generator put back, so the Data Centers share
+    whiskers and the China tab's headline draw the same samples
+    (`test_headline_cards_are_the_other_tabs_numbers`)."""
+    with _seeded_rng(_APP_SEED):
+        return np.random.normal(0.0, 1.0, (3, n))
+
+
 def _wc_share_paths(today, years, n, common=None):
     """Sampled shares: {region: (len(years), n) percent}, each sample summing
     to 100. The world total draws CTS's output, China its domestic and
     smuggled stocks, the rest its split (`_wc_split_paths`, `common` as
-    there); the three are independent."""
-    z = np.random.normal(0.0, 1.0, (3, n))
+    there); the three are independent. The stock draws are `_wc_stock_z`'s,
+    so the China tab's headline range matches this one."""
+    z = _wc_stock_z(n)
     world, china = _wc_stocks(today, years, z_us=z[0], z_dom=z[1],
                               z_smug=z[2])
     return _wc_shares(world, china, _wc_split_paths(years, n, common))
@@ -18147,8 +18157,7 @@ def _cc_headline(today, n=None):
     generator's state put back, so no draw around it moves
     (`TestCcHeadline`)."""
     n = n or N_SAMPLES
-    with _seeded_rng(_APP_SEED):
-        z = np.random.normal(0.0, 1.0, (3, n))
+    z = _wc_stock_z(n)
     world_d, cn_d = _wc_stocks(today, [0.0], z_us=z[0], z_dom=z[1],
                                z_smug=z[2])
     world, china = (float(a[0, 0]) for a in _wc_stocks(today, [0.0]))
