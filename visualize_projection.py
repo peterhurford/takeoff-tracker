@@ -24162,6 +24162,31 @@ _TK_ACTIVITIES = (
     ("Analyzing results", "experiments", (0.15, 0.14, 0.13, 0.10, 0.06, 0.0)),
     ("Review, verification and merging", "verification", (0.10, 0.10, 0.10, 0.09, 0.05, 0.0)),
 )
+# OpenAI's zero-intervention success by O*NET work category (Nov 18 post, Aug 1-Oct 18
+# 2026), (midpoint, 95% CI) in percent, and the category the time table sets beside each
+# activity: a cross-check the model never reads (`test_time_table_sets_openai_beside_its_activities`).
+_OPENAI_ONET_SUCCESS = {
+    "Decide": (65.5, 36.9, 89.1), "Communicate": (69.0, 61.4, 76.5),
+    "Design": (52.4, 38.8, 65.9), "Build": (42.9, 37.1, 48.7),
+    "Run": (52.5, 45.6, 59.3), "Analyze": (58.0, 42.2, 73.1),
+}
+_OPENAI_ONET_FOR_ACTIVITY = {
+    "High-level direction": "Decide", "Coordination and communication": "Communicate",
+    "Detailed planning and design": "Design", "Writing code": "Build", "Debugging": "Build",
+    "Running and monitoring runs": "Run", "Analyzing results": "Analyze",
+}
+# OpenAI's researcher survey (n=101, late Aug-early Sep 2026): without coding agents,
+# three months to match one month's work. Set beside step 8's implied speedup.
+_OPENAI_SURVEY_X = 3.0
+
+
+def _openai_onet_cell(activity):
+    """The time table's OpenAI cell for one activity, or a dash."""
+    cat = _OPENAI_ONET_FOR_ACTIVITY.get(activity)
+    if cat is None:
+        return "\u2014"
+    mid, lo, hi = _OPENAI_ONET_SUCCESS[cat]
+    return f"{cat}: {mid:.0f}% ({lo:.0f}\u2013{hi:.0f}%)"
 
 
 def _tk_stage_prior(activities=_TK_ACTIVITIES):
@@ -25325,10 +25350,16 @@ def _tk_evidence_math(c):
             f"the research mean (ρ = {rho:g}, parallelization {par:g}) needs labor at",
             solve,
             f"its 2024–25 level, which through T = {T:.0%} is a raw AI speedup of "
-            f"({c['labor_need']:.1f} − 1 + {T:g}) ÷ {T:g} = {c['raw_need']:.1f}×. Staff "
-            f"surveys read ~{c['survey_now']:.0f}× today (step 6), so the measured pace and "
-            "the reported speedup agree. Partly by construction: step 6's elasticity is "
-            "fitted to the same surveys.",
+            f"({c['labor_need']:.1f} − 1 + {T:g}) ÷ {T:g} = {c['raw_need']:.1f}×. Anthropic's "
+            f"staff surveys read ~{c['survey_now']:.0f}× today (step 6) and OpenAI's "
+            f"researchers ~{_OPENAI_SURVEY_X:g}× (three months without coding agents to "
+            "match one month's work, a survey of 101 in Aug–Sep 2026), so the implied "
+            "speedup "
+            + ("sits between the two labs' reports"
+               if _OPENAI_SURVEY_X <= c['raw_need'] <= c['survey_now'] else
+               "falls outside both labs' reports")
+            + ". Partly by construction: step 6's elasticity is fitted to Anthropic's "
+            "surveys; OpenAI's is not used.",
         ]
     return "\n\n".join(lines)
 
@@ -28634,7 +28665,15 @@ def _render_takeoff(loading):
                 f"In mid-2027 people still do {100 * mid_2027:.0f}% of the unassisted hours, so "
                 f"research can run at most {1 / mid_2027:.1f}\u00d7 however fast AI is; human time "
                 f"falls under 5% in {first_under(total, 0.05)} and under 1% in "
-                f"{first_under(total, 0.01)}, as AL5 arrives.",
+                f"{first_under(total, 0.01)}, as AL5 arrives. The OpenAI column is a cross-check.",
+                ("The OpenAI column",
+                 "Share of OpenAI coding-agent sessions finished with no human intervention, "
+                 "by O*NET work category, Aug 1\u2013Oct 18 2026, with its 95% interval "
+                 "(OpenAI, Research acceleration, Nov 2026). It is success on the tasks "
+                 "people chose to delegate, not a share of hours, so it cannot set these "
+                 "priors; but it runs the other way: OpenAI's agents do worst on building "
+                 "and best on deciding and communicating, where the priors keep people "
+                 "longest. The model does not read it."),
                 ("at most",
                  "Amdahl's law: with AI infinitely fast on its part, research takes the human "
                  "hours left, so the ceiling is one over their share. A readout of the "
@@ -28660,6 +28699,7 @@ def _render_takeoff(loading):
                 "At AL4": [f"{100 * h[4]:.1f}%" for h in act_hours],
                 "Today": [f"{100 * v:.1f}%" for v in human],
                 "Share of people's time today": [f"{100 * v / human.sum():.0f}%" for v in human],
+                "OpenAI: agents finish unaided": [_openai_onet_cell(a[0]) for a in _TK_ACTIVITIES],
             }), hide_index=True, width="stretch")
 
 

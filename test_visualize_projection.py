@@ -7637,6 +7637,25 @@ class TestEvidenceMathCoding:
         assert vp._tk_pace_labor(1.54, 0.5, 0.0, 0.6)[0] == pytest.approx(1.54 ** 4)
         assert vp._tk_pace_labor(40.0, 0.5, -0.2, 0.6) == (None, None)
 
+    def test_step_8_sets_openai_survey_beside_the_implied_speedup(self):
+        """Step 8 quotes both labs' reports and says where the implied raw
+        speedup falls between them."""
+        c = self._chain()
+        text = vp._tk_evidence_math(c)
+        assert f"~{vp._OPENAI_SURVEY_X:g}×" in text
+        between = vp._OPENAI_SURVEY_X <= c["raw_need"] <= c["survey_now"]
+        assert ("sits between the two labs' reports" in text) == between
+        assert ("falls outside both labs' reports" in text) == (not between)
+
+    def test_time_table_sets_openai_beside_its_activities(self):
+        """Every mapped activity names a published category; the rest get a
+        dash; the cell carries the category's midpoint and 95% interval."""
+        names = [a[0] for a in vp._TK_ACTIVITIES]
+        assert set(vp._OPENAI_ONET_FOR_ACTIVITY) <= set(names)
+        assert set(vp._OPENAI_ONET_FOR_ACTIVITY.values()) == set(vp._OPENAI_ONET_SUCCESS)
+        assert vp._openai_onet_cell("Writing code") == "Build: 43% (37\u201349%)"
+        assert vp._openai_onet_cell("Review, verification and merging") == "\u2014"
+
     def test_the_yardstick_multiplies_out_as_shown(self):
         """Step 2's algorithms factor is its own formula to the shown digits,
         and compute times it is the window's effective compute."""

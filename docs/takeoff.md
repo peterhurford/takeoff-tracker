@@ -376,7 +376,7 @@ come from them (`_tk_human_calibration`), and section 2's table shows the arithm
 (`test_human_share_table_reads_the_priors_as_they_stand`). Under it, *Where people's time goes* (`_tk_activity_path`) is a readout the model
 never reads: each stage's fitted hours split among its activities by their priors, on the
 index's projection at the median AL5 gap, and the Amdahl
-ceiling (one over the human share) in mid-2027, before AL5.
+ceiling (one over the human share) in mid-2027, before AL5. Its last column sets OpenAI's zero-intervention success by O*NET category beside each activity (`_OPENAI_ONET_FOR_ACTIVITY`), a cross-check that runs against the priors' order and that nothing reads (`test_time_table_sets_openai_beside_its_activities`). Step 8 of the math likewise sets OpenAI's ~3× researcher survey (`_OPENAI_SURVEY_X`) beside Anthropic's against the implied raw speedup.
 Four defaults are read off RSI data at import (`TestTakeoffRsiCalibration`). Today's human
 share per stage is the R&D automation index's latest month read through that stage's row
 of `_TK_AL_HUMAN_HOURS` (`_tk_stage_shares`). Research hours then follow the index's own projection, not an
