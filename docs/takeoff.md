@@ -58,8 +58,10 @@ today's pace stays the ECI-calibrated one; a fixed reference split would scale t
 by the split (0.59× at 2%) and move dates through that alone. Without re-splitting, 2% and 20%
 run identically (`test_each_scenario_draws_its_own_agent_share`).
 Row 23 draws each scenario's `human_uplift` (theta), logit-normal around the
-*Human uplift from AI coding* widget (`tk_human_uplift`, default 0.5) with
-`human_uplift_spread` its 1σ in log-odds (1.05, not a widget: 90% within 0.15–0.85 at 0.5;
+*Human uplift from AI coding* widget (`tk_human_uplift`, default 0.75: a judgment, Peter,
+Nov 18 2026, since lower uplift needs a steep coding slope to match the staff survey) with
+`human_uplift_spread` its 1σ in log-odds (1.05, not a widget: 90% within 0.15–0.85 at 0.5,
+0.35–0.94 at 0.75;
 `_tk_uplift_band` prints that range in the help); a centre of 0 or 1, or spread 0, holds
 every draw at the centre (`test_each_scenario_draws_its_own_human_uplift`). China's run
 passes `draw_rows`, so each Chinese twin uses its US scenario's theta.
@@ -114,8 +116,10 @@ ceiling rank to its r (`test_a_nearer_ceiling_comes_with_lower_returns`). Today'
 tests set it to 0 (`test_serial_speedup_shortens_cycles_after_rsi_and_converges`). `ai_copies` (default 1) multiplies AI's speed in that
 Amdahl term by the deployed model's paid-off algorithmic efficiency to that power, as more
 copies on the same compute (log space, so a runaway cannot overflow;
-`test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its ~4%/yr of
-today's labor growth out of the staff-survey coding fit, and `_tk_automation_growth` credits
+`test_more_copies_speed_only_the_work_ai_does`). `_tk_copies_yearly` nets its 1.6%/yr of
+today's labor growth (Amdahl at the ladder's share today; 0.8%/yr on top of coding at the
+default uplift and fit, passing the draws and a year's K) out of the staff-survey coding
+fit, and `_tk_automation_growth` credits
 it over the evidence window before research judgment is fitted. Each draw's theta is
 the share of the coding gain's log that multiplies labor directly, speeding people's hours
 too; `1 - theta` of it instead multiplies AI's speed inside the Amdahl and headcount terms,
@@ -123,8 +127,20 @@ so 0 keeps the gain under Amdahl's h0/h bound. `coding_log` is computed before `
 for this; theta 1 is the old step bit for bit
 (`test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones`, the
 compiled-loop `human_uplift` case). It is not deliberate human review held for safety,
-which is Pacing's ban scenario (`review=`). `_tk_copies_yearly`, the survey's coding fit and
-the judgment calibration do not read theta. `judgment_cap` (default 0,
+which is Pacing's ban scenario (`review=`). The calibration reads theta through
+`takeoff.uplift_draws` (`UPLIFT_GRID` quantiles of the same logit-normal, seed-free) and
+`takeoff.coding_labor` (the window's K^theta (1 - T + T A), A with AI's share sped
+K^(1 - theta)x): `_tk_survey_coding` solves the one coding slope whose window coding multiple,
+averaged over the draws, matches the uplift-1 fit's 1 - T + T cap^e1 (e1 at uplift 1 exactly;
+`_TK_CODING_FIT_MAX` 10 where unreachable, uplift 0), and `calibrate_feedback(uplift=,
+amdahl=)` uses that average as its labor term, so judgment's residual is solved at the
+same uplift (`test_coding_fit_follows_uplift`,
+`test_calibration_reads_coding_through_the_uplift_draws`). Transfer, AI speed and copies
+are read at their defaults, as the judgment fits read transfer. `_tk_follow_uplift`, before
+the sidebar widgets, re-fits `tk_coding_slope` (`_tk_coding_fit`) at the session's uplift
+unless it is off the last fit (hand-set), and makes the fit the URL's auto default;
+`_tk_run` uses the fit when the slope is unset; the box's top rises past 2 to hold it
+(`test_coding_slope_follows_human_uplift`). `judgment_cap` (default 0,
 none) caps AI research judgment at a multiple of today's
 (`test_a_judgment_cap_only_ever_slows_research`); AI Futures caps taste near 4× the best
 human, which maps to a larger, unmeasured number here. Coding counts as automated at the
@@ -392,8 +408,9 @@ steady final-score trend reproduces the break (the paper's Table 2: the multipli
 faster per unit of score near the expert's flattening curve), so the post-break rate gets a
 third of the weight; `judgment_spread` (70) keeps all three inside its 80% band
 (`TestTakeoffRsiCalibration`). The coding elasticity is the yearly growth of the staff survey's gain over no AI
-(`_tk_survey_coding`: ln of that growth, less more copies' part, over ln of capability's;
-the gain is transfer × (raw speedup − 1), so transfer cancels). The judgment fits go
+(`_tk_survey_coding`: ln of that growth, less more copies' part, over ln of capability's,
+the gain being transfer × (raw speedup − 1), so transfer cancels; then re-solved at the
+uplift draws, above). The judgment fits go
 through `_tk_elasticity` against capability growth over the experiment window, which
 comes from evidence (`_tk_evidence_window_growth`: the data-center compute fit times the
 software trend at today's pace, each rounded to the math section's digits so its product multiplies out, `test_the_yardstick_multiplies_out_as_shown`. The baseline software doubling sets that yardstick but ECI cannot identify it (only algorithms' points a year), so the math section sets the prior beside its compute-equivalent reading, and changing it, like ECI growth, re-reads the evidence (`_tk_reread_evidence`, `test_the_baseline_doubling_rereads_the_evidence`); TasteVal is likewise read at `_TK_ECI_TODAY`), never a free assumption: an elasticity measured against one

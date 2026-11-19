@@ -589,6 +589,26 @@ def test_calibration_removes_compute_and_uses_validated_evidence_when_supplied()
     assert measured["basis"] == "validated progress"
 
 
+def test_calibration_reads_coding_through_the_uplift_draws():
+    """Given the window's Amdahl parts, the labor term is `coding_labor`'s
+    averaged over the uplift draws: at uplift 1 the same as the
+    automation-growth form; at a lower uplift less labor, so more is left to
+    credit to judgment."""
+    amdahl = (.8, .6, 30.0, 70.0)
+    auto = (.8 + .2 / 30) / (.6 + .4 / 70)
+    args = (2.2, 2, 4.5)
+    kw = dict(coding_slope=1.0, substitution=-0.2)
+    flat = tk.calibrate_feedback(*args, automation_growth=auto, **kw)
+    one = tk.calibrate_feedback(*args, uplift=1.0, amdahl=amdahl, **kw)
+    assert one["coding_factor"] == pytest.approx(flat["coding_factor"], rel=1e-12)
+    draws = tk.uplift_draws(.5, tk.DEFAULTS["human_uplift_spread"])
+    assert len(draws) == tk.UPLIFT_GRID and np.median(draws) == pytest.approx(.5)
+    half = tk.calibrate_feedback(*args, uplift=draws, amdahl=amdahl, **kw)
+    assert half["coding_factor"] < one["coding_factor"]
+    assert half["quality_slope"] > one["quality_slope"]
+    np.testing.assert_array_equal(tk.uplift_draws(1.0, 1.0), [1.0])
+
+
 def test_matched_stage_fit_uses_hours_not_intervention_incidence():
     fit = tk.calibrate_workflow(10, 5, 2.55, 2, np.log(2), 1)
     assert fit["human_now"] == pytest.approx(25.5)
@@ -1216,22 +1236,23 @@ def test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones():
 
 
 def test_each_scenario_draws_its_own_human_uplift():
-    """Logit-normal around `human_uplift`, 90% within 0.15-0.85 at 0.5, from a row
-    of its own so every other draw is unchanged; spread 0 holds the centre."""
+    """Logit-normal around `human_uplift`, 90% within 0.35-0.94 at the default
+    0.75, from a row of its own so every other draw is unchanged; spread 0
+    holds the centre."""
     kw = dict(n=400, onset_years=np.full(400, 0.5))
     drawn = tk.simulate(dict(years=4), **kw)
     fixed = tk.simulate(dict(years=4, human_uplift_spread=0), **kw)
     theta = drawn["draws"]["human_uplift"]
-    assert tk.DEFAULTS["human_uplift"] == 0.5
-    assert np.median(theta) == pytest.approx(0.5, abs=0.04)
-    assert np.mean((theta > 0.15) & (theta < 0.85)) == pytest.approx(0.9, abs=0.04)
+    assert tk.DEFAULTS["human_uplift"] == 0.75
+    assert np.median(theta) == pytest.approx(0.75, abs=0.04)
+    assert np.mean((theta > 0.35) & (theta < 0.94)) == pytest.approx(0.9, abs=0.04)
     assert theta.min() > 0 and theta.max() < 1 and len(np.unique(theta)) == 400
-    np.testing.assert_array_equal(fixed["draws"]["human_uplift"], 0.5)
+    np.testing.assert_array_equal(fixed["draws"]["human_uplift"], 0.75)
     for k in ("taste_slope", "difficulty", "fast_share", "scale_lag_oom", "full_human"):
         np.testing.assert_array_equal(drawn["draws"][k], fixed["draws"][k])
     # A draw's own theta moves its path: above the centre, more software by year 4.
     gain = drawn["software_log"] - fixed["software_log"]
-    assert np.median(gain[theta > 0.6]) > 0 > np.median(gain[theta < 0.4])
+    assert np.median(gain[theta > 0.85]) > 0 > np.median(gain[theta < 0.6])
     assert tk.POINT_ESTIMATE["human_uplift_spread"] == 0
 
 

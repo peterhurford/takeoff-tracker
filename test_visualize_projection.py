@@ -7347,10 +7347,41 @@ class TestTakeoffRsiCalibration:
 
     def test_coding_default_is_the_survey_fit(self):
         args = (vp.load_rsi_survey(), vp.load_rsi_experiments())
-        cap = vp._TK_DEFAULTS["tk_cal_capability"]
+        d = vp._TK_DEFAULTS
+        cap = d["tk_cal_capability"]
         coding = vp._tk_survey_coding(*args, cap)
         assert coding > 0
         assert vp._tk_survey_coding(*args, 2 * cap) < coding
+        assert d["tk_coding_slope"] == vp._tk_coding_fit(
+            d["tk_human_uplift"], cap, d["tk_cal_compute"], d["tk_software_months"])
+
+    def test_coding_fit_follows_uplift(self):
+        """At uplift 1 the fit is the survey's growth net of copies over
+        capability's, exactly; a lower uplift gives a higher slope; and at the
+        fitted slope the window's coding labor multiple, averaged over the
+        uplift draws, reproduces what the uplift-1 slope gives."""
+        tk = vp.takeoff
+        d = vp._TK_DEFAULTS
+        cap, comp, months = d["tk_cal_capability"], d["tk_cal_compute"], d["tk_software_months"]
+        ex, rows = vp.load_rsi_experiments(), vp.load_rsi_automation()
+        years = (ex[-1]['date'] - ex[0]['date']).days / 365.25
+        copies = vp._tk_copies_yearly(rows, dict(tk.DEFAULTS, software_months=months))
+        growth = np.exp(vp._rsi_survey_fit(vp.load_rsi_survey())[2] * 365.25) / copies
+        e1 = float(np.log(growth) / np.log(cap ** (1 / years)))
+        fit = lambda u: vp._tk_coding_fit(u, cap, comp, months)
+        assert fit(1.0) == round(e1, 2) == 0.97
+        assert fit(1 - 1e-9) == fit(1.0)
+        assert fit(0.5) > fit(0.75) > fit(0.85) > fit(1.0)
+        T = d["tk_transfer"] / 100
+        amdahl = vp._tk_window_amdahl(rows, ex, tk.DEFAULTS["ai_speed"], cap / comp,
+                                      vp._TK_AL_HUMAN_HOURS)
+        draws = vp._tk_uplift_draws(0.5)
+        part = lambda e: np.mean(tk.coding_labor(cap, e, T, draws, amdahl)
+                                 / tk.coding_labor(cap, 0.0, T, draws, amdahl))
+        target = 1 - T + T * cap ** e1
+        assert part(fit(0.5) - 0.005) < target < part(fit(0.5) + 0.005)
+        assert vp._tk_survey_coding(vp.load_rsi_survey(), ex, cap, copies,
+                                    np.array([0.0]), amdahl, T) == vp._TK_CODING_FIT_MAX
 
     def test_judgment_reads_the_square_root_of_the_win_odds(self, monkeypatch):
         """Judgment grows as the next-step win odds raised to
@@ -7513,10 +7544,7 @@ class TestEvidenceMathCoding:
     def _chain(self):
         import takeoff_model as tk
         params = dict(tk.DEFAULTS)
-        params["coding_slope"] = vp._tk_survey_coding(
-            vp.load_rsi_survey(), vp.load_rsi_experiments(),
-            vp._TK_DEFAULTS["tk_cal_capability"],
-            vp._tk_copies_yearly(vp.load_rsi_automation()))
+        params["coding_slope"] = vp._TK_DEFAULTS["tk_coding_slope"]
         return vp._tk_evidence_chain(params)
 
     def test_coding_step_shows_the_level_its_growth_and_the_amdahl_parts(self):
@@ -7526,8 +7554,11 @@ class TestEvidenceMathCoding:
         c = self._chain()
         assert c["cp_after"] / c["cp_before"] == pytest.approx(c["copies_y"])
         assert c["coding_ev"] == pytest.approx(c["coding"], abs=0.005)
+        assert c["coding_e1"] < c["coding_ev"]     # uplift below 1 needs a higher slope
+        assert c["copies_fit"] < c["copies_y"]
         md = vp._tk_evidence_math(c)
         assert "is the growth, not the speedup" in md
+        assert f"= {c['coding_e1']:.2f}$$" in md and f"$$e = {c['coding_ev']:.2f}$$" in md
         assert f"= {c['cp_before']:.3f}" in md and f"= {c['cp_after']:.3f}" in md
         assert "set in the sidebar" not in md
 

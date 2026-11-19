@@ -71,8 +71,10 @@ DEFAULTS = {
     # is K^theta T0 / (h + (1 - h) / (s K^(1 - theta))). 1 speeds all hours
     # alike; 0 caps the gain at Amdahl's bound. Each draw's theta is
     # logit-normal around it, `human_uplift_spread` its 1-sigma in log-odds
-    # (the default puts 90% of draws within 0.15-0.85 at 0.5); 0 fixes it.
-    "human_uplift": 0.5,
+    # (set for 90% within 0.15-0.85 at 0.5; 0.35-0.94 at the default); 0 fixes
+    # it. 0.75: a judgment (Peter, Nov 18 2026), as the staff survey needs a
+    # steep coding slope at lower uplift.
+    "human_uplift": 0.75,
     "human_uplift_spread": float(np.log(.85 / .15) / NormalDist().inv_cdf(.95)),
     # Share of the non-AI input growth that would hold today's pace with AI
     # frozen; 0 leaves compute the only growing input (no hiring, experiment
@@ -249,10 +251,12 @@ def validate(params):
 def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
                        yield_change=1.0, validated_growth=None, transfer=.6,
                        coding_slope=.8, parallel=.5, substitution=-0.5,
-                       automation_growth=1.0):
+                       automation_growth=1.0, uplift=1.0, amdahl=None):
     """Effective quality elasticity after the model's own research equation
     has accounted for compute, coding help and `automation_growth` (the
     Amdahl labor gain from people's falling share over the same window).
+    With `amdahl` = (h0, h1, s0, s1) the labor part is `coding_labor`'s,
+    averaged over the `uplift` draws, and supersedes `automation_growth`.
 
     Aggregate experiments are a proxy, not causal identification. A supplied
     validated-progress ratio supersedes that proxy. Ratios compare matched
@@ -268,8 +272,12 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
         raise ValueError("Calibration requires positive transfer and valid elasticities.")
     useful_growth = experiment_growth * yield_change if validated_growth is None else validated_growth
     residual = useful_growth / compute_growth ** parallel
-    coding = ((1 - transfer + transfer * capability_growth ** coding_slope)
-              * (1 - transfer + transfer * automation_growth)) ** parallel
+    if amdahl is None:
+        coding = ((1 - transfer + transfer * capability_growth ** coding_slope)
+                  * (1 - transfer + transfer * automation_growth)) ** parallel
+    else:
+        coding = float(np.mean(coding_labor(capability_growth, coding_slope, transfer,
+                                            uplift, amdahl))) ** parallel
     quality = residual / _ces(coding, 1.0, substitution)
     slope = np.log(max(1.0, (quality - 1 + transfer) / transfer)) / np.log(capability_growth)
     return dict(quality_slope=float(slope), resource_adjusted_growth=float(residual),
@@ -277,6 +285,31 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
                 labor_part=float(_ces(coding, 1.0, substitution)), quality=float(quality),
                 boundary=bool(quality < 1),
                 basis="validated progress" if validated_growth is not None else "experiment proxy")
+
+
+# Quantiles standing in for `simulate`'s per-draw uplift in the calibration.
+UPLIFT_GRID = 101
+
+
+def uplift_draws(centre, spread, n=UPLIFT_GRID):
+    """`simulate`'s logit-normal uplift draws as `n` evenly spaced quantiles, so
+    a calibration over them is seed-free; 0, 1 or no spread hold the centre."""
+    if not 0 < centre < 1 or spread <= 0:
+        return np.array([float(centre)])
+    z = np.array([NormalDist().inv_cdf((i + .5) / n) for i in range(n)])
+    return 1 / (1 + np.exp(-(np.log(centre / (1 - centre)) + spread * z)))
+
+
+def coding_labor(capability_growth, coding_slope, transfer, uplift, amdahl):
+    """Labor multiple from coding and automation over a window, per uplift
+    draw, as `simulate`'s labor equation has it: K^theta (1 - T + T A), with
+    K = 1 - T + T cap^slope and A = (h0 + (1 - h0)/s0) / (h1 + (1 - h1)/(s1
+    K^(1 - theta))), the Amdahl gain with AI's share sped up by the rest of K."""
+    h0, h1, s0, s1 = amdahl
+    theta = np.asarray(uplift, dtype=float)
+    k = 1 - transfer + transfer * capability_growth ** coding_slope
+    a = (h0 + (1 - h0) / s0) / (h1 + (1 - h1) / (s1 * k ** (1 - theta)))
+    return k ** theta * (1 - transfer + transfer * a)
 
 
 def calibrate_workflow(baseline_hours, before_hours, now_hours, capability_growth,

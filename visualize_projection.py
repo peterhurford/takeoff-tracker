@@ -13,6 +13,7 @@ import pandas
 import plotly.graph_objects as go
 import yaml
 import csv
+import functools
 import statistics
 import re
 import html
@@ -24074,19 +24075,53 @@ def _tk_elasticity(yearly_growth, experiments, capability_growth, transfer, fall
     return round(float(np.log((yearly_growth - 1 + transfer) / transfer) / np.log(cap)), 2)
 
 
-def _tk_survey_coding(rows, experiments, capability_growth, copies_yearly=1.0):
+# The highest coding elasticity the uplift-aware survey fit returns: past it
+# the survey's growth is out of reach at that uplift.
+_TK_CODING_FIT_MAX = 10.0
+
+
+def _tk_survey_coding(rows, experiments, capability_growth, copies_yearly=1.0,
+                      uplift=1.0, amdahl=None, transfer=None):
     """Coding-labor elasticity implied by the staff survey: the yearly growth
     of its gain over no AI (`_rsi_survey_fit`, the RSI tab's fit), less the
     part `copies_yearly` (more AI copies) already explains, against
-    capability's. The gain is transfer x (raw AI speedup - 1), so transfer
-    cancels from its growth, which is the raw speedup's once that is well
-    past 1."""
+    capability's: e1 = ln(growth) / ln(capability growth). The gain is
+    transfer x (raw AI speedup - 1), so transfer cancels from its growth.
+
+    That reading assumes every hour speeds up alike (uplift 1). Given the
+    `uplift` draws and the window's `amdahl` (h0, h1, s0, s1), it is instead
+    the one slope at which the window's coding labor multiple (coding over
+    none, `takeoff.coding_labor`), averaged over the draws, matches what e1
+    gives at uplift 1, 1 - T + T cap^e1; at uplift 1 that is e1
+    (`test_coding_fit_follows_uplift`)."""
     _base, _icpt, slope = _rsi_survey_fit(rows)
     years = (experiments[-1]['date'] - experiments[0]['date']).days / 365.25
     growth, cap = np.exp(slope * 365.25) / copies_yearly, capability_growth ** (1 / years)
     if growth <= 1 or cap <= 1:
         return takeoff.DEFAULTS["coding_slope"]
-    return round(float(np.log(growth) / np.log(cap)), 2)
+    e1 = float(np.log(growth) / np.log(cap))
+    theta = np.atleast_1d(np.asarray(uplift, dtype=float))
+    if amdahl is None or not transfer or (theta >= 1).all():
+        return round(e1, 2)
+    target = 1 - transfer + transfer * capability_growth ** e1
+    none = takeoff.coding_labor(capability_growth, 0.0, transfer, theta, amdahl)
+
+    def short(e):
+        return np.mean(takeoff.coding_labor(capability_growth, e, transfer, theta, amdahl)
+                       / none) < target
+
+    lo, hi = e1, _TK_CODING_FIT_MAX
+    if short(hi):
+        return hi
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if short(mid) else (lo, mid)
+    return round(hi, 2)
+
+
+def _tk_uplift_draws(centre):
+    """The scenarios' human uplift draws around `centre`, as quantiles."""
+    return takeoff.uplift_draws(centre, takeoff.DEFAULTS["human_uplift_spread"])
 
 
 def _tk_nextstep_taste(frontier, experiments, capability_growth, transfer):
@@ -24173,25 +24208,73 @@ def _tk_window_human_shares(rows, experiments, hours=None):
     return share(experiments[0]['date']), share(experiments[-1]['date'])
 
 
-def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0, hours=None):
-    """The Amdahl labor gain over the experiment evidence window, from the
-    automation index's human share at its two ends, with AI's share sped up
-    `copies_growth`x by the end (more copies as algorithms improved)."""
+def _tk_window_amdahl(rows, experiments, ai_speed, copies_growth=1.0, hours=None):
+    """(h0, h1, s0, s1) over the experiment evidence window, for
+    `takeoff.coding_labor`: the automation index's human share at its two
+    ends, and AI's speed at each, sped up `copies_growth`x by the end (more
+    copies as algorithms improved)."""
     h0, h1 = _tk_window_human_shares(rows, experiments, hours)
-    return float((h0 + (1 - h0) / ai_speed)
-                 / (h1 + (1 - h1) / (ai_speed * copies_growth)))
+    return h0, h1, float(ai_speed), float(ai_speed * copies_growth)
 
 
-def _tk_copies_yearly(rows, params=None):
+def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0, hours=None):
+    """The Amdahl labor gain over the experiment evidence window
+    (`_tk_window_amdahl`), coding aside."""
+    h0, h1, s0, s1 = _tk_window_amdahl(rows, experiments, ai_speed, copies_growth, hours)
+    return float((h0 + (1 - h0) / s0) / (h1 + (1 - h1) / s1))
+
+
+def _tk_copies_yearly(rows, params=None, uplift=1.0, coding_gain=1.0):
     """The yearly research-labor gain more copies alone give today: a year of
     algorithmic progress at the software doubling, raised to `ai_copies`,
     speeding only AI's share of the work at the automation index's latest
-    human share (Amdahl). It is netted out of the survey's coding fit."""
+    human share (Amdahl). It is netted out of the survey's coding fit. With
+    `uplift` draws and a year's coding gain K (`coding_gain`), it is the
+    copies' gain on top of coding, which already speeds AI's share
+    K^(1 - uplift)x, averaged over the draws."""
     params = params or takeoff.DEFAULTS
     h = _tk_ladder_human_share(_tk_ladder_start_row())
-    s = params["ai_speed"]
+    s = params["ai_speed"] * coding_gain ** (1 - np.asarray(uplift, dtype=float))
     g = 2 ** (12 / params["software_months"] * params["ai_copies"])
-    return float((h + (1 - h) / s) / (h + (1 - h) / (s * g)))
+    return float(np.mean((h + (1 - h) / s) / (h + (1 - h) / (s * g))))
+
+
+@functools.lru_cache(maxsize=64)
+def _tk_coding_fit(uplift, capability, compute, software_months):
+    """The coding elasticity default at human uplift `uplift`: the survey fit
+    (`_tk_survey_coding`) over the scenarios' uplift draws, at the window's
+    `capability` and `compute` growth and the model defaults' transfer, AI
+    speed and copies, as the run's experiment calibration reads the window."""
+    d, rows, ex = takeoff.DEFAULTS, load_rsi_automation(), load_rsi_experiments()
+    copies = _tk_copies_yearly(rows, dict(d, software_months=software_months))
+    amdahl = _tk_window_amdahl(rows, ex, d["ai_speed"],
+                               (capability / compute) ** d["ai_copies"], _TK_AL_HUMAN_HOURS)
+    return _tk_survey_coding(load_rsi_survey(), ex, capability, copies,
+                             _tk_uplift_draws(uplift), amdahl,
+                             _TK_DEFAULTS["tk_transfer"] / 100)
+
+
+def _tk_coding_fit_now():
+    """`_tk_coding_fit` at the session's settings (defaults for any not there)."""
+    ss = lambda k: float(st.session_state.get(k, _TK_DEFAULTS[k]))
+    return _tk_coding_fit(ss("tk_human_uplift"), ss("tk_cal_capability"),
+                          ss("tk_cal_compute"), ss("tk_software_months"))
+
+
+def _tk_follow_uplift():
+    """Re-fit the coding elasticity at the session's human uplift (and
+    evidence) unless hand-set: a value off the last fit stays. The fit is the
+    URL's default, so a link carries the slope only when hand-set
+    (`test_coding_slope_follows_human_uplift`). Runs before the sidebar's
+    widgets."""
+    ss = st.session_state
+    fit = _tk_coding_fit_now()
+    last = ss.get("_tk_coding_auto", _TK_DEFAULTS["tk_coding_slope"])
+    if ss.get("tk_coding_slope", last) == last:
+        ss["tk_coding_slope"] = fit
+    ss["_tk_coding_auto"] = fit
+    ss.setdefault("_url_auto_defaults", {})["tk_coding_slope"] = fit
+    return fit
 
 
 def _tk_human_calibration():
@@ -24420,6 +24503,7 @@ _TK_R_REF_PARALLEL = takeoff.DEFAULTS["parallelization"]
 
 def _tk_reset():
     st.session_state.update(_TK_DEFAULTS)
+    st.session_state.pop("_tk_coding_auto", None)
     st.session_state["us_ship_lag"] = _SHIP_LAG_DEFAULTS["us_ship_lag"]
     st.session_state["cn_ship_lag"] = _SHIP_LAG_DEFAULTS["cn_ship_lag"]
     st.session_state.pop("_tk_fit_message", None)
@@ -24738,10 +24822,17 @@ def _tk_evidence_chain(params):
     eg = ex[-1]['mult'] / ex[0]['mult']
     auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
                                  (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
+    uplift = float(params["human_uplift"])
+    draws = _tk_uplift_draws(uplift)
     cal = takeoff.calibrate_feedback(
         eg, comp, cap, float(ss("tk_cal_yield", 1.0)), float(ss("tk_cal_validated", 0)) or None,
         transfer=T, coding_slope=params["coding_slope"], parallel=params["parallelization"],
-        substitution=params["substitution"], automation_growth=auto) if T_set > 0 else None
+        substitution=params["substitution"], uplift=draws,
+        amdahl=_tk_window_amdahl(load_rsi_automation(), ex, params["ai_speed"],
+                                 (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
+    ) if T_set > 0 else None
+    coding_fit = _tk_coding_fit(uplift, cap, comp, sw0)
+    coding_e1 = float(np.log(survey_y / copies_y) / np.log(cap ** (1 / yrs)))
     labor_need, raw_need = _tk_pace_labor(
         (E - c_pts) / a_pts, params["parallelization"], params["substitution"], T)
     return {
@@ -24766,7 +24857,12 @@ def _tk_evidence_chain(params):
         "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
         "cp_months": sw0,
         "cp_copies": takeoff.DEFAULTS["ai_copies"],
-        "coding_ev": float(np.log(survey_y / copies_y) / np.log(cap ** (1 / yrs))),
+        "coding_e1": coding_e1, "coding_ev": coding_fit,
+        "coding_target": 1 - T + T * cap ** coding_e1,
+        "uplift": uplift, "uplift_band": _tk_uplift_band(uplift),
+        "copies_fit": _tk_copies_yearly(load_rsi_automation(),
+                                        dict(takeoff.DEFAULTS, software_months=sw0), draws,
+                                        1 - T + T * cap ** (coding_fit / yrs)),
         "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
         "cp_after": 1 / (cp_h + (1 - cp_h) / (cp_s * cp_g)),
         "exp_growth": eg, "parallel": params["parallelization"],
@@ -24951,7 +25047,12 @@ def _tk_evidence_math(c):
             f"{c['ai_copies']:g}, a prior: sidebar *More AI researchers as algorithms "
             "improve*). By Amdahl's law:",
             rf"$$\text{{automation}} = \frac{{{c['h0']:.3f} + {1 - c['h0']:.3f}/{c['ai_speed']:g}}}{{{c['h1']:.3f} + {1 - c['h1']:.3f}/({c['ai_speed']:g} \times {c['copies_growth']:.2f})}} = {c['automation']:.2f}\times$$",
-            rf"$$\text{{labor}} = \left[(1 - {T:g} + {T:g} \times {c['cap']:.2f}^{{{c['coding']:.2f}}}) \times (1 - {T:g} + {T:g} \times {c['automation']:.2f})\right]^{{{par:g}}} = {c['coding_factor']:.2f}\times$$",
+            f"Coding's gain, K = 1 − T + T × {c['cap']:.2f}^{c['coding']:.2f}, reaches "
+            f"people's hours at its share θ (sidebar *Human uplift from AI coding*, "
+            f"{c['uplift']:g}) and speeds AI's share K^(1−θ)× on top of its copies, so "
+            "the automation gain becomes A_θ, with AI's speed at the end that much "
+            "higher. Averaged over the scenarios' draws of θ (step 6):",
+            rf"$$\text{{labor}} = \left[\operatorname{{mean}}_\theta\, K^{{\theta}} \left(1 - {T:g} + {T:g} \times A_\theta\right)\right]^{{{par:g}}} = {c['coding_factor']:.2f}\times$$",
             "Labor and experiment compute combine as a CES mean with ρ = "
             f"{rho:g} (a prior: sidebar *Labor–compute substitutability*); compute's part "
             "was taken out above, so it enters at 1:",
@@ -24993,9 +25094,22 @@ def _tk_evidence_math(c):
         "year for better AI. The gain is T × (AI's raw speedup − 1), so T cancels from its "
         "growth, which is the raw speedup's once that is well past 1. Against effective "
         f"compute's ×{cy:.1f} a year:",
-        rf"$$e = \frac{{\ln {c['survey_y'] / c['copies_y']:.2f}}}{{\ln {cy:.1f}}} = \frac{{{np.log(c['survey_y'] / c['copies_y']):.3f}}}{{{np.log(cy):.3f}}} = {c['coding_ev']:.2f}$$",
+        rf"$$e_1 = \frac{{\ln {c['survey_y'] / c['copies_y']:.2f}}}{{\ln {cy:.1f}}} = \frac{{{np.log(c['survey_y'] / c['copies_y']):.3f}}}{{{np.log(cy):.3f}}} = {c['coding_e1']:.2f}$$",
+        "That reads the gain as speeding every hour alike. In the model a share θ of "
+        "the coding gain K = 1 − T + T × (effective compute growth)^e speeds people's "
+        "hours and the rest speeds only AI's, already fast (sidebar *Human uplift from "
+        f"AI coding*, θ = {c['uplift']:g}, each scenario drawing its own, 90% between "
+        f"{c['uplift_band'][0]:.2f} and {c['uplift_band'][1]:.2f}). So e is the one "
+        "elasticity at which the window's coding labor multiple, K^θ × (1 − T + T × "
+        "Amdahl gain with AI's share also sped K^(1−θ)×) over the same without coding "
+        "(step 5's parts), averaged over the scenarios' draws, matches what e₁ gives "
+        f"at θ = 1, 1 − {c['T']:g} + {c['T']:g} × {c['cap']:.2f}^{c['coding_e1']:.2f} = "
+        f"×{c['coding_target']:.2f} over the window:",
+        rf"$$e = {c['coding_ev']:.2f}$$",
         (f"With 10× the effective compute, AI's coding help is about "
-         f"{10 ** c['coding_ev']:.1f}× bigger."
+         f"{10 ** c['coding_ev']:.1f}× bigger. At this e, more copies add "
+         f"×{c['copies_fit']:.3f} a year on top of coding, whose share sped only AI's "
+         "work already."
          + (f" The run uses {c['coding']:.2f}, set in the sidebar."
             if abs(c['coding'] - c['coding_ev']) > 0.005 else "")),
         "**7. What they do.** Each month the model's research pace is today's pace × "
@@ -25091,7 +25205,7 @@ def _tk_flow_dot(v):
         node("s_ev", "Staff speedup\\nsurvey", ora),
         node("s_me", f"speedup ~{c['survey_now']:.0f}× today,\\nits gain over no AI\\ngrowing ×{c['survey_y']:.2f} a year", ora),
         node("s_cv", f"less what just running\\nmore copies adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
-        node("pc", f"Coding labor {c['coding']:.2f}", ora),
+        node("pc", f"Coding labor {c['coding']:.2f}\\nat uplift {c['uplift']:g}", ora),
         # Other inputs.
         node("ix", "R&D automation index\\n(AL4 / AL5)", grn),
         node("ph", "People's share\\nof the work", grn),
@@ -25457,21 +25571,20 @@ def _tk_eci_today_pace(params, hist, eci_today):
     return algo_today / r["algo_ppy"] if algo_today > 0 else None
 
 
-def _tk_evidence_settings(eci_today, software_months=None):
+def _tk_evidence_settings(eci_today, software_months=None, uplift=None):
     """The evidence-read settings at `eci_today` ECI points a year and a
     baseline software doubling of `software_months`: the window's compute and
     capability growth, and the judgment and coding elasticities read against
-    them. Both set the yardstick, so changing either re-reads the evidence."""
+    them, coding's at human uplift `uplift`. Both set the yardstick, so
+    changing either re-reads the evidence."""
     months = software_months or takeoff.DEFAULTS["software_months"]
     ex = load_rsi_experiments()
     tr = _TK_DEFAULTS["tk_transfer"] / 100
     comp, cap = _tk_evidence_window_growth(ex, eci_today, months)
+    up = _TK_DEFAULTS["tk_human_uplift"] if uplift is None else uplift
     return {"tk_cal_compute": comp, "tk_cal_capability": cap,
             "tk_taste_slope": _tk_taste_default(rsi_dir_frontier_all, ex, cap, tr, eci_today),
-            "tk_coding_slope": _tk_survey_coding(load_rsi_survey(), ex, cap,
-                                                 _tk_copies_yearly(load_rsi_automation(),
-                                                                   dict(takeoff.DEFAULTS,
-                                                                        software_months=months)))}
+            "tk_coding_slope": _tk_coding_fit(float(up), cap, comp, float(months))}
 
 
 def _tk_reread_evidence():
@@ -25480,7 +25593,8 @@ def _tk_reread_evidence():
     ss = st.session_state.get
     st.session_state.update(_tk_evidence_settings(
         float(ss("tk_eci_today", _TK_ECI_TODAY)),
-        float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"]))))
+        float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"])),
+        float(ss("tk_human_uplift", _TK_DEFAULTS["tk_human_uplift"]))))
 
 
 # Evidence-calibrated defaults: read at today's pace, so after the ECI and
@@ -26436,6 +26550,10 @@ def _tk_run(today, progress=None):
     # with lambda held at the reference exponent so the parallelization setting
     # moves returns to inputs alone, not how fast ideas get harder.
     params["difficulty"] = _TK_R_REF_PARALLEL / float(ss("tk_returns"))
+    # Unset (Pacing before Takeoff draws), the coding elasticity is the fit at
+    # the session's uplift, as `_tk_follow_uplift` would set it.
+    if "tk_coding_slope" not in st.session_state:
+        params["coding_slope"] = _tk_coding_fit_now()
     # Every path begins today and ends at the selected calendar horizon.
     # Past coding dates stay intact; we do not invent pre-today research history.
     params["years"] = horizon
@@ -26455,7 +26573,8 @@ def _tk_run(today, progress=None):
             ss("tk_cal_validated") or None,
             transfer=params["transfer"] / 100, coding_slope=params["coding_slope"],
             parallel=params["parallelization"], substitution=params["substitution"],
-            automation_growth=_tk_automation_growth(
+            uplift=_tk_uplift_draws(params["human_uplift"]),
+            amdahl=_tk_window_amdahl(
                 load_rsi_automation(), evidence, params["ai_speed"],
                 (ss("tk_cal_capability") / ss("tk_cal_compute"))
                 ** params["ai_copies"], _TK_AL_HUMAN_HOURS))
@@ -27449,6 +27568,7 @@ def _render_takeoff(loading):
     # The evidence fans draw from numpy's global generator; the cached coding
     # dates and the simulator seed their own draws from the same value.
     np.random.seed(_tk_seed())
+    coding_fit = _tk_follow_uplift()
     for key, default in _TK_DEFAULTS.items():
         st.session_state.setdefault(key, default)
 
@@ -27825,9 +27945,15 @@ def _render_takeoff(loading):
                    "post-training gains are not in it. Changing it re-reads the evidence "
                    "against the yardstick it sets.", on_change=_tk_reread_evidence)
             st.markdown("**Research feedback**")
-            number("Coding elasticity to capability", "coding_slope", 0.1, 2.0, 0.1,
+            number("Coding elasticity to capability", "coding_slope", 0.1,
+                   max(2.0, np.ceil(coding_fit * 10) / 10), 0.1,
                    "Default fitted from the staff survey above: the yearly growth in "
-                   "self-reported output, read as AI coding labor.")
+                   "self-reported output, read as AI coding labor through the model's "
+                   f"labor equation at *Human uplift from AI coding* below ({coding_fit:.2f} "
+                   "now), which it follows unless set by hand. The lower the uplift, the "
+                   "less of the coding gain reaches people's hours, so the higher the "
+                   "elasticity that reproduces the survey; the box's top rises past 2 "
+                   "to hold the fit.")
             number("AI research judgment today (× people's)", "judgment_today", 0.25, 4.0, 0.05,
                    "AI's judgment against people's on the research direction it does "
                    "today. Quality is normalized to 1 today, so it moves only what "

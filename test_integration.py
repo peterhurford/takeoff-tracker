@@ -2389,7 +2389,7 @@ class TestTakeoffTab:
         assert fresh.number_input(key="tk_human_verification").value == 25.0
 
     def test_human_uplift_is_a_setting_both_runs_read(self, monkeypatch):
-        """`tk_human_uplift` defaults to 0.5, its help gives the drawn 90% range at
+        """`tk_human_uplift` defaults to 0.75, its help gives the drawn 90% range at
         the current value, the US and China runs both get it, and it survives a
         shared URL and goes back on reset."""
         import takeoff_model as tk
@@ -2404,10 +2404,10 @@ class TestTakeoffTab:
         monkeypatch.setattr(tk, "simulate", capture)
         at = self._app()
         box = at.number_input(key="tk_human_uplift")
-        assert box.value == 0.5 and box.min == 0.0 and box.max == 1.0
-        lo, hi = vp._tk_uplift_band(0.5)
-        assert (round(lo, 2), round(hi, 2)) == (0.15, 0.85)
-        assert "between 0.15 and 0.85" in box.help
+        assert box.value == 0.75 and box.min == 0.0 and box.max == 1.0
+        lo, hi = vp._tk_uplift_band(0.75)
+        assert (round(lo, 2), round(hi, 2)) == (0.35, 0.94)
+        assert "between 0.35 and 0.94" in box.help
         assert "human_uplift_spread" in vp._TK_NOT_WIDGETS
         assert not [n for n in at.number_input if n.key == "tk_human_uplift_spread"]
         seen.clear()
@@ -2422,7 +2422,31 @@ class TestTakeoffTab:
         fresh.run()
         assert fresh.number_input(key="tk_human_uplift").value == 0.8
         at.button(key="tk_reset").click().run()
-        assert at.number_input(key="tk_human_uplift").value == 0.5
+        assert at.number_input(key="tk_human_uplift").value == 0.75
+
+    def test_coding_slope_follows_human_uplift(self):
+        """Moving the uplift re-fits the coding elasticity, which a link then
+        leaves out; a fresh session from that link shows the same fit; a
+        hand-set slope stays through an uplift change and goes into the link."""
+        import visualize_projection as vp
+        d = vp._TK_DEFAULTS
+        fit = lambda u: vp._tk_coding_fit(u, d["tk_cal_capability"], d["tk_cal_compute"],
+                                          d["tk_software_months"])
+        at = self._app()
+        assert at.number_input(key="tk_coding_slope").value == fit(0.75) == d["tk_coding_slope"]
+        at.number_input(key="tk_human_uplift").set_value(0.25).run()
+        _assert_no_error(at, "Takeoff / uplift 0.25")
+        box = at.number_input(key="tk_coding_slope")
+        assert box.value == fit(0.25) > 2.0 and box.max >= box.value
+        assert "tk_coding_slope" not in at.query_params
+        fresh = _fresh_app()
+        fresh.query_params.update(dict(at.query_params))
+        fresh.run()
+        assert fresh.number_input(key="tk_coding_slope").value == fit(0.25)
+        at.number_input(key="tk_coding_slope").set_value(1.2).run()
+        at.number_input(key="tk_human_uplift").set_value(0.5).run()
+        assert at.number_input(key="tk_coding_slope").value == 1.2
+        assert _qp(at, "tk_coding_slope") == ["1.2"]
 
     @staticmethod
     def _al5_card(at):
