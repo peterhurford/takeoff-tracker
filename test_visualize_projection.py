@@ -1328,6 +1328,9 @@ class TestGapHover:
             [ms(1), 140.0], [ms(3), 140.0], [ms(3), 145.0], [ms(5), 150.0], [ms(7), 160.0]]
         assert [list(p) for p in g["bottom"]] == [[ms(1), 130.0], [ms(7), 140.0]]
         assert g["v"] == ["a {gap}", "b {gap}"] and g["h"] is None
+        # A point's tooltip hides the bars, so it must take a pointer on the dot.
+        assert fig.layout.hoverdistance == vp._GAP_HOVER_DISTANCE < 20
+        assert fig.layout.hoverlabel.font.size == 11
 
     def test_today_forward_gives_the_bars_today(self):
         """In today-forward mode the bars date the pointer relative to today."""

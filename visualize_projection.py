@@ -880,6 +880,9 @@ def _gap_series(fig, names):
     return [p for s in sorted(segs, key=lambda s: s[0][0]) for p in s]
 
 
+_GAP_HOVER_DISTANCE = 6  # px; Plotly's default 20 snaps to a dot almost anywhere
+
+
 def _gap_hover(fig, top, bottom, v_label, h_label=None, names=None):
     """Tag `fig` for the page's gap hover (`_render_gap_hover`): over the
     plot, a vertical bar joins the `top` and `bottom` lines (trace names) at
@@ -891,7 +894,10 @@ def _gap_hover(fig, top, bottom, v_label, h_label=None, names=None):
     fig.update_layout(meta=dict(vpGap=dict(
         top=_gap_series(fig, top), bottom=_gap_series(fig, bottom),
         v=list(v_label), h=list(h_label) if h_label else None,
-        names=list(names) if names else None)))
+        names=list(names) if names else None)),
+        # A point's tooltip hides the bars, so it takes a pointer on the dot,
+        # and stays small: name and ECI, then its dates.
+        hoverdistance=_GAP_HOVER_DISTANCE, hoverlabel_font_size=11)
     return fig
 
 
@@ -22855,10 +22861,10 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     grid_d = [anchor_d + off_cn + timedelta(days=y * 365.25)
               for y in grid_yrs]
     keep = [i for i, d in enumerate(grid_d) if d <= x_end]
-    _hover = (lambda d, s, n: f"{pretty(n)}<br>ECI {s:.0f}"
+    # A dot's tooltip: name and ECI, then the release date when the dot sits
+    # off it (dated at training).
+    _hover = (lambda d, s, n: f"<b>{pretty(n)}</b> \u00b7 ECI {s:.0f}"
               + (f"<br>released {d:%b %Y}" if off_cn.days else ""))
-    _us_obs = _cc_frontier_eci_slope(us_fr, _CC_CALIB_SINCE)
-    _cn_obs = ch['obs'] if ch else _cc_frontier_eci_slope(cn_fr, _CC_CALIB_SINCE)
     # The US bar at each sample's crossing (it moves unless paused).
     us_tr_grid = us_path(grid_yrs)[0]
     # Per sample, the years (from China's anchor; inf = never in the window)
@@ -22905,9 +22911,6 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                               years - grid_yrs[0] - _cn_ship)
     cross50 = (float(np.nanmedian(us_cross_s)) if crossed else lvl50)
 
-    def _trend_note(r):
-        return "" if r is None else f"<br>frontier trend {r:.1f} ECI/yr"
-
     fig = go.Figure()
     _dc_add_projection_band(fig, today + off_cn, x_end, label=_CC_PROJECTED)
     # US: actual frontier, then the climb to the bar, flat once it pauses.
@@ -22915,7 +22918,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # at first internal use, are trained events (off_us). Running max only.
     _us_pts = sorted(
         [(d + off_us_rel, s, _hover(d, s, n)) for d, s, n in us_fr]
-        + [(d + off_us, s, f"{n}<br>ECI {s:.0f}<br>internal use {d:%b %Y}")
+        + [(d + off_us, s, f"<b>{n}</b> \u00b7 ECI {s:.0f}<br>internal use {d:%b %Y}")
            for d, s, n in _pc_internal_pts(names=True)])
     _us_act = [p for i, p in enumerate(_us_pts)
                if all(p[1] > q[1] for q in _us_pts[:i])]
@@ -22923,7 +22926,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         x=[x for x, s, h in _us_act], y=[s for x, s, h in _us_act],
         mode='lines+markers', line=dict(color='#1F77B4', width=1.5),
         marker=dict(size=4, color='#1F77B4', line=dict(color='white', width=0.5)),
-        text=[h + _trend_note(_us_obs) for x, s, h in _us_act],
+        text=[h for x, s, h in _us_act],
         hoverinfo='text', name='US (actual)'))
     # One dashed projection in two pieces, the climb to the pacing date and
     # the path from it, both medians of the per-sample bar China is crossed
@@ -23061,7 +23064,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
         x=[d + off_cn for d, s, n in cn_fr], y=[s for d, s, n in cn_fr],
         mode='lines+markers', line=dict(color='#D62728', width=1.5),
         marker=dict(size=4, color='#D62728', line=dict(color='white', width=0.5)),
-        text=[_hover(d, s, n) + _trend_note(_cn_obs) for d, s, n in cn_fr],
+        text=[_hover(d, s, n) for d, s, n in cn_fr],
         hoverinfo='text', name='China (actual)'))
     pct = _pctiles(traj, (10, 25, 50, 75, 90))
     xs = [grid_d[i] for i in keep]
@@ -23939,7 +23942,9 @@ def _render_gap_hover():
     """Draw the gap bars `_gap_hover` tags a chart for. Plotly's own hover
     cannot draw between two traces, so this page script reads the tag off
     each chart's `layout.meta` and draws on an SVG over the plot, placed with
-    the chart's own axes (`xaxis.p2l` / `l2p`), on every pointer move."""
+    the chart's own axes (`xaxis.p2l` / `l2p`), on every pointer move. While
+    Plotly shows a point's own tooltip the bars stand down, so the two never
+    overlap."""
     st.html(
         """
         <script>
@@ -24025,6 +24030,8 @@ def _render_gap_hover():
             var g = gd.layout && gd.layout.meta && gd.layout.meta.vpGap;
             var fl = gd._fullLayout;
             if (!g || !ev || !fl || !fl.xaxis || !fl.yaxis) { return; }
+            // One hover at a time: a point's own tooltip wins over the bars.
+            if (gd.querySelector(".hoverlayer .hovertext")) { return; }
             var xa = fl.xaxis, ya = fl.yaxis, r = gd.getBoundingClientRect();
             FONT = (fl.font && fl.font.family) || "sans-serif";
             var px = ev.clientX - r.left, py = ev.clientY - r.top;
@@ -24063,8 +24070,16 @@ def _render_gap_hover():
             gd.__vpGapSvg = svg;
             if (gd.__vpGapBound) { return; }
             gd.__vpGapBound = true;
-            gd.addEventListener("mousemove", function (ev) { draw(gd, ev); });
-            gd.addEventListener("mouseleave", function () { draw(gd, null); });
+            // Drawn a frame late, so Plotly has placed or cleared its own tooltip.
+            var last = null, queued = false;
+            gd.addEventListener("mousemove", function (ev) {
+              last = ev;
+              if (queued) { return; }
+              queued = true;
+              requestAnimationFrame(function () { queued = false; draw(gd, last); });
+            });
+            gd.addEventListener("mouseleave", function () { last = null; draw(gd, null); });
+            if (gd.on) { gd.on("plotly_hover", function () { draw(gd, null); }); }
           }
           function scan() {
             document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
@@ -27324,7 +27339,7 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
                 line=dict(color=_CN_TK_US["dark"], width=1.5, shape="hv"),
                 marker=dict(color=_CN_TK_US["dark"], size=6, line=dict(color="white", width=1)),
                 text=[m['name'] for m in tr], legendrank=12,
-                hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US trained</extra>"))
+                hovertemplate="<b>%{text}</b> \u00b7 ECI %{y:.0f}<br>trained %{x|%b %Y}<extra></extra>"))
             # Carried on pace from the last trained model to the projection's start.
             fig.add_trace(go.Scatter(
                 x=[tr[-1]['date'], today], y=[tr[-1]['eci_score'], eci["now"]],
@@ -27337,7 +27352,7 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
             line=dict(color=_CN_TK_US["light"], width=1.2, shape="hv"),
             marker=dict(color=_CN_TK_US["light"], size=5), text=[m['name'] for m in rel],
             legendrank=13,
-            hovertemplate="%{text}<br>%{x|%b %d, %Y}: %{y:.1f}<extra>US release</extra>"))
+            hovertemplate="<b>%{text}</b> \u00b7 ECI %{y:.0f}<br>released %{x|%b %Y}<extra></extra>"))
     # China's releases at their estimated training finish, release less its
     # trained-to-release lag, so both sides' lines are trained models.
     off_cn = timedelta(days=_ship_lag('cn'))
@@ -27347,9 +27362,8 @@ def _cn_tk_fig(cn, today, view_end, ultra, eci=None):
         name="China trained (releases less lag)",
         line=dict(color=_CN_TK_CN["line"], width=1.5, shape="hv"),
         marker=dict(color=_CN_TK_CN["line"], size=6, line=dict(color="white", width=1)),
-        text=[f"{r[2]}<br>released {r[3]:%b %d, %Y}" for r in past], legendrank=22,
-        hovertemplate="%{text}<br>trained ~%{x|%b %d, %Y}: %{y:.1f}"
-                      "<extra>China trained (est.)</extra>"))
+        text=[f"<b>{r[2]}</b> \u00b7 ECI {r[1]:.0f}<br>released {r[3]:%b %Y}" for r in past],
+        legendrank=22, hovertemplate="%{text}<extra></extra>"))
     lvl = np.quantile(cn["level"], [.1, .5, .9])
     if past:
         fig.add_trace(go.Scatter(
@@ -28914,8 +28928,9 @@ def render_release_lag():
             marker=dict(size=[8] * len(ms) + [0], color=color,
                         line=dict(color='white', width=2)),
             name=name, hoverinfo='text',
-            text=[f"{m['display_name']}<br>ECI {m['eci_score']:.1f}<br>{when} {m['date']:%b %d, %Y}"
-                  + (f"<br>released {m['released']:%b %d, %Y}"
+            text=[f"<b>{m['display_name']}</b> \u00b7 ECI {m['eci_score']:.0f}"
+                  f"<br>{when} {m['date']:%b %Y}"
+                  + (f" \u00b7 released {m['released']:%b %Y}"
                      if when == "trained" and not m.get('internal') else "")
                   for m in ms] + [""]))
     fig.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10),

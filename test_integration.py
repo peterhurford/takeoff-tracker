@@ -2720,8 +2720,8 @@ class TestTakeoffTab:
         cn = tr["China trained (releases less lag)"]
         assert len(cn["x"]) > 5
         for x, txt in zip(cn["x"], cn["text"]):
-            rel = datetime.strptime(re.search(r"released (.+)$", txt).group(1), "%b %d, %Y")
-            assert datetime.fromisoformat(x[:10]) == rel - timedelta(days=lag)
+            rel = re.search(r"released (.+)$", txt).group(1)
+            assert f"{datetime.fromisoformat(x[:10]) + timedelta(days=lag):%b %Y}" == rel
         us = tr["US trained (internal models in)"]
         top = spec["layout"]["meta"]["vpGap"]["top"]
         first = (datetime.fromisoformat(us["x"][0][:10]) - datetime(1970, 1, 1))
