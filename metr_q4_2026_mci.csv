@@ -1,0 +1,43 @@
+# METR Capability Index (MCI), same post and source as metr_q4_2026_horizons.csv: Figure 12's chart
+# data file, table "models". A 2PL IRT ability fitted on TH1.1, TH2 and MirrorCode; the file's scale
+# puts GPT-4o at 0 and Claude Opus 4.6 at 633 (scale_anchor = 1), the post's text at -1 and 0 with
+# one unit = 633 points. frontier: 1 if in METR's trend fit. Bounds are bootstrap over families and runs.
+# METR's frontier fit:
+#   Fig 12 TH1.1, MirrorCode and TH2: 2024-05-13 to 2026-09-22, 28.92 MCI points per month (95% CI 23.42-34.81)
+# Slope after / before a 2025-10-01 breakpoint (Figure 54):
+#   MCI calibrated on all models · All public models: 1.101x (95% CI 0.595-1.911)
+#   MCI calibrated on all models · Anthropic public models: 1.256x (95% CI 0.658-2.158)
+#   MCI calibrated on all models · OpenAI public models: 0.945x (95% CI 0.527-1.904)
+#   MCI calibrated on Anthropic models · Anthropic public models: 1.456x (95% CI 0.590-3.195)
+#   MCI calibrated on OpenAI models · OpenAI public models: 0.970x (95% CI 0.408-1.793)
+model,released,frontier,scale_anchor,mci,low_95,high_95,low_80,high_80
+Claude 3 Opus,2024-03-04,0,0,-84.4829,-223.083,35.1119,-171.237,9.24857
+GPT-4 Turbo,2024-04-09,0,0,-105.64,-235.613,-1.24543,-209.569,-16.4765
+GPT-4o,2024-05-13,1,1,0,0,0,0,0
+Claude 3.5 Sonnet (Old),2024-06-20,1,0,70.5736,-29.6482,170.932,4.53388,134.793
+o1-preview,2024-09-12,1,0,140.17,3.896,226.822,61.8339,205.773
+Claude 3.5 Sonnet (New),2024-10-22,1,0,192.048,76.6686,285.467,129.01,260.234
+o1,2024-12-05,1,0,237.395,155.927,326.311,189.638,298.996
+Claude 3.7 Sonnet,2025-02-24,1,0,310.008,239.645,398.117,269.315,372.656
+o3,2025-04-16,1,0,417.334,316.637,481.95,348.314,460.332
+Claude Opus 4,2025-05-22,0,0,392.652,319.445,484.474,349.039,461.593
+Claude Opus 4.1,2025-08-05,0,0,398.5,331.555,486.729,354.623,467.396
+GPT-5,2025-08-07,1,0,478.578,433.015,543.257,455.801,524.545
+Gemini 3 Pro,2025-11-18,1,0,490.476,448.618,550.21,467.602,536.241
+GPT-5.1-Codex-Max,2025-11-19,0,0,477.713,424.84,536.979,451.804,525.301
+Claude Opus 4.5,2025-11-24,1,0,533.254,495.691,581.772,511.488,566.969
+GPT-5.2,2025-12-11,1,0,551.456,515.852,596.908,531.916,588.289
+Claude Opus 4.6,2026-02-05,1,1,633,633,633,633,633
+GPT-5.3-Codex,2026-02-05,0,0,566.461,525.476,623.826,546.691,605.962
+Gemini 3.1 Pro,2026-02-19,0,0,568.914,514.122,633.933,543.376,610.729
+GPT-5.4,2026-03-05,0,0,593.178,559.687,637.98,578.409,635.001
+Claude Mythos Preview (early),2026-04-07,1,0,671.221,637.524,761.37,647.507,716.924
+Claude Opus 4.7,2026-04-16,0,0,631.225,589.016,688.69,608.495,667.894
+GPT-5.5,2026-04-23,1,0,705.688,657.833,817.112,672.917,761.505
+Claude Opus 4.8,2026-05-28,1,0,708.597,661.3,784.271,673.055,752.261
+Claude Fable 5,2026-06-09,1,0,778.739,712.935,890.915,724.676,841.269
+GPT-5.6 Sol,2026-07-09,0,0,738.275,681.645,855.844,700.636,805.673
+Claude Opus 5,2026-07-24,1,0,796.229,735.871,910.133,745.983,864.091
+Claude Fable 5.1,2026-09-01,1,0,839.121,753.658,1019.11,780.047,928.499
+GPT-6 Astra,2026-09-03,1,0,858.977,761.107,1085.32,790.529,966.148
+Claude Opus 5.5,2026-09-22,0,0,854.102,765.156,1069.3,789.844,953.02
