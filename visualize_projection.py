@@ -2234,19 +2234,21 @@ def _rsi_experiment_window():
 _RSI_HORIZON_TARGET_HRS = 40.0
 
 
-def _rsi_horizon_of(mid_min, success_pct):
-    """Minutes at 50% success: OLS of log-odds on log2 duration over the bins,
+def _rsi_horizon_of(mid_min, success_pct, at=50):
+    """Minutes at `at`% success: OLS of log-odds on log2 duration over the bins,
     METR's horizon definition applied to OpenAI's binned rates."""
     icpt, slope = fit_line(np.log2(mid_min),
                            _logit(np.clip(success_pct, 0.5, 99.5) / 100))
-    return float(2 ** (-icpt / slope)) if slope < 0 else float('inf')
+    return (float(2 ** ((_logit(at / 100) - icpt) / slope)) if slope < 0
+            else float('inf'))
 
 
 def load_rsi_horizon():
     """One row per month (`openai_task_success.csv`): its window, its date at
     the window's midpoint, the 50% horizon in minutes and, as `lo_min` /
     `hi_min`, the same fit through every bin's sampling-envelope bound at
-    once, so wider than a per-month interval."""
+    once, so wider than a per-month interval; `h80_min` the same fit's 80%
+    horizon."""
     with Path(__file__).with_name('openai_task_success.csv').open() as f:
         raw = list(csv.DictReader(line for line in f if not line.startswith('#')))
     out = []
@@ -2259,7 +2261,9 @@ def load_rsi_horizon():
              for k in ('success', 'env_lo', 'env_hi')}
         out.append({'start': a, 'end': b, 'date': a + (b - a) / 2,
                     'h50_min': h['success'], 'lo_min': h['env_lo'],
-                    'hi_min': h['env_hi']})
+                    'hi_min': h['env_hi'],
+                    'h80_min': _rsi_horizon_of(
+                        mid, np.array([float(r['success']) for r in rs]), at=80)})
     return out
 
 
@@ -8403,6 +8407,9 @@ def _render_rsi_experiments(end_year):
          "source error bars; overlapping four-week averages are correlated."))
 
 
+_RSI_HORIZON_TICKS = (5 / 60, 0.25, 0.5, 1, 2, 4, 8, 16, 40, 80)
+
+
 def _render_rsi_horizon(end_year):
     _fn_line(
         "The human task length at which OpenAI's coding agents finish half their "
@@ -8445,7 +8452,7 @@ def _render_rsi_horizon(end_year):
         h = np.array([r['h50_min'] for r in rows]) / 60
         fig.add_trace(go.Scatter(
             x=[r['date'] for r in rows], y=h, mode='markers',
-            name='OpenAI, fitted per month',
+            name='50% horizon, fitted per month',
             marker=dict(color='#4F8DFD', size=8),
             error_y=dict(type='data', symmetric=False,
                          array=np.array([r['hi_min'] for r in rows]) / 60 - h,
@@ -8453,27 +8460,40 @@ def _render_rsi_horizon(end_year):
                          color='rgba(79,141,253,0.5)'),
             customdata=[[f"{r['start']:%b %-d}–{r['end']:%b %-d}"] for r in rows],
             hovertemplate='%{customdata[0]}<br>50% horizon: %{y:.1f}h<extra></extra>'))
+        h80 = np.array([r['h80_min'] for r in rows]) / 60
+        d80 = [(r['date'] - base).days for r in rows]
+        i80, s80 = fit_line(np.array(d80, dtype=float), np.log(h80))
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in rows], y=h80, mode='markers+lines',
+            name=(f'80% horizon, est. (2×: {np.log(2) / s80 / 30.44:.1f} mo)' if s80 > 0
+                  else '80% horizon, est.'),
+            line=dict(color='#e67e22', width=1, dash='dot'),
+            marker=dict(color='white', size=8, line=dict(color='#e67e22', width=2)),
+            hovertemplate='%{x|%b %Y}<br>80% horizon: %{y:.2f}h<extra></extra>'))
         fig.add_hline(y=_RSI_HORIZON_TARGET_HRS, line=dict(color='#e74c3c', dash='dash'))
-        fig.add_annotation(xref='x domain', x=0.01, y=np.log10(_RSI_HORIZON_TARGET_HRS),
+        fig.add_annotation(xref='x domain', x=0.99, y=np.log10(_RSI_HORIZON_TARGET_HRS),
                            text=f'{_RSI_HORIZON_TARGET_HRS:g}h, one work-week',
-                           showarrow=False, xanchor='left', yanchor='bottom',
+                           showarrow=False, xanchor='right', yanchor='bottom',
                            font=dict(color='#e74c3c'))
         _add_today_diamond(fig, 'Median projection', lambda v: f"{v:.1f}h",
                            label="trend", log=True)
         _add_today_vline(fig)
         fig.update_layout(
-            height=480, margin=dict(l=50, r=60, t=50, b=40),
+            height=500, margin=dict(l=60, r=30, t=70, b=40),
             xaxis=dict(title='Month', range=[base - timedelta(days=20), end],
                        tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
                        gridcolor='rgba(0,0,0,0.12)', zeroline=False),
-            yaxis=dict(title='50% task horizon (hours of human work)', type='log',
-                       range=[np.log10(0.3), np.log10(y_top)],
+            yaxis=dict(title='Task horizon (human work time)', type='log',
+                       range=[np.log10(4 / 60), np.log10(y_top)],
+                       tickvals=_RSI_HORIZON_TICKS,
+                       ticktext=[f'{v * 60:g}m' if v < 1 else f'{v:g}h'
+                                 for v in _RSI_HORIZON_TICKS],
                        tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
                        gridcolor='rgba(0,0,0,0.12)', zeroline=False),
             hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
             font=dict(color='#1a1a2e'),
-            legend=dict(x=0.01, y=0.99, bgcolor='rgba(255,255,255,0.95)',
-                        font=dict(color='#1a1a2e')),
+            legend=dict(orientation='h', x=0, xanchor='left', y=1.02, yanchor='bottom',
+                        font=dict(color='#1a1a2e', size=11)),
             hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
                             bordercolor='#5c6370'))
         return fig
@@ -8483,7 +8503,13 @@ def _render_rsi_horizon(end_year):
         f"Source: [OpenAI, *Research acceleration*]({_RSI_EXPERIMENT_SOURCE_URL}), "
         "‘Zero-intervention success by estimated human task duration’ (Nov 2026), "
         f"{first['start']:%B}–{last['end']:%B %-d, %Y}, from the chart's point labels. "
-        "About a tenth of METR's horizon for the same models. Projection bands are illustrative.",
+        "About a tenth of METR's horizon for the same models. The 80% horizon is "
+        "extrapolated. Projection bands are illustrative.",
+        ("The 80% horizon is extrapolated",
+         "The same per-month fit read at 80% success. It falls under 15 minutes, inside "
+         "the post's shortest bin (<15m, already 76–85% success, its midpoint taken as "
+         "7.5 minutes), so it leans on that assumption. No fan: the 40h bar is far off "
+         "on its trend."),
         ("About a tenth of METR's horizon",
          f"METR put GPT-5.4's 50% horizon at 342 minutes in March 2026; OpenAI's own "
          f"sessions that month give {first['h50_min']:.0f}. Internal sessions are "

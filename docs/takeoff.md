@@ -813,7 +813,7 @@ AECI points, METR's fit carried to today, and where the takeoff model's ECI star
 caption says why the indexes differ (shape is the index, colour the models, grey diamonds today's estimates). `TestMetrAeci` holds the digitization to METR's printed slopes and Model 4.
 
 `_render_rsi_horizon()` charts OpenAI's internal 50% task horizon (`openai_task_success.csv`,
-`load_rsi_horizon`): each month's horizon is fitted here, an OLS of log-odds success on log2
+`load_rsi_horizon`): each month's horizon is fitted here (the 80% horizon, `h80_min`, is the same fit read at 80%, drawn without a fan), an OLS of log-odds success on log2
 duration across the post's seven bins at their geometric midpoints (`_rsi_horizon_of`), with
 error bars from the same fit through every bin's sampling-envelope bound at once. The fan and
 its 40h card share `_rsi_horizon_draws`, on its own generator so the cards after it keep their
