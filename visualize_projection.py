@@ -18647,8 +18647,16 @@ _PC_CUT_OPTIONS = [2, 3, 6, 10, 12, 30]
 _PC_PHASE_KINDS = {"pace": "Pace the US", "cut": "Cut US R&D compute",
                    "realloc": "Reallocate compute", "ban": "Ban runaway RSI",
                    "noai": "Ban AI in AI R&D"}
+# Months the time-bought sweep moves the whole plan by, 0 being the plan as set.
+_PC_TB_SHIFTS = tuple(range(-12, 19, 3))
+
+_PC_TB_VIEWS = ("Over time", "By start date: chance", "By start date: time bought")
+
+_PC_TB_COLORS = {"automated coder": "#E8871E", "RSI": "#7B3FA0",
+                 "ultraintelligence": "#C0392B"}
+
 _PC_PHASE_FIELDS = ("kind", "pace", "cut", "start", "end", *_PC_USES, "ban", "ai")
-_PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party",
+_PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party", "pc_tb_date", "pc_tb_view",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
                   "pc_internal",
@@ -18858,6 +18866,7 @@ def _pc_plan_presets(today):
             phase("pace", 12 * k, 12 * (k + 1), pace=p)
             for k, p in enumerate((75, 50, 25, 50, 75))),
         "Two years of half training compute": (phase("realloc", 0, 24, train=50),),
+        "No AI in AI R&D, compute ÷30": (phase("noai", 0), phase("cut", 0, cut=30)),
     }
 
 
@@ -19125,6 +19134,7 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                 "pc_theft_weights": False, "pc_wt_when": _PC_WHEN_NOW,
                 "pc_wt_mode": "Once",
                 "pc_win_n": 0,
+                "pc_tb_date": "Mar 2029", "pc_tb_view": _PC_TB_VIEWS[0],
                 # Each phase opens on the year after the one before it.
                 **{k: v for i in range(1, _PC_WIN_MAX + 1) for k, v in (
                     (f"pc_win{i}_kind", "pace"), (f"pc_win{i}_pace", 50),
@@ -20897,6 +20907,11 @@ def _pc_takeoff_us(today, cut=None, years=None, review=None, limit=None):
            else _tk_run_seeded(day))
     if not isinstance(run, dict) or "error" in run:
         return None
+    return _pc_tk_read(run, day, slowed)
+
+
+def _pc_tk_read(run, day, slowed=False):
+    """A Takeoff run (`_tk_run` or `_tk_run_cut`) as `_pc_takeoff_us` returns it."""
     eci, res = run["eci"], run["result"]
     years, paths = res["workflow_progress"]["years"], eci["paths"]
     ca = np.asarray(res["coding_at"], dtype=float)
@@ -21077,6 +21092,278 @@ def _pc_ai_rule(today):
     return (_pc_add_months(today, min(a for a, _, _ in bans)),
             None if end >= _PC_PAUSE_MO_MAX else _pc_add_months(today, end),
             min(e for _, _, e in bans) or None)
+
+
+def _pc_slow_args(tk_free, sched, review, limit, horizon):
+    """What `_pc_takeoff_us` takes for the plan's slowed run, (cut schedule,
+    years to run, review rule, AI limit) in years from Takeoff's day, from
+    `_pc_cut_schedule`, `_pc_ban_rule` and `_pc_ai_rule`; None when the plan
+    has none of the three. The allowed ECI becomes a gain over today's
+    frontier, and the run stops `_PC_CUT_RUN_PAST` after the chart's end,
+    past which nothing reads it."""
+    if sched is None and review is None and limit is None:
+        return None
+
+    def yrs(d):
+        return max((d - tk_free['day']).days, 0) / 365.25
+    rule = review and (yrs(review[0]), float(review[2]),
+                       None if review[1] is None else yrs(review[1]))
+    lim = limit and (yrs(limit[0]),
+                     None if limit[2] is None
+                     else float(limit[2] - np.median(tk_free['paths'][:, 0])),
+                     None if limit[1] is None else yrs(limit[1]))
+    end = (None if horizon is None else float(np.ceil(
+        max((horizon - tk_free['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
+    return sched, end, rule, lim
+
+
+def _pc_plan_when(today, shift=0, horizon=None):
+    """Per Takeoff scenario, the years from Takeoff's day at which the US
+    reaches each milestone under the plan moved `shift` months later (inf:
+    not inside the run), {milestone: (draws,)}, with the plan's first phase
+    start under 'start'; None without a Takeoff run. Moving `today` moves
+    every phase date alike, so the plan keeps its shape. The slowed run is
+    the panel's own at shift 0 and a run of its own otherwise, under
+    Takeoff's seed, so each scenario is the same draw at every shift; the
+    plan's pace then runs that scenario's date through `_pc_paced_clock`."""
+    free = _pc_takeoff_us(today)
+    if free is None:
+        return None
+    at = _pc_add_months(today, shift)
+    day = free['day']
+    args = _pc_slow_args(free, _pc_cut_schedule(at, day), _pc_ban_rule(at),
+                         _pc_ai_rule(at), horizon)
+    if args is None:
+        tk = free
+    elif not shift:
+        tk = _pc_takeoff_us(today, *args)
+    else:
+        with _seeded_rng(_tk_seed()):
+            tk = _pc_tk_read(_tk_run_cut(_tk_run_seeded(day), *args), day, True)
+
+    def yrs(d):
+        return max((d - day).days, 0) / 365.25
+    start = _pc_add_months(at, _pc_first_phase_mo())
+    pace, wins = _pc_pace_plan(at)
+    wins = [(yrs(a), yrs(b), p) for a, b, p in wins]
+    out = {"start": start}
+    # The clock on a weekly grid past the run's end: a date is reached where
+    # the paced clock first passes it.
+    u = np.linspace(0.0, float(tk['years'][-1]) + 1.0, int(52 * (tk['years'][-1] + 1)) + 1)
+    clock = _pc_paced_clock(u, yrs(start), pace, wins)
+    for name, w in tk['when'].items():
+        w = np.nan_to_num(np.asarray(w, float), nan=np.inf, posinf=np.inf)
+        if pace < 1 or wins:
+            k = np.searchsorted(clock, w, side="left")
+            w = np.where(k >= len(u), np.inf, u[np.minimum(k, len(u) - 1)])
+        out[name] = w
+    return out
+
+
+def _pc_time_bought(base, plan, after):
+    """One milestone's readings from its per-scenario dates with no plan and
+    under the plan (years, inf never) and a date `after` in the same years:
+    {'base', 'plan' (median dates), 'bought' (10th, 50th, 90th percentile of
+    each scenario's own delay, inf where the plan's run never gets there),
+    'p_base', 'p_plan' (share of scenarios later than `after`)}. A scenario
+    that never arrives without the plan has no delay to read and is left out
+    of 'bought'."""
+    ok = np.isfinite(base)
+    # A percentile that lands between a delay and a never is itself a never.
+    delay = np.where(np.isfinite(plan[ok]), plan[ok] - base[ok], 1e9)
+    qs = np.percentile(delay, (10, 50, 90)) if ok.any() else (np.inf,) * 3
+    return {"base": float(np.median(base)), "plan": float(np.median(plan)),
+            "bought": tuple(float(q) if q < 1e6 else np.inf for q in qs),
+            "p_base": float(np.mean(~(base <= after))),
+            "p_plan": float(np.mean(~(plan <= after)))}
+
+
+def _pc_even_odds_start(starts, chances):
+    """The latest start date at which a falling `chances` (0–1, one per
+    date in `starts`) is still at least a half, linear between dates: (date,
+    None), or (None, 'all') when every start shown keeps it and (None,
+    'none') when none does."""
+    c = np.asarray(chances, float)
+    if (c >= 0.5).all():
+        return None, "all"
+    if c[0] < 0.5:
+        return None, "none"
+    i = int(np.argmax(c < 0.5))
+    f = (c[i - 1] - 0.5) / max(c[i - 1] - c[i], 1e-12)
+    return starts[i - 1] + (starts[i] - starts[i - 1]) * f, None
+
+
+def _pc_render_time_bought(today, horizon, origin, draw=None):
+    """*Time bought*, under Pacing's milestone table once the plan does
+    anything: per milestone, the US's median date with no plan and under the
+    plan, each scenario's delay, and the chance the milestone comes after a
+    chosen date; then one of three charts (`_PC_TB_VIEWS`): the share of
+    scenarios not there yet over time, or, against the plan's start moved
+    through `_PC_TB_SHIFTS`, that chance or the median time bought. Only
+    the two by-start views run extra Takeoff runs, one per start.
+    `origin` is the date Takeoff's day sits at on the chart's clock, and
+    `draw` the scenario each of the panel's samples follows, so the table's
+    plan dates are the milestone table's."""
+    if not _pc_plan_phases(today):
+        return
+    plan = _pc_plan_when(today, 0, horizon)
+    if plan is None:
+        return
+    free = _pc_takeoff_us(today)
+    names = [n for n in _PC_TB_COLORS if n in plan]
+    pick = (lambda w: w if draw is None else w[draw])
+    base = {n: pick(np.nan_to_num(np.asarray(free['when'][n], float), nan=np.inf))
+            for n in names}
+    end_yrs = (horizon - origin).days / 365.25
+
+    def to_date(u):
+        return origin + timedelta(days=float(u) * 365.25)
+
+    def cap(w):
+        """Dates past the chart's end read as never, as the milestone table's."""
+        return np.where(w <= end_yrs, w, np.inf)
+    opts = [datetime(y, m, 1) for y in range(today.year, horizon.year + 1)
+            for m in (3, 6, 9, 12) if today < datetime(y, m, 1) <= horizon]
+    if not opts:
+        return
+    st.markdown("##### Time bought")
+    labels = [f"{d:%b %Y}" for d in opts]
+    if st.session_state.get("pc_tb_date") not in labels:
+        st.session_state.pop("pc_tb_date", None)   # a bookmarked month now past
+    if st.session_state.get("pc_tb_view") not in _PC_TB_VIEWS:
+        st.session_state.pop("pc_tb_view", None)
+    c1, c2 = st.columns([1, 2], vertical_alignment="bottom")
+    dflt = _PC_DEFAULTS["pc_tb_date"]
+    label = c1.selectbox(
+        "Chance the milestone comes after", labels,
+        index=labels.index(dflt) if dflt in labels else len(labels) - 1,
+        key="pc_tb_date",
+        help="The date the chance columns and the by-start chart are read "
+             "against: the share of Takeoff scenarios in which the US reaches "
+             "the milestone later than the end of this month, or not by the "
+             "chart's end.") or labels[-1]
+    view = c2.segmented_control(
+        "Chart", _PC_TB_VIEWS, default=_PC_DEFAULTS["pc_tb_view"], key="pc_tb_view",
+        help="*Over time* reads the plan as set. The two *By start date* "
+             "views move the whole plan earlier and later, every phase by "
+             "the same months, and rerun the Takeoff model once per start "
+             "date.") or _PC_DEFAULTS["pc_tb_view"]
+    after_d = _pc_add_months(opts[labels.index(label)], 1)
+    after = (after_d - origin).days / 365.25
+
+    def when(u):
+        return f"{to_date(u):%b %Y}" if np.isfinite(u) else f"after {horizon.year}"
+
+    def bought(u):
+        return (_pc_span(max(u, 0.0) * 12) if np.isfinite(u)
+                else f"past {horizon.year}")
+    rows = []
+    for n in names:
+        r = _pc_time_bought(cap(base[n]), cap(pick(plan[n])), after)
+        lo, med, hi = r["bought"]
+        rows.append({
+            "Milestone": n[0].upper() + n[1:],
+            "No plan (median)": when(r["base"]),
+            "With the plan (median)": when(r["plan"]),
+            "Time bought (median, 80%)": f"{bought(med)} ({bought(lo)} \u2013 {bought(hi)})",
+            f"After {label}, no plan": f"{r['p_base']:.0%}",
+            f"After {label}, with the plan": f"{r['p_plan']:.0%}",
+        })
+    st.table(rows)
+    _fn_caption(
+        "US dates only. Time bought is read scenario by scenario, "
+        "every scenario with and without the plan.",
+        ("Time bought", "Each Takeoff scenario's own delay: its date under "
+         "the plan less its date without, over the scenarios that reach the "
+         "milestone without the plan. The median delay is not the "
+         "difference of the two median dates, since the scenarios in the "
+         "middle differ. *Past* the chart's end means the plan's run does "
+         "not get there inside *Project through*."),
+        ("every scenario", "The plan is assumed to be perfectly enforced and "
+         "to bind only the US; China's dates under it are in the milestone "
+         "table above."))
+    fig = go.Figure()
+    if view == _PC_TB_VIEWS[0]:
+        grid = np.linspace(0.0, end_yrs, int(end_yrs * 12) + 1)
+        xs = [to_date(u) for u in grid]
+        for n in names:
+            for w, dash, tag in ((cap(pick(plan[n])), "solid", "with the plan"),
+                                 (cap(base[n]), "dot", "no plan")):
+                fig.add_trace(go.Scatter(
+                    x=xs, y=[100.0 * float(np.mean(~(w <= u))) for u in grid],
+                    mode="lines", line=dict(color=_PC_TB_COLORS[n], width=2, dash=dash),
+                    name=f"{n[0].upper() + n[1:]}, {tag}",
+                    hovertemplate="%{y:.0f}% not yet, %{x|%b %Y}<extra>"
+                                  f"{n[0].upper() + n[1:]}, {tag}</extra>"))
+        fig.add_vline(x=after_d, line=dict(color="#888", width=1, dash="dash"))
+        fig.update_layout(xaxis=dict(range=[xs[0], horizon]),
+                          yaxis=dict(title="Scenarios not there yet", ticksuffix="%",
+                                     range=[0, 101]))
+        st.plotly_chart(_tf(_pc_tb_layout(fig)), width="stretch")
+        _fn_caption(
+            f"The share of scenarios in which the US has not reached each "
+            f"milestone yet; the dashed line is the end of {label}.")
+        return
+    first = _pc_first_phase_mo()
+    sweep = [(k, plan if not k else _pc_plan_when(today, k, horizon))
+             for k in _PC_TB_SHIFTS if first + k >= 0]
+    starts = [origin + (p["start"] - free['day']) for _, p in sweep]
+    here = [k for k, _ in sweep].index(0)
+    chance = view == _PC_TB_VIEWS[1]
+    notes = []
+    for n in names:
+        rs = [_pc_time_bought(cap(base[n]), cap(pick(p[n])), after) for _, p in sweep]
+        title = n[0].upper() + n[1:]
+        if chance:
+            ys = [100.0 * r["p_plan"] for r in rs]
+            fig.add_trace(go.Scatter(
+                x=[starts[0], starts[-1]], y=[100.0 * rs[0]["p_base"]] * 2, mode="lines",
+                line=dict(color=_PC_TB_COLORS[n], width=1, dash="dot"),
+                name=f"{title}, no plan", hoverinfo="skip"))
+            d, edge = _pc_even_odds_start(starts, [r["p_plan"] for r in rs])
+            notes.append(f"{n} by {d:%b %Y}" if d else
+                         f"{n} at every start shown" if edge == "all" else
+                         f"{n} at no start shown")
+        else:
+            ys = [12.0 * r["bought"][1] if np.isfinite(r["bought"][1]) else None
+                  for r in rs]
+        fig.add_trace(go.Scatter(
+            x=starts, y=ys, mode="lines+markers", connectgaps=False,
+            line=dict(color=_PC_TB_COLORS[n], width=2),
+            marker=dict(size=[11 if i == here else 5 for i in range(len(starts))],
+                        color=_PC_TB_COLORS[n], line=dict(color="white", width=1)),
+            name=title,
+            hovertemplate=("%{y:.0f}%" if chance else "%{y:.1f} months")
+                          + " if the plan starts %{x|%b %Y}<extra>" + title + "</extra>"))
+    fig.update_layout(
+        xaxis=dict(title="The plan's first phase starts"),
+        yaxis=(dict(title=f"Chance it comes after {label}", ticksuffix="%",
+                    range=[0, 101]) if chance
+               else dict(title="Median time bought (months)", rangemode="tozero")))
+    st.plotly_chart(_pc_tb_layout(fig), width="stretch")
+    if chance:
+        _fn_caption(
+            f"The whole plan moved earlier and later; the large dot is the plan "
+            f"as set. Even odds or better of coming after {label} need a start "
+            f"for {', for '.join(notes)}.",
+            ("Even odds", "The latest start at which at least half the "
+             "scenarios reach the milestone after the date, read between "
+             "the starts shown. Dotted lines are the chance with no plan."))
+    else:
+        _fn_caption(
+            "The whole plan moved earlier and later; the large dot is the plan "
+            "as set. Median time bought is the middle scenario's delay.",
+            ("Median time bought", "A gap in a line is a start from which at "
+             "least half the scenarios do not reach the milestone inside "
+             "*Project through*. The spread around a median is wide: the "
+             "table's 80% range and the chance view show it."))
+
+
+def _pc_tb_layout(fig):
+    fig.update_layout(height=380, margin=dict(l=10, r=10, t=10, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+                      hovermode="closest")
+    return fig
 
 
 _PC_PLAN_USE_COLORS = ('#1450A3', '#E8871E', '#3A9D5D')   # training, experiments, AI researchers
@@ -22254,23 +22541,12 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # `tk_free` the one with neither, which the no-lever lines read.
     tk = tk_free = _pc_takeoff_us(today)
     _sched = _pc_cut_schedule(today, tk['day']) if tk is not None else None
-    if _sched is not None or (tk is not None and (review is not None or limit is not None)):
-        def _yrs(d):
-            return max((d - tk['day']).days, 0) / 365.25
-        _rule = review and (_yrs(review[0]), float(review[2]),
-                            None if review[1] is None else _yrs(review[1]))
-        # The allowed ECI as a gain over today's frontier, as the simulator takes it.
-        _lim = limit and (_yrs(limit[0]),
-                          None if limit[2] is None
-                          else float(limit[2] - np.median(tk['paths'][:, 0])),
-                          None if limit[1] is None else _yrs(limit[1]))
+    _slow = (_pc_slow_args(tk_free, _sched, review, limit, horizon)
+             if tk is not None else None)
+    if _slow is not None:
         _c0 = min(([_tk_cut_start(_sched)] if _sched else [])
-                  + ([_rule[0]] if review else []) + ([_lim[0]] if limit else []))
-        # Nothing here reads the slowed run past the chart's end: stop it
-        # there plus `_PC_CUT_RUN_PAST` (China's run, the run-length shift).
-        _c_end = (None if horizon is None else float(np.ceil(
-            max((horizon - tk['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
-        tk = _pc_takeoff_us(today, _sched, _c_end, _rule, _lim)
+                  + [r[0] for r in _slow[2:] if r])
+        tk = _pc_takeoff_us(today, *_slow)
         _eq = _pc_cut_equivalent(tk_free, tk, _c0)
         _m1 = np.median(tk['paths'], axis=0)
         with cut_box if cut_box is not None else st.container():
@@ -23384,6 +23660,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                    "catch up quickly by stealing US models** (the weight-theft "
                    "lever tests it).", icon="\u26a0\ufe0f")
     st.table(_ms_rows)
+    if tk is not None:
+        _pc_render_time_bought(today, x_end, _date_of(_t_day), _draw)
 
     # ── Why this US-China gap? The same samples, decomposed by rate term. ──
     _notes = []

@@ -5687,6 +5687,10 @@ class TestPacing:
         assert all(set(ph) == set(vp._PC_PHASE_FIELDS)
                    for phases in presets.values() for ph in phases)
         state.clear()
+        vp._pc_apply_preset(presets["No AI in AI R&D, compute ÷30"])   # both levers, for good
+        assert vp._pc_ai_rule(today)[1:] == (None, None)
+        assert vp._pc_cut_spans(today)[0][2] == pytest.approx((1 / 30,) * 3)
+        state.clear()
         vp._pc_apply_preset(presets["Pause a year, then half speed"])
         vp._pc_add_phase("realloc")      # training compute to experiments
         assert state["pc_win_n"] == 3 and state["pc_win2_pace"] == 50
@@ -5777,6 +5781,27 @@ class TestPacing:
         assert 0.05 < one < three
         assert all(delay(review=(0.5, 3.0), k=k) >= 0 for k in base["when"])
         assert delay((3.0, 0.5, None), (0.5, 3.0)) > delay((3.0, 0.5, None))
+
+    def test_time_bought_reads_delay_per_scenario_and_the_even_odds_start(self):
+        """`_pc_time_bought` takes each scenario's own delay (not the gap
+        between the two medians), counts a milestone the plan's run never
+        reaches as past the date, and leaves out scenarios with nothing to
+        delay; `_pc_even_odds_start` reads the last start still at a half,
+        between the starts given."""
+        inf = np.inf
+        base = np.array([1.0, 2.0, 3.0, inf])
+        plan = np.array([1.5, 4.0, inf, inf])
+        r = vp._pc_time_bought(base, plan, 2.5)
+        assert r["base"] == 2.5 and r["plan"] == inf
+        assert r["bought"][1] == 2.0 and r["bought"][2] == inf
+        assert r["p_base"] == 0.5 and r["p_plan"] == 0.75
+        d = [datetime(2027, 1, 1), datetime(2027, 3, 1), datetime(2027, 5, 1)]
+        when, edge = vp._pc_even_odds_start(d, [0.7, 0.5, 0.3])
+        assert edge is None and when == datetime(2027, 3, 1)
+        when, _ = vp._pc_even_odds_start(d, [0.7, 0.6, 0.4])
+        assert when == datetime(2027, 3, 31, 12)
+        assert vp._pc_even_odds_start(d, [0.9, 0.8, 0.7]) == (None, "all")
+        assert vp._pc_even_odds_start(d, [0.4, 0.3, 0.2]) == (None, "none")
 
     def test_defaults_cover_reset_keys_and_url_tracking(self):
         """Every Pacing default is reset and URL-tracked, as are the RSI

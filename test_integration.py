@@ -3912,6 +3912,74 @@ class TestPacingTab:
         assert both["US, projected"]["y"][-1] < some
         assert "US, no compute cut or AI R&D ban" in both
 
+    def test_time_bought_reads_the_plan_against_no_plan(self):
+        """*Time bought* (`_pc_render_time_bought`) appears once the plan does
+        anything: per milestone the US's median date without and with the
+        plan, each scenario's delay and the chance of coming after a chosen
+        date. Its plan dates are the milestone table's, and its default chart
+        draws each milestone's not-yet share with and without the plan."""
+        def table(at):
+            return next((x.value for x in at.table
+                         if "With the plan (median)" in x.value.columns), None)
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        assert table(at) is None                       # no plan, nothing bought
+        _plan(at, cut=12)
+        _assert_no_error(at, "Pacing / time bought")
+        t = table(at)
+        assert list(t["Milestone"]) == ["Automated coder", "RSI", "Ultraintelligence"]
+        ms = next(x.value for x in at.table if "Gap" in x.value.columns)
+        month = lambda v: datetime.strptime(v[:8], "%b %Y")
+        for i in range(2):
+            a, b = month(t["With the plan (median)"].iloc[i]), month(ms["US (median, 80%)"].iloc[i])
+            assert abs((a.year - b.year) * 12 + a.month - b.month) <= 1
+            assert month(t["No plan (median)"].iloc[i]) < a
+        pct = lambda col, i: int(t[col].iloc[i].rstrip("%"))
+        assert pct("After Mar 2029, with the plan", 1) > pct("After Mar 2029, no plan", 1) + 20
+        assert t["Time bought (median, 80%)"].iloc[1].split(" ")[1] in ("mo", "yr")
+        names = [tr.get("name") for el in at.get("plotly_chart")
+                 for tr in json.loads(el.proto.spec)["data"]]
+        assert "RSI, with the plan" in names and "RSI, no plan" in names
+
+    def test_time_bought_by_start_date_falls_as_the_plan_waits(self):
+        """The *By start date* views move the whole plan through
+        `_PC_TB_SHIFTS` (`_pc_plan_when`, one seeded Takeoff run per start):
+        the chance RSI comes after the date falls as the plan starts later,
+        the start at shift 0 carries the table's own chance, and the median
+        time bought shrinks with the wait."""
+        def lines(at):
+            for el in at.get("plotly_chart"):
+                spec = json.loads(el.proto.spec)
+                if spec["layout"].get("xaxis", {}).get("title", {}).get("text") == \
+                        "The plan's first phase starts":
+                    return {tr["name"]: tr for tr in spec["data"]}
+            raise AssertionError("no by-start chart")
+
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        _plan(at, cut=12, run=False)
+        at.session_state["pc_tb_view"] = vp._PC_TB_VIEWS[1]
+        at.run()
+        _assert_no_error(at, "Pacing / time bought by start, chance")
+        rsi = lines(at)["RSI"]
+        assert len(rsi["y"]) >= 7
+        assert all(b <= a + 2 for a, b in zip(rsi["y"], rsi["y"][1:]))
+        assert rsi["y"][0] > rsi["y"][-1] + 10
+        t = next(x.value for x in at.table if "With the plan (median)" in x.value.columns)
+        here = rsi["marker"]["size"].index(11)
+        assert round(rsi["y"][here]) == int(t["After Mar 2029, with the plan"].iloc[1].rstrip("%"))
+        assert any("or better of coming after Mar 2029" in c.value for c in at.caption)
+
+        at.session_state["pc_tb_view"] = vp._PC_TB_VIEWS[2]
+        at.run()
+        _assert_no_error(at, "Pacing / time bought by start, months")
+        y = [v for v in lines(at)["RSI"]["y"] if v is not None]
+        assert y[0] > y[-1] >= 0
+
     def test_the_plan_builder_sets_phases_presets_and_compute_by_use(self):
         """No plan draws no plan chart. A preset adds its phases to the list;
         a *Reallocate compute* phase shows only its uses and opens with
@@ -4544,12 +4612,12 @@ class TestPacingTab:
             at.selectbox(key="pc_end_year").set_value(yr).run()
             _assert_no_error(at, f"Pacing / through {yr}")
             ends = _ends(at)
-            assert len(ends) == 5, ends
-            # The plan chart, the pause chart and the two compute charts under
-            # it stop on the grid exactly; the threshold timeline pads a few
-            # months past.
-            assert ends[:4] == [yr] * 4, ends
-            assert ends[4] in (yr, yr + 1), ends
+            assert len(ends) == 6, ends
+            # The plan chart, the pause chart, *Time bought* and the two
+            # compute charts stop on the grid exactly; the threshold timeline
+            # pads a few months past.
+            assert ends[:5] == [yr] * 5, ends
+            assert ends[5] in (yr, yr + 1), ends
 
     def test_why_table_nets_out_the_cards_china_lag(self):
         """The Why table's months net out China's release lag from the
