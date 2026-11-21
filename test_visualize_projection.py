@@ -5661,7 +5661,14 @@ class TestPacing:
         assert vp._pc_cut_spans(today) == [(phases[1][0], phases[1][1], (1 / 6,) * 3)]
         state.update(pc_win2_kind="ban", pc_win1_kind="ban")
         assert vp._pc_ban_rule(today) == (phases[0][0], phases[1][1], 3)
-        state["pc_win1_kind"] = "pace"
+        # A ban on AI in AI R&D: one rule over its phases, at the strictest level.
+        assert vp._pc_ai_rule(today) is None
+        state.update(pc_win1_kind="noai", pc_win1_ai=180, pc_win2_kind="noai", pc_win2_ai=160)
+        assert vp._pc_ai_rule(today) == (phases[0][0], phases[1][1], 160)
+        assert vp._pc_ban_rule(today) is None and vp._pc_cut_spans(today) == []
+        state["pc_win2_ai"] = 0
+        assert vp._pc_ai_rule(today)[2] is None
+        state.update(pc_win1_kind="pace", pc_win2_kind="ban")
         assert vp._pc_uses_label((0.25, 0.5, 0.5)) == "training 25%, experiments 50%, AI researchers 50%"
 
         state.update(pc_win_n=1, pc_win1_end=vp._PC_PAUSE_MO_MAX)
@@ -5673,6 +5680,8 @@ class TestPacing:
         assert vp._pc_uses_label((0.5, 0.5, 0.5)) == "R&D compute ÷2"
         assert [vp._pc_uses_label((k,) * 3) for k in (0.17, 0.33, 0.67)] == [
             "R&D compute ÷6", "R&D compute ÷3", "R&D compute ÷1.5"]
+        assert [vp._pc_uses_label((1 / k,) * 3) for k in vp._PC_CUT_OPTIONS[-2:]] == [
+            "R&D compute ÷12", "R&D compute ÷30"]
 
         presets = vp._pc_plan_presets(today)
         assert all(set(ph) == set(vp._PC_PHASE_FIELDS)

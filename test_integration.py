@@ -122,7 +122,7 @@ def _plan(at, run=True, **fields):
         ph = {f: ss[f"pc_win1_{f}"] for f in vp._PC_PHASE_FIELDS}
     else:
         ph = dict(kind="pace", pace=100, cut=2, start=vp._pc_pause_default_mo(),
-                  end=vp._PC_PAUSE_MO_MAX, ban=1, **{u: 100 for u in vp._PC_USES})
+                  end=vp._PC_PAUSE_MO_MAX, ban=1, ai=0, **{u: 100 for u in vp._PC_USES})
     ph.update(fields)
     ss["pc_win_n"] = 1
     for f, v in ph.items():
@@ -3875,6 +3875,42 @@ class TestPacingTab:
         _assert_no_error(at, "Pacing / RSI ban and compute cut")
         assert at.selectbox(key="pc_win2_cut").value == 2
         assert "US, no compute cut or RSI ban" in traces(at)
+
+    def test_a_ban_on_ai_in_ai_rd_slows_the_us(self):
+        """A *Ban AI in AI R&D* phase (`_pc_ai_rule`, `takeoff.simulate`'s
+        `ai_limit`) reruns the US without AI's help in research: the no-ban
+        path stays as a dotted line above it, and allowing models up to an
+        ECI level slows the US less than banning all AI."""
+        def traces(at):
+            for el in at.get("plotly_chart"):
+                d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                if "China, projected" in d:
+                    return d
+            raise AssertionError("no pause chart")
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.button(key="pc_add_noai").click().run()
+        _assert_no_error(at, "Pacing / AI R&D ban")
+        assert at.selectbox(key="pc_win1_ai").value == 0
+        d = traces(at)
+        assert d["US, no AI R&D ban"]["line"]["dash"] == "dot"
+        none = d["US, projected"]["y"][-1]
+        assert none < d["US, no AI R&D ban"]["y"][-1] - 5
+
+        at.selectbox(key="pc_win1_ai").set_value(200).run()
+        _assert_no_error(at, "Pacing / AI R&D ban above ECI 200")
+        some = traces(at)["US, projected"]["y"][-1]
+        assert none < some < d["US, no AI R&D ban"]["y"][-1]
+
+        # With the deepest compute cut on offer as well: both levers named.
+        at.button(key="pc_add_cut").click().run()
+        at.selectbox(key="pc_win2_cut").set_value(30).run()
+        _assert_no_error(at, "Pacing / AI R&D ban and compute cut ÷30")
+        both = traces(at)
+        assert both["US, projected"]["y"][-1] < some
+        assert "US, no compute cut or AI R&D ban" in both
 
     def test_the_plan_builder_sets_phases_presets_and_compute_by_use(self):
         """No plan draws no plan chart. A preset adds its phases to the list;

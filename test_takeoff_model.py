@@ -1337,6 +1337,34 @@ def test_a_review_rule_with_an_end_lifts_at_the_end():
         tk.simulate(dict(years=5), review=(1.0, 1.0, 1.0), **kw)
 
 
+def test_an_ai_limit_keeps_ai_above_a_level_out_of_research():
+    """`ai_limit` = (start, level[, end]): research gets the help of a model
+    at `level`, so a level no model reaches changes nothing, lower levels
+    slow capability more, and no AI at all (None) most, with every hour
+    people's and the pace under today's; RSI stays a capability test, reached
+    later but still reached; an end lifts it; a follower's run refuses it."""
+    kw = dict(n=60, onset_years=np.full(60, 0.5))
+    free = tk.simulate(dict(years=5), **kw)
+    cap = lambda r: np.median(r["workflow_progress"]["capability_log"][:, -1])
+    high = tk.simulate(dict(years=5), ai_limit=(0.0, 1e6), **kw)
+    np.testing.assert_array_equal(high["workflow_progress"]["capability_log"],
+                                  free["workflow_progress"]["capability_log"])
+    runs = {lv: tk.simulate(dict(years=5), ai_limit=(0.0, lv), **kw)
+            for lv in (2.0, 0.0, -1.0, None)}
+    assert cap(free) > cap(runs[2.0]) > cap(runs[0.0]) > cap(runs[-1.0]) > cap(runs[None])
+    wp = runs[None]["workflow_progress"]
+    assert (np.median(wp["pace"][:, 1:13], axis=0) < 1).all()
+    assert np.isfinite(runs[0.0]["events"]["RSI"]).any()
+    assert np.median(runs[0.0]["events"]["RSI"]) > np.median(free["events"]["RSI"])
+    ends = tk.simulate(dict(years=5), ai_limit=(0.0, None, 2.0), **kw)
+    years = wp["years"]
+    np.testing.assert_array_equal(ends["workflow_progress"]["capability_log"][:, years < 2.0],
+                                  wp["capability_log"][:, years < 2.0])
+    assert cap(free) > cap(ends) > cap(runs[None])
+    with pytest.raises(ValueError, match="AI limit"):
+        tk.simulate(dict(years=5), ai_limit=(-1.0, None), **kw)
+
+
 # ── The compiled step loop (`_k_draw`) against the numpy loop ──
 
 def _loops_agree(monkeypatch, params, n, **kw):
@@ -1378,7 +1406,7 @@ def _per_draw_curves(n, rng):
 @pytest.mark.parametrize("case", [
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
     "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
-    "human_uplift"])
+    "human_uplift", "no_ai", "ai_frozen", "ai_frozen_behind"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1422,6 +1450,13 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
                "agents": -0.3 * ramp}
         _loops_agree(monkeypatch, dict(years=6), n, compute_cut=(grid, cut),
                      review=(1.0, 2.0, 4.0), **app)
+    elif case == "no_ai":
+        _loops_agree(monkeypatch, dict(years=6), n, ai_limit=(1.0, None, 4.0), **app)
+    elif case == "ai_frozen":
+        _loops_agree(monkeypatch, dict(years=6), n, ai_limit=(0.5, 6.0), **app)
+    elif case == "ai_frozen_behind":
+        _loops_agree(monkeypatch, dict(years=6), n, ai_limit=(1.0, -8.0),
+                     compute_cut=(grid, np.log(2) * (grid > 2)), **app)
     elif case == "paths":
         cp = np.cumsum(rng.uniform(0, 0.2, (n, len(grid))), axis=1)
         _loops_agree(monkeypatch, dict(years=6), n, compute_path=(grid, cp),

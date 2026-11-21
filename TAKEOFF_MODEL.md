@@ -205,7 +205,13 @@ runs to the horizon, so its capability path continues past RSI. A review rule
 until `end` (for good without one) and holds each successor's validation and each fast cycle
 finishing in that span to at least `months`
 (`test_a_review_rule_ends_autopilot_and_holds_each_gain_for_review`,
-`test_a_review_rule_with_an_end_lifts_at_the_end`).
+`test_a_review_rule_with_an_end_lifts_at_the_end`). An AI limit
+(`simulate(ai_limit=(start, level[, end]))`, Pacing's ban on AI in AI R&D) gives research only
+the help of a model at `level` (an ECI gain over today's; None for no AI, which also idles agent
+compute) from `start`: hours handed over, coding, copies and judgment read that model, autopilot
+and the trend proxy are off, and labor never falls below the staff alone. Training goes on and
+the milestones stay capability tests, so RSI is when a model could direct research, used or not
+(`test_an_ai_limit_keeps_ai_above_a_level_out_of_research`).
 The stages are direction, experiment design/interpretation, and verification/integration.
 Human hours follow the R&D automation index's own projection rather than an exponential:
 the share of tasks at each level over the coming years (AL4 at the milestone card's median

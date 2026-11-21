@@ -127,7 +127,8 @@ so 0 keeps the gain under Amdahl's h0/h bound. `coding_log` is computed before `
 for this; theta 1 is the old step bit for bit
 (`test_human_uplift_one_is_the_old_labor_equation_and_zero_slows_milestones`, the
 compiled-loop `human_uplift` case). It is not deliberate human review held for safety,
-which is Pacing's ban scenario (`review=`). The calibration reads theta through
+which is Pacing's ban scenario (`review=`), nor a ban on using AI for research at all
+(`ai_limit=`, in both step loops: the compiled-loop `no_ai` and `ai_frozen*` cases). The calibration reads theta through
 `takeoff.uplift_draws` (`UPLIFT_GRID` quantiles of the same logit-normal, seed-free) and
 `takeoff.coding_labor` (the window's K^theta (1 - T + T A), A with AI's share sped
 K^(1 - theta)x): `_tk_survey_coding` solves the one coding slope whose window coding multiple,

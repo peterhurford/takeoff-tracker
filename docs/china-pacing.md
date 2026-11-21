@@ -440,6 +440,7 @@ A rerun whose Pacing settings differ from the last one drawn (`_pc_loading_start
 `_PC_LOADING_STEPS` (US rerun, China's takeoff, charts) and the dispatch clears; a rerun
 that changes no setting draws none, so opening a section does not flash it
 (`test_pacing_shows_a_loading_pill_only_when_its_settings_change`).
+A *Ban AI in AI R&D* phase (`pc_win{i}_ai`, `_PC_AI_OPTIONS`: 0 for all AI, else the highest ECI allowed) runs on the same rerun path: `_pc_ai_rule` makes one ban over its phases at the strictest level, and `_pc_render_us_pause` hands `takeoff.simulate(ai_limit=…)` that ECI as a gain over today's frontier (the simulator's unit). `_pc_phase_effect` gives the phase no pace, compute or review, so the rule reads the setting itself (`test_plan_phases_carry_pace_and_compute_into_the_schedule`, `test_a_ban_on_ai_in_ai_rd_slows_the_us`).
 A *Ban runaway RSI* phase (`pc_win{i}_ban`, `_PC_BAN_OPTIONS`, review months, opening at 1) runs on the same rerun path: `_pc_ban_rule` makes one ban from the first banning phase's start to the last one's end
 (for good when that is the last month on offer) at the longest review, and
 `takeoff.simulate(review=(start, months, end))` ends autopilot and holds every successor model
