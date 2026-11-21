@@ -7,7 +7,8 @@ for numba compiling the step loop and empty caches (a minute or more on Cloud).
 It holds a Streamlit session open on the Takeoff tab; Cloud's redeploy shows up
 as the server dropping the connection or a `script_changed_on_disk` event, and
 the warmer then reconnects and runs the tab once more. Exits 0 when that run
-finishes with no exception on the page, 1 otherwise (or no redeploy seen).
+finishes with no exception on the page, 1 otherwise. With no signal by
+`--wait`, it warms anyway.
 """
 import argparse
 import asyncio
@@ -92,12 +93,12 @@ async def _warm(args):
         print(f"waiting up to {args.wait:.0f}s for the redeploy...", flush=True)
         status, _, secs = await _run(ws, args.tab, args.timeout)
         print(f"  current version: {status} in {secs:.0f}s", flush=True)
-        if not await _await_redeploy(ws, args.wait):
-            await ws.close()
-            print("no redeploy seen; is the push still building, or already live?")
-            return 1
+        seen = await _await_redeploy(ws, args.wait)
         await ws.close()
-        print("redeploy seen; warming", flush=True)
+        # A push touching no file the app imports changes nothing it runs, so
+        # Cloud neither restarts nor signals; warm anyway, which costs seconds.
+        print("redeploy seen; warming" if seen else
+              "no redeploy seen (no app file changed?); warming anyway", flush=True)
         ws = await _connect_retrying(args.url, time.time() + args.wait)
     async with ws:
         status, errors, secs = await _run(ws, args.tab, args.timeout)
