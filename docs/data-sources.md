@@ -10,7 +10,8 @@ the full recipe, including the AISI cyber data deliberately *not* ingested.
 
 | File / table | Source | How to refresh |
 |---|---|---|
-| `benchmark_results_1_1.yaml` | METR | Overwrite from `https://metr.org/assets/benchmark_results_1_1.yaml` |
+| `benchmark_results_1_1.yaml` | METR | Overwrite from `https://metr.org/assets/benchmark_results_1_1.yaml`. TH1.1 only; `load_metr_all` overrides it with the pooled file below for the models in both |
+| `metr_q4_2026_horizons.csv`, `metr_q4_2026_mci.csv` | METR, [Q4 2026 capability update](https://metr.org/blog/2026-11-20-q4-2026-capability-update/) | **Copied, not digitized**: the per-figure chart JSON the page serves (`metr.org/assets/images/q4-2026-capability-update/<hash>.json`). The app reads the horizons file's figure 10 rows (pooled TH1.1 + TH2) and figure 15 `logit_slope`; the other figures and the MCI file are reference only. A later METR update is a new file, or new rows here keyed by `figure`; a model METR adds needs a `_NAMES` entry, and one already in the yaml a `_METR_COMBINED_KEYS` entry |
 | `epoch_capabilities_index.csv` | Epoch AI | **Converted, not extracted**: `python3 convert_eci.py eci_scores.csv all_ai_models.csv epoch_capabilities_index.csv` from `https://epoch.ai/data/eci_scores.csv` and `https://epoch.ai/data/all_ai_models.csv`. One row per model; training compute joins by name, with `ALIASES` for renames (`test_convert_eci.py`; the script prints stale ones). Epoch recomputes scores live, so existing rows drift on each pull |
 | `data_centers.csv` | Epoch AI | Overwrite from `https://epoch.ai/data/data_centers/data_centers.csv` |
 | `data_center_timelines.csv` | Epoch AI | Same, `…/data_center_timelines.csv`. Column order varies between pulls; the loader uses `DictReader`, so that's safe. **Check for orphan rows — see below** |

@@ -16,6 +16,7 @@ Four downloadable feeds, three hardcoded tables, and hand-read, transcribed or d
 | Source | Type | Canonical location |
 |---|---|---|
 | `benchmark_results_1_1.yaml` (METR) | download | `https://metr.org/assets/benchmark_results_1_1.yaml` |
+| `metr_q4_2026_horizons.csv` (METR, pooled TH1.1 + TH2) | chart JSON beside each figure of a METR capability update | No standing URL: check `metr.org/blog` for a newer update. A 2026 model that appears only in the yaml is drawn but kept off the frontier (`docs/tabs.md`, METR Horizon row) |
 | `epoch_capabilities_index.csv` (ECI) | download two files + convert | `https://epoch.ai/data/eci_scores.csv` and `https://epoch.ai/data/all_ai_models.csv`, then `python3 convert_eci.py eci_scores.csv all_ai_models.csv epoch_capabilities_index.csv` (one row per model; it prints any stale `ALIASES`) |
 | `data_centers.csv` | download | `https://epoch.ai/data/data_centers/data_centers.csv` |
 | `data_center_timelines.csv` | download | `https://epoch.ai/data/data_centers/data_center_timelines.csv` |

@@ -276,6 +276,11 @@ _NAMES = {
     'claude_mythos_preview_early_inspect': 'Claude Mythos',
     'claude_4_1_opus_inspect': 'Claude 4.1 Opus', 'gemini_3_1_pro': 'Gemini 3.1 Pro',
     'gpt_5_4': 'GPT-5.4',
+    'Claude Opus 4.7': 'Claude 4.7 Opus', 'GPT-5.5': 'GPT-5.5',
+    'Claude Opus 4.8': 'Claude 4.8 Opus', 'Claude Fable 5': 'Claude Fable 5',
+    'GPT-5.6 Sol': 'GPT-5.6 Sol', 'Claude Opus 5': 'Claude Opus 5',
+    'Claude Fable 5.1': 'Claude Fable 5.1', 'GPT-6 Astra': 'GPT-6 Astra',
+    'Claude Opus 5.5': 'Claude Opus 5.5',
 }
 
 
@@ -1059,12 +1064,68 @@ def _backtest_summary(backtest_results):
 # ── Data loading ─────────────────────────────────────────────────────────
 
 def _yaml_mtime():
-    yaml_path = os.path.join(os.path.dirname(__file__), 'benchmark_results_1_1.yaml')
-    return os.path.getmtime(yaml_path)
+    """Cache key for `load_metr_all`: both files it reads."""
+    here = os.path.dirname(__file__)
+    return tuple(os.path.getmtime(os.path.join(here, f))
+                 for f in ('benchmark_results_1_1.yaml', _METR_COMBINED_FILE))
+
+
+# METR's Q4 2026 update reran 15 models, GPT-4o on, on TH1.1 pooled with the
+# longer TH2 suite. Those models take the pooled values; the rest keep TH1.1's.
+_METR_COMBINED_FILE = 'metr_q4_2026_horizons.csv'
+# The pooled file's model name -> the yaml key it replaces.
+_METR_COMBINED_KEYS = {
+    'GPT-4o': 'gpt_4o_inspect', 'o1': 'o1_inspect',
+    'GPT-5': 'gpt_5_2025_08_07_inspect',
+    'Claude Opus 4.5': 'claude_opus_4_5_inspect',
+    'Claude Opus 4.6': 'claude_opus_4_6_inspect', 'GPT-5.4': 'gpt_5_4',
+}
+# TH1.1's longest task is 30 h, so a model first measured from this date on and
+# not rerun on the pooled suite sits at the old suite's ceiling: charted, never
+# frontier.
+_METR_TH11_TRUSTED_BEFORE = datetime(2026, 1, 1)
+
+
+def _metr_combined_rows():
+    """The pooled-suite models as `load_metr_all` rows (minutes).
+
+    `p50_lo`/`p50_hi` are METR's 95% bounds, as the yaml's are; `*_lo80`/`*_hi80`
+    its 80% bounds, which is what a position prior wants (`_metr_pos_ci`). The
+    post has no pooled 80%-success series: p80 is p50 scaled by each model's own
+    logistic slope (the file's figure 15 rows).
+    """
+    with Path(__file__).with_name(_METR_COMBINED_FILE).open() as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith('#')))
+    slope = {r['model']: float(r['logit_slope']) for r in rows if r['figure'] == '15'}
+    out = []
+    for r in rows:
+        if r['figure'] != '10':
+            continue
+        ratio = np.exp(np.log(4) / slope[r['model']])
+        m = {'name': _METR_COMBINED_KEYS.get(r['model'], r['model']),
+             'date': datetime.strptime(r['released'], '%Y-%m-%d'),
+             'is_sota': r['frontier'] == '1', 'suite': 'combined'}
+        for k, col in (('_min', 'horizon_minutes'), ('_lo', 'low_95'), ('_hi', 'high_95'),
+                       ('_lo80', 'low_80'), ('_hi80', 'high_80')):
+            m['p50' + k] = float(r[col])
+            m['p80' + k] = float(r[col]) * ratio
+        out.append(m)
+    return out
+
+
+def _metr_pos_ci(m, val_key):
+    """(lo, hi) minutes for a position prior on model `m`: METR's 80% bounds
+    where the row has them, else its published interval, else the value."""
+    stem = val_key[:-4]
+    return (m.get(stem + '_lo80') or m.get(stem + '_lo') or m[val_key],
+            m.get(stem + '_hi80') or m.get(stem + '_hi') or m[val_key])
 
 
 @st.cache_data
 def load_metr_all(mtime=None):
+    """Every METR model, oldest first: the pooled TH1.1 + TH2 values for the
+    models METR reran (`suite` 'combined'), TH1.1's for the rest ('th11'), and
+    'th11_only' for those past TH1.1's range (`_METR_TH11_TRUSTED_BEFORE`)."""
     yaml_path = os.path.join(os.path.dirname(__file__), 'benchmark_results_1_1.yaml')
     with open(yaml_path, 'r') as f:
         raw = yaml.safe_load(f)
@@ -1089,9 +1150,15 @@ def load_metr_all(mtime=None):
                 'name': key, 'date': rd,
                 'p50_min': p50, 'p50_lo': p50_lo, 'p50_hi': p50_hi,
                 'p80_min': p80, 'p80_lo': p80_lo, 'p80_hi': p80_hi,
-                'is_sota': is_sota,
+                'is_sota': is_sota, 'suite': 'th11',
             })
 
+    combined = _metr_combined_rows()
+    rerun = {m['name'] for m in combined}
+    models = [m for m in models if m['name'] not in rerun] + combined
+    for m in models:
+        if m['suite'] == 'th11' and m['date'] >= _METR_TH11_TRUSTED_BEFORE:
+            m['suite'], m['is_sota'] = 'th11_only', False
     models.sort(key=lambda m: m['date'])
     return models
 
@@ -4045,6 +4112,9 @@ _METR_DEFAULTS = {
     "metr_end_year": _default_end_year([m['date'] for m in frontier_all]),
 }
 
+_METR_SPLICE_CAPTION = ("The 15 models METR reran in November 2026, GPT-4o on, are "
+                        "measured on its pooled suite; earlier models, and the 2026 "
+                        "ones run on the older suite alone, on Time Horizon 1.1.")
 _METR_DT_HELP = "Doubling time of the horizon, 80% interval."
 _METR_POS_HELP = ("Uncertainty in where the trend is today; sets the spread, not the "
                   "centre.")
@@ -4101,8 +4171,6 @@ def render_metr():
         # Read p80 toggle from session state (widget rendered below, but state persists)
         _sidebar_p80 = st.session_state.get('p80', False)
         _sb_val_key = 'p80_min' if _sidebar_p80 else 'p50_min'
-        _sb_lo_key = 'p80_lo' if _sidebar_p80 else 'p50_lo'
-        _sb_hi_key = 'p80_hi' if _sidebar_p80 else 'p50_hi'
 
         custom_pos_lo = custom_pos_hi = custom_dt_lo = custom_dt_hi = None
         custom_dt_dist = "Lognormal"
@@ -4188,9 +4256,8 @@ def render_metr():
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
 
-                _cur = frontier_all[proj_as_of_idx]
-                _def_lo_hrs = (_cur.get(_sb_lo_key) or _cur[_sb_val_key]) / 60
-                _def_hi_hrs = (_cur.get(_sb_hi_key) or _cur[_sb_val_key]) / 60
+                _def_lo_hrs, _def_hi_hrs = (
+                    v / 60 for v in _metr_pos_ci(frontier_all[proj_as_of_idx], _sb_val_key))
                 _pos_lo_col, _pos_hi_col = st.columns(2)
                 _p_suffix = "_p80" if _sidebar_p80 else "_p50"
                 custom_pos_lo = _ss_number_input(_pos_lo_col,
@@ -4253,9 +4320,8 @@ def render_metr():
                 if superexp_dt_ci_lo > superexp_dt_ci_hi:
                     st.error("DT CI low must be ≤ DT CI high.")
                     st.stop()
-                _cur = frontier_all[proj_as_of_idx]
-                _def_lo_hrs = (_cur.get(_sb_lo_key) or _cur[_sb_val_key]) / 60
-                _def_hi_hrs = (_cur.get(_sb_hi_key) or _cur[_sb_val_key]) / 60
+                _def_lo_hrs, _def_hi_hrs = (
+                    v / 60 for v in _metr_pos_ci(frontier_all[proj_as_of_idx], _sb_val_key))
                 _se_pos1, _se_pos2 = st.columns(2)
                 _p_suffix_se = "_p80" if _sidebar_p80 else "_p50"
                 superexp_pos_lo = _ss_number_input(_se_pos1,
@@ -4272,7 +4338,10 @@ def render_metr():
             "GPT-4o+ only", key="post_gpt4o",
             help="Fit the trend only to frontier models from GPT-4o (May 2024) on.")
         use_p80 = st.toggle("Use p80", key="p80",
-                            help="Tasks completed 80% of the time instead of 50%.")
+                            help="Tasks completed 80% of the time instead of 50%. "
+                                 "For models on METR's newer pooled suite it is "
+                                 "derived: the 50% horizon scaled by the steepness "
+                                 "of that model's success curve.")
         use_log_scale = st.toggle("Log scale", key="log_scale")
         hours_only = st.toggle("Hours only", key="hours_only")
 
@@ -4623,13 +4692,16 @@ def render_metr():
         if m['is_sota']:
             continue
         m_log2 = np.log2(m[_val_key])
-        if m_log2 < _metr_nf_cutoff:
+        _th11_only = m['suite'] == 'th11_only'
+        if m_log2 < _metr_nf_cutoff and not _th11_only:
             continue
         if only_post_gpt4o and m['date'] < _gpt4o_date:
             continue
         lv = _yconv(m_log2)
         hrs = m[_val_key] / 60
         hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{fmt_hrs(hrs, hours_only=hours_only)}"
+        if _th11_only:
+            hover += "<br>Older suite only (tasks to 30 h): not in the trend"
         fig.add_trace(go.Scatter(
             x=[m['date']], y=[lv],
             mode='markers' + ('+text' if show_labels else ''),
@@ -4770,6 +4842,15 @@ def render_metr():
                through=[("METR", _newest(m['date'] for m in metr_all))])
     cards = st.container()   # the cards are computed after the chart, shown above it
     st.plotly_chart(_tf(fig), width="stretch")
+    _fn_caption(
+        _METR_SPLICE_CAPTION,
+        ("pooled suite", "TH1.1 with the longer TH2 tasks added (to 200 h), from METR's "
+                         "Q4 2026 capability update. Where a model has both readings they "
+                         "agree within about 12%, except Claude 4.6 Opus (12 h on the older "
+                         "suite, 6.4 h pooled)."),
+        ("older suite alone", "TH1.1's longest task is 30 h, so a 2026 model measured "
+                              "only there is at the suite's ceiling. Hollow grey, not in "
+                              "the trend."))
     if is_backtesting and backtest_results:
         _backtest_summary(backtest_results)
 
@@ -20284,7 +20365,6 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     chosen series. Returns None if the segment slope is flat or negative.
     """
     n = n or N_SAMPLES
-    lo_key, hi_key = val_key[:-4] + '_lo', val_key[:-4] + '_hi'
     base = frontier[0]['date']
     days = np.array([(m['date'] - base).days for m in frontier[gpt4o_idx:]],
                     dtype=float)
@@ -20297,8 +20377,7 @@ def _pc_metr_eta(frontier, val_key, target_hrs=_PC_METR_TARGET_HRS, n=None,
     proj_dt = _lognormal_from_ci(max(10, round(dt / 2)), dt * 2, n)
     fitted_hrs = 2 ** (np.mean(log2_disp - slope * days) + slope * days[-1]) / 60
     cur = frontier[-1]
-    pos_lo = (cur.get(lo_key) or cur[val_key]) / 60
-    pos_hi = (cur.get(hi_key) or cur[val_key]) / 60
+    pos_lo, pos_hi = (v / 60 for v in _metr_pos_ci(cur, val_key))
     sigma = max((np.log(pos_hi) - np.log(pos_lo)) / (2 * 1.282), 0.0)
     start_hrs = np.random.lognormal(np.log(fitted_hrs), sigma, n)
     days_to = np.log2(target_hrs / start_hrs) * proj_dt

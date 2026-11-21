@@ -365,6 +365,56 @@ class TestLoadFrontier:
         missing = [m['name'] for m in vp.load_frontier() if m['p80_min'] is None]
         assert missing == []
 
+    def test_rerun_models_take_the_pooled_suite_values(self):
+        """A model in both files appears once, under its yaml key, with the
+        pooled value; the GPT-4o anchor still resolves."""
+        by = {m['name']: m for m in vp.metr_all}
+        assert len(by) == len(vp.metr_all)
+        for key in vp._METR_COMBINED_KEYS.values():
+            assert by[key]['suite'] == 'combined', key
+        assert by['gpt_4o_inspect']['p50_min'] == pytest.approx(7.11244)
+        assert vp.frontier_all[vp.gpt4o_idx]['name'] == 'gpt_4o_inspect'
+        assert sum(m['suite'] == 'combined' for m in vp.metr_all) == 15
+
+    def test_frontier_only_rises_across_the_splice(self):
+        """Two suites share one frontier, so its p50 never steps down, and the
+        newest frontier model is a pooled-suite one."""
+        p50 = [m['p50_min'] for m in vp.frontier_all]
+        assert p50 == sorted(p50)
+        assert vp.frontier_all[-1]['suite'] == 'combined'
+
+    def test_2026_models_on_th11_alone_stay_out_of_the_frontier(self):
+        """TH1.1 tops out at 30 h: a 2026 model METR did not rerun is charted
+        but never fitted, whatever the yaml's is_sota says."""
+        only = [m for m in vp.metr_all if m['suite'] == 'th11_only']
+        assert {vp.pretty(m['name']) for m in only} >= {'Claude Mythos'}
+        assert all(m['date'].year >= 2026 and not m['is_sota'] for m in only)
+        assert all(m['suite'] != 'th11' or m['date'].year < 2026 for m in vp.metr_all)
+
+    def test_pooled_p80_is_p50_scaled_by_the_models_own_slope(self):
+        """METR publishes no pooled 80% series; the ratio comes from the
+        figure 15 logistic slope, so it is below 1 and differs by model."""
+        ratios = {m['name']: m['p80_min'] / m['p50_min']
+                  for m in vp.metr_all if m['suite'] == 'combined'}
+        assert all(0.05 < r < 0.5 for r in ratios.values()), ratios
+        assert ratios['gpt_4o_inspect'] == pytest.approx(np.exp(np.log(4) / -0.8254), rel=1e-3)
+        assert len({round(r, 3) for r in ratios.values()}) > 10
+
+    def test_position_prior_uses_the_80_percent_bounds_when_published(self):
+        """`p50_lo`/`p50_hi` are 95% bounds on pooled rows; the prior reads them
+        as 80%, so it takes the 80% pair there and the yaml's pair elsewhere."""
+        astra = vp.frontier_all[-1]
+        lo, hi = vp._metr_pos_ci(astra, 'p50_min')
+        assert (lo, hi) == (astra['p50_lo80'], astra['p50_hi80'])
+        assert astra['p50_lo'] < lo < hi < astra['p50_hi']
+        old = vp.frontier_all[0]
+        assert vp._metr_pos_ci(old, 'p50_min') == (old['p50_lo'], old['p50_hi'])
+        assert vp._metr_pos_ci({'p50_min': 5.0}, 'p50_min') == (5.0, 5.0)
+
+    def test_splice_caption_anchors_both_notes(self):
+        for phrase in ('pooled suite', 'older suite alone'):
+            assert phrase in vp._METR_SPLICE_CAPTION
+
 
 def _assert_running_max_flags(data, score):
     """Every model is flagged exactly when it is its date's best and beats
