@@ -8,6 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 streamlit run visualize_projection.py    # http://localhost:8501
 ```
 
+After every push to `master`, run `python warm_deploy.py` (background is fine): it waits
+for Streamlit Cloud's redeploy and runs the Takeoff tab once, so the first visitor does not
+sit on "step 2 of 4" for a minute or more while numba compiles. `--now` warms without waiting.
+
 ## Random seed
 
 Every tab's rerun draws its Monte Carlo inside `_seeded_rng(_APP_SEED)` (the dispatch), so
