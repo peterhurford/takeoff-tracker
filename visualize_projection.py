@@ -18646,7 +18646,11 @@ _PC_CUT_OPTIONS = [2, 3, 6, 10, 12, 30]
 # only its own setting(s) and dates, and `_pc_phase_effect` reads only those.
 _PC_PHASE_KINDS = {"pace": "Pace the US", "cut": "Cut US R&D compute",
                    "realloc": "Reallocate compute", "ban": "Ban runaway RSI",
-                   "noai": "Ban AI in AI R&D"}
+                   "noai": "Ban AI in AI R&D", "hold": "Freeze training compute"}
+# A *Freeze training compute* phase's kept shares: training's is not a share
+# but its level at the phase's start, which only the Takeoff rerun knows
+# per scenario (`takeoff.simulate(train_hold=…)`).
+_PC_HOLD = ("hold", 1.0, 1.0)
 # Months the time-bought sweep moves the whole plan by, 0 being the plan as set.
 _PC_TB_SHIFTS = tuple(range(-12, 19, 3))
 
@@ -18815,6 +18819,8 @@ def _pc_cut_plan_note(eq, moved, banned):
 def _pc_uses_label(kept):
     """A compute change's label on the chart: "R&D compute ÷2" for every use
     alike, else each use that changes ("training 50%, experiments 150%")."""
+    if kept == _PC_HOLD:
+        return "training compute frozen"
     if len(set(kept)) == 1:
         n = round(1 / kept[0])   # 17% and 33% read as ÷6 and ÷3
         return (f"R&D compute ÷{n if abs(n * kept[0] - 1) < 0.05 else round(1 / kept[0], 1):g}"
@@ -18867,6 +18873,7 @@ def _pc_plan_presets(today):
             for k, p in enumerate((75, 50, 25, 50, 75))),
         "Two years of half training compute": (phase("realloc", 0, 24, train=50),),
         "No AI in AI R&D, compute ÷30": (phase("noai", 0), phase("cut", 0, cut=30)),
+        "No AI in AI R&D, training compute frozen": (phase("noai", 0), phase("hold", 0)),
     }
 
 
@@ -18964,7 +18971,8 @@ def _pc_render_plan_builder(today):
             "ban": (("ban", "Review per gain", _PC_BAN_OPTIONS,
                      lambda m: f"{m} month" + ("s" if m > 1 else "")),),
             "noai": (("ai", "Banned", _PC_AI_OPTIONS,
-                      lambda e: f"AI above ECI {e}" if e else "All AI"),)}
+                      lambda e: f"AI above ECI {e}" if e else "All AI"),),
+            "hold": ()}
         dates = (("start", "Starts", months[:-1], month), ("end", "Ends", months, month))
         for i in range(1, win_n + 1):
             kind = _pc_phase_kind(i)
@@ -19027,6 +19035,12 @@ _PC_PHASE_HELP = {
             "that ran AI researchers). Labs still train new models, so "
             "automated coding and RSI stay dates a model could do them, used "
             "or not. This reruns the Takeoff model, as a compute cut does.",
+    "hold": "Adds a phase in which US labs may not train on more compute than "
+            "they had when it starts: each model's training compute stays at "
+            "that level while compute for experiments and AI researchers "
+            "keeps growing. Against no plan that is a training cut that "
+            "deepens every month (about ÷3 after a year at 3× a year "
+            "growth). This reruns the Takeoff model, as a compute cut does.",
 }
 
 
@@ -19046,7 +19060,8 @@ def _pc_phase_effect(i):
     return (get("start"), get("end"),
             get("pace") / 100.0 if kind == "pace" else 1.0,
             tuple(get(u) / 100.0 for u in _PC_USES) if kind == "realloc"
-            else (1.0 / get("cut"),) * 3 if kind == "cut" else (1.0, 1.0, 1.0),
+            else (1.0 / get("cut"),) * 3 if kind == "cut"
+            else _PC_HOLD if kind == "hold" else (1.0, 1.0, 1.0),
             get("ban") if kind == "ban" else 0)
 
 
@@ -19058,7 +19073,7 @@ def _pc_add_phase(kind):
     for f in _PC_PHASE_FIELDS:
         st.session_state[f"pc_win{n}_{f}"] = _PC_DEFAULTS[f"pc_win{n}_{f}"]
     st.session_state[f"pc_win{n}_kind"] = kind
-    if kind in ("cut", "ban", "noai"):
+    if kind in ("cut", "ban", "noai", "hold"):
         st.session_state[f"pc_win{n}_end"] = _PC_PAUSE_MO_MAX
 
 
@@ -19083,7 +19098,9 @@ def _pc_render_plan_chart(box, today, pause_d, pace, horizon):
         _fn_caption(
             "The plan: the pace the US runs at, and each use's R&D compute "
             "against no plan.",
-            ("R&D compute", "Compute changes rerun the Takeoff model, so the US "
+            ("R&D compute", "A training freeze is drawn for the median scenario's "
+             "compute growth; each scenario runs on its own. Compute changes "
+             "rerun the Takeoff model, so the US "
              "slows by less than a cut (researchers and algorithms carry on) "
              "and speeds up when compute moves into research. The pace then "
              "applies on top of that path."))
@@ -21378,14 +21395,34 @@ def _pc_plan_fig(today, pause_d, pace, horizon):
     spans = _pc_cut_spans(today)
     dates = sorted({today, horizon, *(d for d, _ in chg),
                     *(d for a, b, _ in spans for d in (a, b) if d is not None)})
+    # A training freeze deepens month by month: the median scenario's
+    # compute growth since its start, Takeoff's own rate and slowdown.
+    holds = [(a, b) for a, b, k in spans if k == _PC_HOLD]
+    run = _tk_run_seeded(today.replace(hour=0, minute=0, second=0, microsecond=0)) \
+        if holds else None
+    grown = None
+    if isinstance(run, dict) and "error" not in run:
+        prm, rates = run["result"]["params"], run["inputs"]["rest"][3]
+        rate = float(np.median(rates)) if rates is not None else np.log(prm["compute_growth"])
+
+        def grown(d):
+            return takeoff.log_level(max((d - today).days, 0) / 365.25, rate,
+                                     rate * prm["compute_slowdown"] / 100,
+                                     prm["compute_slow_years"])
+        h0, h1 = min(a for a, _ in holds), max(b for _, b in holds)
+        dates = sorted({*dates, *(_pc_add_months(h0, m) for m in range(
+            1, (min(h1, horizon).year - h0.year) * 12 + min(h1, horizon).month - h0.month + 1))})
     dates = [d for d in dates if today <= d <= horizon]
 
     def pace_at(d):
         return next((p for when, p in reversed(chg) if when <= d), 1.0)
 
     def kept_at(d, i):
-        return float(np.prod([k[i] for a, b, k in spans
-                              if a <= d and (b is None or d < b)]))
+        kept = float(np.prod([k[i] for a, b, k in spans
+                              if a <= d and (b is None or d < b) and k != _PC_HOLD]))
+        if i == 0 and grown is not None and h0 <= d < h1:
+            kept *= float(np.exp(-max(grown(d) - grown(h0), 0.0)))
+        return kept
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.12,
                         row_heights=[0.45, 0.55])
     fig.add_trace(go.Scatter(
@@ -26828,7 +26865,8 @@ def _tk_cut_path(cut, horizon):
     gives each span the share of its compute each use keeps (0.5 halves it,
     1.5 moves half as much again into it): spans that overlap multiply, and
     the result is one log path per use (`takeoff.COMPUTE_USES`), or a single
-    path when every span treats the three alike and only cuts."""
+    path when every span treats the three alike and only cuts. A span whose
+    shares are `_PC_HOLD` is no cut here but `_tk_cut_hold`'s."""
     if cut is None:
         return None
     years = np.linspace(0, horizon, int(round(horizon * 96)) + 1)
@@ -26840,13 +26878,25 @@ def _tk_cut_path(cut, horizon):
     if not isinstance(cut[0], tuple):
         factor, start, end = cut
         return (years, np.log(factor) * window(start, end)) if factor > 1 else None
-    spans = [s for s in cut if any(k != 1 for k in s[2])]
+    spans = [s for s in cut if s[2] != _PC_HOLD and any(k != 1 for k in s[2])]
     if not spans:
         return None
     logs = [sum(-np.log(kept[i]) * window(a, b) for a, b, kept in spans) for i in range(3)]
     if all(len(set(kept)) == 1 and kept[0] <= 1 for _, _, kept in spans):
         return years, logs[0]
     return years, dict(zip(takeoff.COMPUTE_USES, logs))
+
+
+def _tk_cut_hold(cut):
+    """`takeoff.simulate`'s `train_hold` for `cut` (as `_tk_cut_path` takes
+    it): one hold from the first `_PC_HOLD` span's start to the last one's
+    end (None: for good), or None without one."""
+    holds = ([s for s in cut if s[2] == _PC_HOLD]
+             if cut is not None and isinstance(cut[0], tuple) else [])
+    if not holds:
+        return None
+    return (min(a for a, _, _ in holds),
+            None if any(b is None for _, b, _ in holds) else max(b for _, b, _ in holds))
 
 
 def _tk_cut_start(cut):
@@ -26903,7 +26953,7 @@ def _tk_simulate(params, onset_years, model_source_digest, experiment_starts, ex
                              coding_capability=coding_capability,
                              coding_weights=coding_weights, human_curve=human_curve,
                              compute_cut=_tk_cut_path(cut, cut_years or params["years"]),
-                             review=review, ai_limit=limit)
+                             review=review, ai_limit=limit, train_hold=_tk_cut_hold(cut))
     if capability_at is not None:
         wp = result["workflow_progress"]
         k = min(int(np.searchsorted(wp["years"], capability_at)), len(wp["years"]) - 1)

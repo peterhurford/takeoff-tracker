@@ -1121,6 +1121,45 @@ def test_a_compute_cut_by_use_moves_only_that_use():
         tk.simulate(params, compute_cut=(grid, {"training": step}), **kw)
 
 
+def test_a_training_hold_freezes_training_compute_alone():
+    """`train_hold` = (start[, end]): training compute stays at its level at
+    `start` (the reported compute is flat from there) while agents and
+    experiments keep theirs, so it is the by-use cut of the frontier's rise
+    since `start`; it lowers capability, hands the level back when it ends, adds to a
+    `compute_cut`, and a run stopped early is the longer run so far."""
+    # No compute slowdown, so the frontier's rise is the rate's.
+    params = dict(tk.POINT_ESTIMATE, years=5, rsi_compute_boost=1.0, compute_slowdown=100)
+    n, rate = 6, np.log(2.5)
+    kw = dict(n=n, onset_years=np.full(n, 1.5), compute_rates=np.full(n, rate),
+              experiment_slopes=np.full(n, 1.0))
+    plain = tk.simulate(params, **kw)
+    held = tk.simulate(params, train_hold=(1.0,), **kw)
+    wp, yr = held["workflow_progress"], held["workflow_progress"]["years"]
+    after = yr >= 1.0 + 1 / 48
+    np.testing.assert_allclose(wp["compute_log"][:, after], rate * 1.0, atol=0.02)
+    np.testing.assert_allclose(wp["compute_log"][:, yr < 1.0],
+                               plain["workflow_progress"]["compute_log"][:, yr < 1.0])
+    assert np.all(wp["capability_log"][:, -1] < plain["workflow_progress"]["capability_log"][:, -1])
+    grid = np.arange(int(np.ceil(5 * 96)) + 2) / 96
+    rise = np.where(grid >= 1.0, rate * (grid - 1.0), 0.0)
+    by_use = tk.simulate(params, compute_cut=(grid, {
+        "training": rise, "agents": 0 * grid, "experiments": 0 * grid}), **kw)
+    np.testing.assert_allclose(wp["capability_log"],
+                               by_use["workflow_progress"]["capability_log"])
+    ended = tk.simulate(params, train_hold=(1.0, 2.0), **kw)["workflow_progress"]
+    late = yr >= 2.0 + 1 / 48
+    np.testing.assert_allclose(ended["compute_log"][:, late],
+                               plain["workflow_progress"]["compute_log"][:, late])
+    both = tk.simulate(params, train_hold=(1.0,), compute_cut=(grid, np.log(2.0) * (grid >= 0.5)),
+                       **kw)["workflow_progress"]
+    np.testing.assert_allclose(both["compute_log"][:, after], rate - np.log(2.0), atol=0.02)
+    short = tk.simulate(dict(params, years=3), train_hold=(1.0,), **kw)["workflow_progress"]
+    m = len(short["years"])
+    np.testing.assert_allclose(short["capability_log"], wp["capability_log"][:, :m])
+    with pytest.raises(ValueError):
+        tk.simulate(params, train_hold=(2.0, 1.0), **kw)
+
+
 def test_a_compute_cut_reaches_every_research_input_and_ends_without_a_boost():
     """`compute_cut` takes its log off training, agent and experiment compute
     (the reported compute falls by it, the research pace by the cut to the
@@ -1406,7 +1445,7 @@ def _per_draw_curves(n, rng):
 @pytest.mark.parametrize("case", [
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
     "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
-    "human_uplift", "no_ai", "ai_frozen", "ai_frozen_behind"])
+    "human_uplift", "no_ai", "train_hold", "ai_frozen", "ai_frozen_behind"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1452,6 +1491,9 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
                      review=(1.0, 2.0, 4.0), **app)
     elif case == "no_ai":
         _loops_agree(monkeypatch, dict(years=6), n, ai_limit=(1.0, None, 4.0), **app)
+    elif case == "train_hold":
+        _loops_agree(monkeypatch, dict(years=6), n, train_hold=(1.0, 4.0),
+                     ai_limit=(1.0, None), **app)
     elif case == "ai_frozen":
         _loops_agree(monkeypatch, dict(years=6), n, ai_limit=(0.5, 6.0), **app)
     elif case == "ai_frozen_behind":

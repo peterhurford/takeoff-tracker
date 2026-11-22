@@ -296,6 +296,11 @@ must not move dates) into one rate per draw, passed as
 compute growth behind today's trend, so only a projected change in compute growth moves ECI
 (`test_compute_follows_the_data_center_projection_unless_toggled_off`).
 
+`train_hold=` (Pacing's *Freeze training compute*) is not a third step-loop option: `simulate`'s
+setup turns it into a per-draw training-only `compute_cut`, the frontier's rise since the start,
+so both loops read it as a by-use cut (`test_a_training_hold_freezes_training_compute_alone`,
+the compiled-loop `train_hold` case).
+
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with
 the prior. A supplied validated-progress ratio overrides the experiment proxy. Matched-stage

@@ -5668,6 +5668,15 @@ class TestPacing:
         assert vp._pc_ban_rule(today) is None and vp._pc_cut_spans(today) == []
         state["pc_win2_ai"] = 0
         assert vp._pc_ai_rule(today)[2] is None
+        # A training freeze: a compute span with no shares, which the cut path
+        # leaves out and the Takeoff rerun takes as one hold over its phases.
+        state.update(pc_win1_kind="hold", pc_win2_kind="hold")
+        assert [s[2] for s in vp._pc_cut_spans(today)] == [vp._PC_HOLD] * 2
+        sched = vp._pc_cut_schedule(today, today)
+        assert vp._tk_cut_path(sched, 5.0) is None
+        assert vp._tk_cut_hold(sched) == (sched[0][0], sched[1][1])
+        assert vp._tk_cut_hold((6.0, 1.0, None)) is None and vp._tk_cut_hold(None) is None
+        assert vp._pc_uses_label(vp._PC_HOLD) == "training compute frozen"
         state.update(pc_win1_kind="pace", pc_win2_kind="ban")
         assert vp._pc_uses_label((0.25, 0.5, 0.5)) == "training 25%, experiments 50%, AI researchers 50%"
 
@@ -5690,6 +5699,10 @@ class TestPacing:
         vp._pc_apply_preset(presets["No AI in AI R&D, compute ÷30"])   # both levers, for good
         assert vp._pc_ai_rule(today)[1:] == (None, None)
         assert vp._pc_cut_spans(today)[0][2] == pytest.approx((1 / 30,) * 3)
+        state.clear()
+        vp._pc_apply_preset(presets["No AI in AI R&D, training compute frozen"])
+        assert vp._pc_ai_rule(today)[1:] == (None, None)
+        assert vp._pc_cut_spans(today)[0][2] == vp._PC_HOLD
         state.clear()
         vp._pc_apply_preset(presets["Pause a year, then half speed"])
         vp._pc_add_phase("realloc")      # training compute to experiments

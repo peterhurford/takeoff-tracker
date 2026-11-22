@@ -1591,7 +1591,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
              coding_weights=None, human_curve=None, software_scale=None,
              experiment_rates=None, historical_experiment_rate=None, follower=None,
              compute_path=None, experiment_path=None, draw_rows=None, compute_cut=None,
-             review=None, ai_limit=None):
+             review=None, ai_limit=None, train_hold=None):
     """Weekly research and successor cycles, with censored milestone draws.
 
     RSI is the first time research direction is at or under its draw's bar
@@ -1636,6 +1636,13 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     moved to that use: a model's scale is its training compute, the trend
     proxy takes the mean of the agents' and experiments' cuts, and the cuts
     bind after the labs' own agent/experiment re-split.
+
+    `train_hold`, (start,) or (start, end), holds training compute at its
+    level at `start` (years) until `end` (for good without one): a
+    training-only cut of the frontier's rise since `start`, per draw, added
+    to any `compute_cut` on its grid (96 points a year without one), so
+    agents and experiments keep the growing compute and the RSI boost
+    still adds its own.
 
     `review`, (start, months) or (start, months, end), is a ban on runaway
     self-improvement from `start` (years) until `end` (for good without
@@ -2041,6 +2048,31 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             cut = cut_path(compute_cut[1])
             if cut[1].min() < 0:
                 raise ValueError("A compute cut is a log reduction, zero or more.")
+
+    if train_hold is not None:
+        hold_from = float(train_hold[0])
+        hold_to = (np.inf if len(train_hold) < 2 or train_hold[1] is None
+                   else float(train_hold[1]))
+        if not np.isfinite(hold_from) or hold_from < 0 or not hold_to > hold_from:
+            raise ValueError("A training hold needs a start at or after today and "
+                             "an end after it.")
+        if cut is None:
+            # The same points whatever the horizon, so a run stopped early
+            # is the longer run so far.
+            cut_years = np.arange(int(np.ceil(p["years"] * 96)) + 2) / 96
+            cut = (cut_years, np.zeros((n, len(cut_years))))
+        if use_cut is None:
+            use_cut = {k: cut for k in COMPUTE_USES}
+
+        def level(u):
+            if cpath is None:
+                return log_level(u[None, :], compute_rate[:, None], compute_late[:, None],
+                                 slow_at)
+            return np.array([np.interp(u, cpath[0], row) for row in cpath[1]])
+        held = (cut_years >= hold_from) & (cut_years < hold_to)
+        cut = (cut_years, cut[1] + np.where(
+            held, np.maximum(level(cut_years) - level(np.array([hold_from])), 0.0), 0.0))
+        use_cut = dict(use_cut, training=cut)
 
     def cut_log(u, rows=all_rows):
         """The cut in training compute, which is every use's without a

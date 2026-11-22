@@ -3912,6 +3912,33 @@ class TestPacingTab:
         assert both["US, projected"]["y"][-1] < some
         assert "US, no compute cut or AI R&D ban" in both
 
+    def test_a_training_freeze_slows_the_us_and_deepens_a_ban(self):
+        """A *Freeze training compute* phase (`_PC_HOLD`, `takeoff.simulate`'s
+        `train_hold`) reruns the US with training compute held at its level
+        when the phase starts: the US ends below its no-plan line, and
+        further below with all AI banned from AI R&D as well."""
+        def last(at):
+            for el in at.get("plotly_chart"):
+                d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                if "China, projected" in d:
+                    return d["US, projected"]["y"][-1], d
+            raise AssertionError("no pause chart")
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.button(key="pc_add_hold").click().run()
+        _assert_no_error(at, "Pacing / training freeze")
+        held, d = last(at)
+        assert held < d["US, no compute cut"]["y"][-1] - 5
+        # The plan chart draws the freeze: training falls, the other uses stay.
+        plan = next(d for d in ({t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                                for el in at.get("plotly_chart")) if "US pace" in d)
+        assert plan["Training"]["y"][-1] < 20 and plan["Experiments"]["y"][-1] == 100
+        at.button(key="pc_add_noai").click().run()
+        _assert_no_error(at, "Pacing / training freeze and AI R&D ban")
+        assert last(at)[0] < held
+
     def test_time_bought_reads_the_plan_against_no_plan(self):
         """*Time bought* (`_pc_render_time_bought`) appears once the plan does
         anything: per milestone the US's median date without and with the
