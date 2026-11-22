@@ -219,6 +219,7 @@ class TestMetrPostGpt4o:
     def test_an_earlier_as_of_then_gpt4o_only_renders(self):
         import visualize_projection as vp
         at = self._app()
+        at.toggle(key="post_gpt4o").set_value(False).run()
         at.selectbox(key="_proj_as_of").set_value(vp.frontier_names[1]).run()
         at.toggle(key="post_gpt4o").set_value(True).run()
         _assert_no_error(at, "METR / early as-of, GPT-4o+ only")
@@ -5341,7 +5342,7 @@ class TestTodayForwardMode:
         before = self._specs(at)[0]["layout"]["yaxis"]["range"]
         at.checkbox(key="today_fwd").set_value(True).run()
         after = self._specs(at)[0]["layout"]["yaxis"]["range"]
-        assert after[1] - after[0] < 0.6 * (before[1] - before[0])
+        assert after[1] - after[0] < 0.7 * (before[1] - before[0])
         assert after[0] > before[0]
 
     def test_toggle_sits_at_the_foot_of_the_sidebar(self):

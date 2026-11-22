@@ -411,8 +411,37 @@ class TestLoadFrontier:
         assert vp._metr_pos_ci(old, 'p50_min') == (old['p50_lo'], old['p50_hi'])
         assert vp._metr_pos_ci({'p50_min': 5.0}, 'p50_min') == (5.0, 5.0)
 
+    def test_frontier_names_do_not_overlap(self):
+        """`_clear_label_positions` on the default view (GPT-4o on, log scale):
+        no two name boxes intersect, and none sits on the rising trend line's
+        sides (top right, bottom left) while a clear side exists."""
+        fr = vp.frontier_all[vp.gpt4o_idx:]
+        x0 = fr[0]['date'] - timedelta(days=30)
+        span = (datetime(2028, 1, 31) - x0).days
+        y0, y1 = np.log2(fr[0]['p50_min']) - 1, np.log2(176 * 60) + 9
+        pts = [((m['date'] - x0).days / span * vp._METR_PLOT_PX[0],
+                (np.log2(m['p50_min']) - y0) / (y1 - y0) * vp._METR_PLOT_PX[1]) for m in fr]
+        names = [vp.pretty(m['name']) for m in fr]
+        sides = vp._clear_label_positions(pts, names)
+        assert set(sides) <= {'top left', 'bottom right'}
+
+        def box(i):
+            (x, y), w = pts[i], len(names[i]) * 5.4
+            xa = x + 6 if sides[i].endswith('right') else x - 6 - w
+            ya = y + 6 if sides[i].startswith('top') else y - 18
+            return xa, ya, xa + w, ya + 12
+        boxes = [box(i) for i in range(len(pts))]
+        for i, a in enumerate(boxes):
+            for j in range(i):
+                b = boxes[j]
+                assert not (a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]), \
+                    (names[i], names[j])
+
+    def test_gpt4o_on_is_the_default(self):
+        assert vp._METR_DEFAULTS['post_gpt4o'] is True
+
     def test_splice_caption_anchors_both_notes(self):
-        for phrase in ('pooled suite', 'older suite alone'):
+        for phrase in ('pooled suite', 'older suite alone', '80% interval'):
             assert phrase in vp._METR_SPLICE_CAPTION
 
 

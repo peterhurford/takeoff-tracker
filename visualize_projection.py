@@ -4105,7 +4105,7 @@ _METR_DEFAULTS = {
     "custom_pos_dist": "Lognormal",
     "milestones": True,
     "labels": True,
-    "post_gpt4o": False,
+    "post_gpt4o": True,
     "p80": False,
     "log_scale": True,
     "hours_only": False,
@@ -4114,7 +4114,9 @@ _METR_DEFAULTS = {
 
 _METR_SPLICE_CAPTION = ("The 15 models METR reran in November 2026, GPT-4o on, are "
                         "measured on its pooled suite; earlier models, and the 2026 "
-                        "ones run on the older suite alone, on Time Horizon 1.1.")
+                        "ones run on the older suite alone, on Time Horizon 1.1. "
+                        "Bars are METR's 80% interval for the pooled models and "
+                        "its 95% interval for the rest.")
 _METR_DT_HELP = "Doubling time of the horizon, 80% interval."
 _METR_POS_HELP = ("Uncertainty in where the trend is today; sets the spread, not the "
                   "centre.")
@@ -4360,8 +4362,6 @@ def render_metr():
 
     # ── Reliability metric keys ──────────────────────────────────────────────
     _val_key = 'p80_min' if use_p80 else 'p50_min'
-    _lo_key = 'p80_lo' if use_p80 else 'p50_lo'
-    _hi_key = 'p80_hi' if use_p80 else 'p50_hi'
     _reliability_label = "p80" if use_p80 else "p50"
 
     # ── Build data arrays ────────────────────────────────────────────────────
@@ -4684,6 +4684,15 @@ def render_metr():
         )
         _bt_lookup = {r['name']: r for r in backtest_results}
 
+    # Axis ranges, set before the points so their names can be placed in pixels.
+    if use_log_scale:
+        y_min = np.log2(frontier_plot[0][_val_key]) - 1
+        y_max = max(pct95[-1], np.log2(176 * 60)) + 2
+    else:
+        y_min, y_max = 0, max(pct95[-1], 176) * 1.1
+    _x_lo = frontier_plot[0]['date'] - timedelta(days=30)
+    _x_hi = proj_end_date + timedelta(days=30)
+
     # --- Non-SOTA models: only show those within 2 log2 units (4x) of frontier max to reduce clutter ---
     _metr_frontier_max_log2 = max(np.log2(m[_val_key]) for m in frontier_all)
     _metr_nf_cutoff = _metr_frontier_max_log2 - 2
@@ -4702,18 +4711,20 @@ def render_metr():
         hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{fmt_hrs(hrs, hours_only=hours_only)}"
         if _th11_only:
             hover += "<br>Older suite only (tasks to 30 h): not in the trend"
+        # Named on hover only: a grey point sits among the frontier's own names.
         fig.add_trace(go.Scatter(
-            x=[m['date']], y=[lv],
-            mode='markers' + ('+text' if show_labels else ''),
+            x=[m['date']], y=[lv], mode='markers',
             marker=dict(color='#aaaaaa', size=6, symbol='circle-open',
                         line=dict(color='#bbbbbb', width=1)),
-            text=[pretty(m['name'])] if show_labels else None,
-            textposition='top right',
-            textfont=dict(size=8, color='#bbbbbb'),
             hovertext=hover, hoverinfo='text', showlegend=False,
         ))
 
     # --- Data points: distinguish used vs future ---
+    _fr_textpos = _clear_label_positions(
+        [((m['date'] - _x_lo) / (_x_hi - _x_lo) * _METR_PLOT_PX[0],
+          (_yconv(np.log2(m[_val_key])) - y_min) / (y_max - y_min) * _METR_PLOT_PX[1])
+         for m in frontier_plot],
+        [pretty(m['name']) for m in frontier_plot])
     for idx_m, m in enumerate(frontier_plot):
         global_idx = idx_m + plot_start_idx  # index into frontier_all
         is_used = global_idx <= proj_as_of_idx
@@ -4721,6 +4732,9 @@ def render_metr():
         lv = _yconv(np.log2(m[_val_key]))
         hrs = m[_val_key] / 60
         hover = f"{pretty(m['name'])}<br>{m['date'].strftime('%b %d, %Y')}<br>{fmt_hrs(hrs, hours_only=hours_only)}"
+        # The 80% interval where METR gives one: a pooled row's 95% bound can
+        # run 60x above its point.
+        _bar_lo, _bar_hi = _metr_pos_ci(m, _val_key)
 
         if is_used:
             # Normal styling for models used in fitting
@@ -4733,14 +4747,14 @@ def render_metr():
                 marker=dict(color=color, size=sz, symbol=sym,
                             line=dict(color='white', width=1)),
                 text=[pretty(m['name'])] if show_labels else None,
-                textposition='top right',
+                textposition=_fr_textpos[idx_m],
                 textfont=dict(size=9, color='#c0392b' if is_selected else '#1a1a2e'),
                 hovertext=hover, hoverinfo='text', showlegend=False,
             ))
-            if m.get(_lo_key) and m.get(_hi_key):
+            if _bar_hi > _bar_lo:
                 fig.add_trace(go.Scatter(
                     x=[m['date'], m['date']],
-                    y=[_yconv(np.log2(m[_lo_key])), _yconv(np.log2(m[_hi_key]))],
+                    y=[_yconv(np.log2(_bar_lo)), _yconv(np.log2(_bar_hi))],
                     mode='lines', line=dict(color='#4F8DFD', width=4), opacity=0.2,
                     hoverinfo='skip', showlegend=False,
                 ))
@@ -4756,7 +4770,7 @@ def render_metr():
                     marker=dict(color=_btc, size=12, symbol='diamond',
                                 line=dict(color='white', width=1)),
                     text=[_bt_label],
-                    textposition='top right',
+                    textposition=_fr_textpos[idx_m],
                     textfont=dict(size=9, color=_btc),
                     hovertext=hover + f"<br>Percentile: {r['percentile']:.0f}%",
                     hoverinfo='text', showlegend=False,
@@ -4769,14 +4783,14 @@ def render_metr():
                     marker=dict(color='#aaaaaa', size=10, symbol='circle-open',
                                 line=dict(color='#777777', width=2)),
                     text=[pretty(m['name'])] if show_labels else None,
-                    textposition='top right',
+                    textposition=_fr_textpos[idx_m],
                     textfont=dict(size=9, color='#999999'),
                     hovertext=hover, hoverinfo='text', showlegend=False,
                 ))
-            if m.get(_lo_key) and m.get(_hi_key):
+            if _bar_hi > _bar_lo:
                 fig.add_trace(go.Scatter(
                     x=[m['date'], m['date']],
-                    y=[_yconv(np.log2(m[_lo_key])), _yconv(np.log2(m[_hi_key]))],
+                    y=[_yconv(np.log2(_bar_lo)), _yconv(np.log2(_bar_hi))],
                     mode='lines', line=dict(color='#999999', width=3), opacity=0.25,
                     hoverinfo='skip', showlegend=False,
                 ))
@@ -4787,8 +4801,6 @@ def render_metr():
 
     # --- Layout ---
     if use_log_scale:
-        y_min = np.log2(frontier_plot[0][_val_key]) - 1
-        y_max = max(pct95[-1], np.log2(176 * 60)) + 2
         tick_vals = list(range(int(np.floor(y_min)), int(np.ceil(y_max)) + 1))
         tick_text = [log2min_to_label(v, hours_only=hours_only) for v in tick_vals]
         yaxis_cfg = dict(
@@ -4801,8 +4813,6 @@ def render_metr():
             title_font=dict(color='#1a1a2e'),
         )
     else:
-        y_min = 0
-        y_max = max(pct95[-1], 176) * 1.1
         yaxis_cfg = dict(
             title=f"{_reliability_label} Horizon Length (hours)",
             range=[y_min, y_max],
@@ -4818,8 +4828,7 @@ def render_metr():
         font=dict(color='#1a1a2e'),
         xaxis=dict(
             title="Model release date",
-            range=[frontier_plot[0]['date'] - timedelta(days=30),
-                   proj_end_date + timedelta(days=30)],
+            range=[_x_lo, _x_hi],
             gridcolor='rgba(0,0,0,0.1)',
             tickfont=dict(color='#1a1a2e'),
             zeroline=False,
@@ -6083,6 +6092,48 @@ def _eci_entity_short(label):
     if label == _ECI_FRONTIER_LABEL:
         return "Frontier"
     return label[:-len(" best")] if label.endswith(" best") else label
+
+
+# The METR chart's plot area at a typical desktop width, in pixels.
+_METR_PLOT_PX = (860, 560)
+
+
+def _clear_label_positions(points, names, char_px=5.4, line_px=12, gap_px=6):
+    """A Plotly `textposition` per point, chosen so names overlap as little as
+    possible. `points` are (x, y) pixels, y up, oldest first.
+
+    Each name takes, in order, the side that overlaps least with the names
+    already placed and with every marker. Above-left and below-right come first:
+    on a rising trend those are off the line, and the other two sides carry a
+    penalty for sitting on it. Ties go to the side opposite the previous name.
+    """
+    def box(i, side):
+        x, y = points[i]
+        w = len(names[i]) * char_px
+        x0 = x + gap_px if side.endswith('right') else x - gap_px - w
+        y0 = y + gap_px if side.startswith('top') else y - gap_px - line_px
+        return x0, y0, x0 + w, y0 + line_px
+
+    def overlap(a, b):
+        return (max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+                * max(0.0, min(a[3], b[3]) - max(a[1], b[1])))
+
+    marks = [(x - gap_px, y - gap_px, x + gap_px, y + gap_px) for x, y in points]
+    placed, out = [], []
+    for i in range(len(points)):
+        prev = out[-1] if out else 'top left'
+        order = (['bottom right', 'top left'] if prev == 'top left'
+                 else ['top left', 'bottom right']) + ['top right', 'bottom left']
+        cost = {}
+        for rank, side in enumerate(order):
+            b = box(i, side)
+            cost[side] = (sum(overlap(b, p) for p in placed)
+                          + sum(overlap(b, mk) for j, mk in enumerate(marks) if j != i)
+                          + (b[0] < 0) * 1e6 + (rank >= 2) * 40 + rank * 0.01)
+        side = min(order, key=cost.get)
+        out.append(side)
+        placed.append(box(i, side))
+    return out
 
 
 def _eci_label_positions(frontier, edge_days=120, close_days=30):
