@@ -1235,6 +1235,39 @@ def test_weight_theft_lifts_a_follower_to_the_trained_leader():
     assert np.median(eci[:, before] - level[:, before]) > 5.0
 
 
+def test_weight_theft_lands_in_every_draw_on_its_date():
+    """Draws step on their own clocks (post-RSI ones in small steps), so a
+    late theft still lands in each draw within a month of its date, and
+    software theft's one-off jump with it."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    grid = fol["years"]
+    when, k = 3.0, np.searchsorted(fol["years"], 3.0 + 1 / 12)
+    for kw, key in ((dict(weight_theft=(when, False)), "weights"),
+                    (dict(theft_jump=(when, 0.0, 0.0, 5.0)), "theft")):
+        wp = _follow(params, lead, eci, dict(fol, trained=eci, **kw))["workflow_progress"]
+        assert np.all(wp["follow_eci"][key][:, k] > 0), key
+        assert np.all(wp["follow_eci"][key][:, np.searchsorted(grid, when - 1 / 12)] == 0)
+
+
+def test_automation_moves_a_follower_to_its_automated_research_rate():
+    """`automated_scale` is the follower's own-research multiple once AI does
+    today's human work: equal to `software_scale` it changes nothing; above it,
+    the follower runs as before until AI takes work over, then faster."""
+    params, lead, eci, fol = _leader_and_follower(distill=0.0, leak=0.0)
+    runs = {k: _follow(params, lead, eci, fol, automated_scale=np.full(40, v))
+            ["workflow_progress"] for k, v in (("same", 0.15), ("more", 0.45))}
+    plain = _follow(params, lead, eci, fol)["workflow_progress"]
+    np.testing.assert_allclose(runs["same"]["capability_log"], plain["capability_log"])
+    years = fol["years"]
+    early = np.searchsorted(years, 0.1)
+    np.testing.assert_allclose(runs["more"]["capability_log"][:, :early],
+                               plain["capability_log"][:, :early], atol=0.05)
+    assert np.median(runs["more"]["capability_log"][:, -1]) \
+        > np.median(plain["capability_log"][:, -1]) + 1
+    with pytest.raises(ValueError, match="automated"):
+        _follow(params, lead, eci, fol, automated_scale=np.zeros(40))
+
+
 def test_fast_share_is_drawn_per_scenario_around_its_setting():
     """Logit-normal around the setting; no spread, 0 and 100 give the setting itself."""
     base = dict(years=.25, transfer=0)
@@ -1512,10 +1545,13 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
             fol.update(distill_scale=np.linspace(1, 0.2, m), leak_scale=np.full(m, 0.5),
                        theft_scale=np.linspace(0, 1, m))
         coder = np.full(n, 230.0)
+        extra = ({"automated_scale": rng.uniform(0.2, 0.6, n)}
+                 if case == "follower_scales" else {})
         _loops_agree(monkeypatch, params, n, onset_years=np.full(n, np.inf),
                      software_scale=np.full(n, 0.15), coding_capability=coder - fol["eci_now"],
                      coding_weights=fol["weights"], follower=fol,
-                     experiment_rates=np.full(n, 0.8), historical_experiment_rate=0.9)
+                     experiment_rates=np.full(n, 0.8), historical_experiment_rate=0.9,
+                     **extra)
 
 
 def test_each_scenario_draws_its_own_agent_share():

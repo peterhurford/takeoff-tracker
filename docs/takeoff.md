@@ -512,8 +512,13 @@ those rows): a run's cost is per loop iteration, set by the most event-dense sce
 this cuts it from ~14 s to ~5 s at production samples while the lags move by under a week.
 The cards and lags are over those pairs. Headcount is not an input: China's ~10× fewer
 researchers per lab (and its smaller experiment compute) are already in the measured
-innovation rate it is calibrated to, and AI labor runs on compute after automation; adding
-them would count them twice. `_tk_run_seeded` computes the US run once per rerun for Pacing
+innovation rate it is calibrated to (`software_scale`, ~0.17 of the US's). AI labor runs on
+compute, so as AI takes over today's human share of the work that multiple moves to
+`_cn_tk_automated_scale`, China's installed compute over the US's today to the
+`parallelization` power (~0.36); its slower compute growth is separate, in its rates
+(`test_automation_moves_a_follower_to_its_automated_research_rate`). A weight theft lands
+in each scenario at its own date, since scenarios step on their own clocks
+(`test_weight_theft_lands_in_every_draw_on_its_date`). `_tk_run_seeded` computes the US run once per rerun for Pacing
 and this section. `_cn_tk_simulate` caches the run (model digest in its key).
 
 **How the section reads**, top to bottom: a bold takeaway (`_fn_line`: the median gap to

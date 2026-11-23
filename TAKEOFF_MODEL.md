@@ -418,7 +418,10 @@ run; everything else is the same equation.
   ramp runs on capability rather than an inherited date. Its starting human share, not the
   leader's, normalizes the Amdahl and judgment terms, so today's pace stays its own.
 - **Its own research runs at its own rate** (`software_scale`), calibrated to its measured
-  innovation only, since copying is modeled separately.
+  innovation only, since copying is modeled separately. That rate counts its head count,
+  which stops binding as AI takes research over: the multiple moves log-linearly to
+  `automated_scale` (China: its installed compute over the US's today, to the
+  `parallelization` power, ~0.36 vs ~0.17) as the human share of today's work falls to 0.
 - **Experiment compute can grow apart from the frontier run**: `experiment_rates` against
   `historical_experiment_rate`, keeping the fitted steady-state share of that growth. For
   China, experiments run on all its installed compute (smuggled and rented chips included),

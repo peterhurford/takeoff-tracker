@@ -667,8 +667,8 @@ def reference_software(years, rate, compute_rate, parallel, initial_throughput, 
 
 # ---------------------------------------------------------------------------
 # Compiled step loop. `simulate`'s weekly loop, one draw at a time in scalar
-# code (draws never interact, except through the lockstep-only `theft_jump` /
-# `weight_theft`, which keep the numpy loop). The numpy loop below stays the
+# code (draws never interact; `theft_jump` / `weight_theft`, not compiled,
+# keep the numpy loop). The numpy loop below stays the
 # reference: `test_the_compiled_loop_matches_the_numpy_loop` holds the two
 # together, so a change to one is made in both.
 # ---------------------------------------------------------------------------
@@ -1187,7 +1187,10 @@ def _k_draw(i, d, s, a, o):
         reference_pace = np.exp(_k_min(ref_research - ref_penalty, 700.0))
         log_dt = np.log(dt) if dt > 0 else -np.inf
         ref_log_amount = np.log(sr) + ref_research + log_dt
-        log_amount = np.log(sr) + research_log + log_dt
+        # Own-research multiple: today's, moving to the automated one as AI
+        # takes over today's human share of the work.
+        sr_log = np.log(sr) + d.auto_log[i] * _k_clip(1 - share_now / d.human0[i], 0.0, 1.0)
+        log_amount = sr_log + research_log + log_dt
         pace = np.exp(_k_min(research_log - penalty, 700.0))
         updated = init + advance(gained, log_x, log_amount)
         if fol:
@@ -1334,7 +1337,7 @@ def _k_draw(i, d, s, a, o):
             run_start = end
             reference_at_run_start = reference_gained
             if s.serial_speedup:
-                growth_now = sr * pace + (cr if end < s.slow_at else cl)
+                growth_now = np.exp(sr_log) * pace + (cr if end < s.slow_at else cl)
                 run_len = d.train_time[i] * _k_min(1.0, d.bcr[i] / _k_max(growth_now, 1e-9))
             run_start_scale = frontier(end) + boost_log
             run_compute = 0.0
@@ -1429,7 +1432,7 @@ _KDraws = namedtuple("_KDraws", (
     "human0", "hire_effect", "input_rate", "exp_slope", "coding_level", "taste_slope", "drift",
     "rho", "beta", "ceiling", "scale_share", "scale_lag", "fast_fraction", "bcr", "fol_rate",
     "fol_eci_now", "fol_slope", "fol_distill", "fol_leak", "bar", "theta", "agent0", "exp0",
-    "limit_back"))
+    "limit_back", "auto_log"))
 _KSettings = namedtuple("_KSettings", (
     "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
     "sh0", "ai_speed", "ai_copies", "hire_rate", "after_rate",
@@ -1488,7 +1491,8 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         fol_eci_now=np.zeros(n) if raw is None else per(fol["eci_now"]),
         fol_slope=np.zeros(n) if raw is None else per(raw["slope"]),
         fol_distill=np.zeros(n) if raw is None else per(fol["distill"]),
-        fol_leak=np.zeros(n) if raw is None else per(fol["leak"]))
+        fol_leak=np.zeros(n) if raw is None else per(fol["leak"]),
+        auto_log=per(v["auto_log"]))
     shares = v["shares"]
     s = _KSettings(
         years=float(p["years"]), step=float(step), boost=float(v["boost"]),
@@ -1588,7 +1592,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
 
 def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slopes=None,
              compute_rates=None, historical_compute_rate=None, coding_capability=None,
-             coding_weights=None, human_curve=None, software_scale=None,
+             coding_weights=None, human_curve=None, software_scale=None, automated_scale=None,
              experiment_rates=None, historical_experiment_rate=None, follower=None,
              compute_path=None, experiment_path=None, draw_rows=None, compute_cut=None,
              review=None, ai_limit=None, train_hold=None):
@@ -1613,7 +1617,11 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     (`coding_capability` may be one level per draw).
 
     `software_scale`, one multiple per draw, scales today's software rate
-    (a country whose own research runs slower). `experiment_rates`, one log
+    (a country whose own research runs slower). `automated_scale`, one per
+    draw, is that multiple once AI does all of today's human work: the
+    multiple moves log-linearly from `software_scale` to it as the human
+    share of the work falls from today's to 0, so a country's head count
+    stops binding as AI takes its research over. `experiment_rates`, one log
     growth rate a year per draw, is the growth of the compute experiments can
     use when it differs from the frontier run's (`compute_rates`), against
     `historical_experiment_rate` behind today's pace: experiment compute keeps
@@ -1725,6 +1733,15 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                 or (software_scale <= 0).any():
             raise ValueError("Provide one finite, positive software-rate multiple per draw.")
         software_rate = software_rate * software_scale
+    auto_log = np.zeros(n)
+    if automated_scale is not None:
+        automated_scale = np.asarray(automated_scale, dtype=float)
+        if automated_scale.shape != (n,) or not np.isfinite(automated_scale).all() \
+                or (automated_scale <= 0).any():
+            raise ValueError("Provide one finite, positive automated software-rate multiple "
+                             "per draw.")
+        auto_log = np.log(automated_scale) - np.log(
+            software_scale if software_scale is not None else 1.0)
     compute_rate = np.log(p["compute_growth"]) * factors[1]
     if compute_rates is not None:
         compute_rate = np.asarray(compute_rates, dtype=float).copy()
@@ -2177,7 +2194,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     follow_log = np.zeros(n)
     follow_eci = {k: np.zeros(n) for k in FOLLOW_CHANNELS} if fol is not None else {}
     follow_history = {k: np.zeros_like(capability_history) for k in follow_eci}
-    theft_jumped = weights_taken = False
+    theft_jumped = np.zeros(n, dtype=bool)   # per draw: draws step on their own clocks
+    weights_taken = np.zeros(n, dtype=bool)
     if fol is not None:
         coding_level = np.broadcast_to(np.asarray(coding_capability, dtype=float), (n,)).copy()
     realized()                  # the deployed model, refreshed when it changes
@@ -2198,7 +2216,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             experiment_slopes=experiment_slopes, coding_capability=coding_capability,
             coding_weights=coding_weights, review=(review_from, review_to, review_time),
             limit=(limit_from, limit_to, limit_level, limit_none),
-            v=dict(starts=starts, halves=halves, today_hours=today_hours,
+            v=dict(starts=starts, halves=halves, today_hours=today_hours, auto_log=auto_log,
                    software_rate=software_rate, compute_rate=compute_rate,
                    compute_late=compute_late, exp_rate=exp_rate, exp_late=exp_late,
                    exp_share=exp_share, exp_growth=exp_growth, has_history=has_history,
@@ -2449,7 +2467,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         reference_pace = np.exp(np.minimum(ref_research - ref_penalty, 700))
         ref_log_amount = np.log(software_rate) + ref_research + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
-        log_amount = np.log(software_rate) + research_log + np.log(
+        # Own-research multiple: today's, moving to the automated one as AI
+        # takes over today's human share of the work.
+        sr_log = np.log(software_rate) + auto_log * np.clip(1 - share_now / human0, 0, 1)
+        log_amount = sr_log + research_log + np.log(
             dt, out=np.full(n, -np.inf), where=dt > 0)
         # Derivative of the same discovery process being integrated below,
         # in multiples of today's software-progress rate. Snapshot near the
@@ -2497,23 +2518,29 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             flows["leak"], flows["theft"] = flows["leak"] * keep, flows["theft"] * keep
             # One-off and ongoing theft land at their dates, toward the
             # leader's trained frontier rather than its released one.
-            if fol["theft_jump"] is not None and not theft_jumped \
-                    and np.all(end >= fol["theft_jump"][0] - 1e-12):
+            # Each draw steps on its own clock, so each lands its theft at
+            # the first step to reach the date.
+            if fol["theft_jump"] is not None:
                 when, share, skip, lift = fol["theft_jump"]
-                ahead = fol["trained"](end) - standing - flows["distillation"] - flows["leak"]
-                flows["theft"] = flows["theft"] + share * np.maximum(ahead - skip, 0) + lift
-                theft_jumped = True
-            if fol["weight_theft"] is not None \
-                    and np.all(end >= fol["weight_theft"][0] - 1e-12) \
-                    and (fol["weight_theft"][1] or not weights_taken):
-                # Stolen weights are a model China deploys at once: top its
-                # deployed model (not its undeployed research) up to the
-                # leader's trained one.
-                deployed_eci = fol["eci_now"] + fol["w"][0] * now[0] + fol["w"][1] * (
-                    now[1] + follow_log)
-                flows["weights"] = np.maximum(fol["trained"](end) - deployed_eci
-                                              - sum(flows.values()), 0)
-                weights_taken = True
+                due = active & ~theft_jumped & (end >= when - 1e-12)
+                if due.any():
+                    ahead = fol["trained"](end) - standing - flows["distillation"] - flows["leak"]
+                    flows["theft"] = flows["theft"] + np.where(
+                        due, share * np.maximum(ahead - skip, 0) + lift, 0)
+                    theft_jumped |= due
+            if fol["weight_theft"] is not None:
+                due = active & (end >= fol["weight_theft"][0] - 1e-12)
+                if not fol["weight_theft"][1]:
+                    due &= ~weights_taken
+                if due.any():
+                    # Stolen weights are a model China deploys at once: top its
+                    # deployed model (not its undeployed research) up to the
+                    # leader's trained one.
+                    deployed_eci = fol["eci_now"] + fol["w"][0] * now[0] + fol["w"][1] * (
+                        now[1] + follow_log)
+                    flows["weights"] = np.where(due, np.maximum(
+                        fol["trained"](end) - deployed_eci - sum(flows.values()), 0), 0)
+                    weights_taken |= due
             for key, flow in flows.items():
                 follow_eci[key] += np.where(active, flow, 0)
             follow_log = follow_log + np.where(active, sum(flows.values()), 0) / fol["w"][1]
@@ -2646,7 +2673,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         if p["serial_speedup"]:
             # The next run is shorter when capability is growing faster than
             # today: today's growth rate over the current one, capped at 1.
-            growth_now = software_rate * pace + np.where(end < slow_at, compute_rate, compute_late)
+            growth_now = np.exp(sr_log) * pace + np.where(end < slow_at, compute_rate,
+                                                          compute_late)
             run_len[ready] = (train_time * np.minimum(
                 1.0, baseline_capability_rate / np.maximum(growth_now, 1e-9)))[ready]
         run_start_scale[ready] = (frontier_log(end) + boost_log)[ready]

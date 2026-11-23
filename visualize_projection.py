@@ -27994,11 +27994,22 @@ def _cn_tk_shift(paths, years, lead, back):
     return np.where(u[None, :] < 0, paths[:, :1] + back * u[None, :], inside)
 
 
+def _cn_tk_automated_scale(day, parallel):
+    """China's own-research multiple (vs the US's) once AI does all its
+    research: AI labor and experiments both run on compute, so it is China's
+    installed compute today over the US's, to the research inputs' power
+    (`parallelization`). Its measured multiple (`software_scale`) also counts
+    its smaller head count, which stops binding as AI takes the work over
+    (`test_automation_moves_a_follower_to_its_automated_research_rate`)."""
+    cn, us = _pc_cn_installed(day, None, 0.0), _pc_us_installed(day, 0.0)
+    return float(np.clip(float(cn) / float(us), 1e-6, 1.0) ** parallel)
+
+
 @st.cache_data(show_spinner=False, max_entries=8)
 def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, hist_compute,
                     experiment_rates, experiment_hist, coding_capability, coding_weights,
                     human_curve, follower, compute_path=None, experiment_path=None,
-                    draw_rows=None):
+                    draw_rows=None, automated_scale=None):
     """`takeoff.simulate` for China as a follower, holding only what the
     section reads. The source digest invalidates it when the model changes."""
     n = len(software_scale)
@@ -28010,7 +28021,7 @@ def _cn_tk_simulate(params, model_source_digest, software_scale, compute_rates, 
                          coding_capability=coding_capability, coding_weights=coding_weights,
                          human_curve=human_curve, follower=follower,
                          compute_path=compute_path, experiment_path=experiment_path,
-                         draw_rows=draw_rows)
+                         draw_rows=draw_rows, automated_scale=automated_scale)
     wp = r["workflow_progress"]
     return {"coding_at": r["coding_at"], "events": r["events"],
             "today_hours": r["outcomes"]["Today"],
@@ -28204,7 +28215,8 @@ def _cn_tk_run(today, run=None, pacing=None):
     out = _cn_tk_simulate(sim_params, _TK_SOURCE_DIGEST, software_scale, compute_rates,
                           hist_compute, experiment_rates, cal["exp_hist"],
                           np.maximum(us_coder - level, 0.1), (w_c, w_s), human_curve, follower,
-                          compute_path, experiment_path, (full_n, keep))
+                          compute_path, experiment_path, (full_n, keep),
+                          np.full(n, _cn_tk_automated_scale(day, params["parallelization"])))
     cw = out["workflow_progress"]
     cap, soft = cw["capability_log"], cw["software_realized_log"]
     years = cw["years"]            # China's own grid, cut at any horizon

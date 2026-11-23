@@ -4357,11 +4357,11 @@ class TestPacingTab:
     def test_chinese_run_length_trades_compute_against_wall_clock(self):
         """A longer Chinese run lifts the path (more compute in one model)
         and shifts it right (the run takes longer), so it helps while the lift
-        is worth more of China's climb than the months it costs. Near the
-        crossing China's takeoff climbs slowly (copying has dried up), so at
-        the defaults every stretch up to a year beats matching, each by more
-        than the last's run of months alone would lose. Matching the bar's
-        length is the default and changes nothing."""
+        is worth more of China's climb than the months it costs. At the
+        defaults that is a U-curve: a few months' stretch beats matching, a
+        year's run gives back more than the best stretch (China's automated
+        climb is fast). Matching the bar's length is the default and changes
+        nothing."""
         at = self._app()
 
         def _surpass_mo(at):
@@ -4384,10 +4384,8 @@ class TestPacingTab:
         self._paired(at.slider(key="pc_cn_run").set_value(12))
         _assert_no_error(at, "Pacing / 12-month Chinese run")
         long_run = _surpass_mo(at)
-        # Every stretch beats matching, and a few months already buys most of
-        # what a year does.
-        assert max(mids.values()) < base and long_run < base, (mids, base, long_run)
-        assert base - mids[6] > 0.5 * (base - long_run), (mids, base, long_run)
+        assert max(mids.values()) < base, (mids, base)
+        assert long_run > min(mids.values()), (mids, long_run)
 
     def test_duvi_levers_compound_with_the_domestic_slider(self):
         """Each DUVi lever is named in the settings hover even when its cut

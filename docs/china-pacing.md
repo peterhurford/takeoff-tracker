@@ -597,10 +597,10 @@ paid for with L−L_us months of wall clock, so China's whole deliverable path l
 channels don't speed up because a run is longer); the lift is applied by re-reading
 the *same* sampled paths against a bar lowered by `cn_gain` via `_pc_cross_years`,
 which must reproduce the sim's own interpolated crossings exactly — that pairing is
-what makes the stated net free of MC noise. Live, every stretch up to a year beats matching:
-near the crossing China's takeoff climbs slowly (copying has dried up), so a level lift is
-worth more months than it costs (`test_chinese_run_length_trades_compute_against_wall_clock`);
-with a faster late climb the answer turns into a U-curve, which is the point of the control.
+what makes the stated net free of MC noise. Live, it is a U-curve: 3–6 months' stretch
+beats matching (copying has dried up near the crossing, so a level lift is worth more
+months than it costs), but China's automated climb is fast enough that a year's run loses
+more than its lift (`test_chinese_run_length_trades_compute_against_wall_clock`).
 A dated remote cut
 must not slow the years *before* it: the band stays on the export-control default
 until the cut and `comp_slow=(t_cut, a_partial·g_domestic)` takes over after, while
