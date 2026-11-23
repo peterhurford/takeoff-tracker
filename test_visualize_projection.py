@@ -5573,6 +5573,15 @@ class TestCcLargestSites:
         big = vp._cc_largest_sites(vp.dc_all, today)
         assert big["ByteDance"][2] == "Malaysia"   # its largest is abroad
 
+    def test_caption_gap_never_credits_a_shared_site_to_one_lab(self):
+        """The US side is the largest site a lab has to itself; Johor, with
+        no recorded tenant, is quoted apart as the smaller-gap case."""
+        us, cn, johor = vp._cc_site_gap(datetime(2026, 11, 23))
+        users = {dc['name']: dc.get('users') or [] for dc in vp.dc_all}
+        assert len(users[us[1]]) <= 1
+        assert cn[3] == "ByteDance"
+        assert johor[1] in vp._DC_CN_ACCESS_ABROAD and not users[johor[1]]
+
 
 class TestCcHeadline:
     """The China tab's headline cards (`_cc_headline`) read the functions

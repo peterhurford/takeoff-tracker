@@ -18029,11 +18029,13 @@ def _cc_largest_sites_fig(today):
             hovertemplate="%{y}: %{x:,.2f}M H100e<br>%{customdata}<extra>"
                           + label + "</extra>"))
     now = _cc_largest_sites(dc_all, today)
+    shared = {dc['name'] for dc in dc_all if len(dc.get('users') or []) > 1}
     for n in names:
         g = now.get(_CC_SITE_PARTY.get(n, n))
         fig.add_annotation(x=(g[0] / 1e6) if g else 0, y=n, xanchor='left',
                            showarrow=False, xshift=4,
-                           text=g[1] if g else "none catalogued",
+                           text=((g[1] + (" (shared)" if g[1] in shared else ""))
+                                 if g else "none catalogued"),
                            font=dict(size=10, color='#444444'))
     fig.update_layout(
         barmode='group', height=max(260, 34 * len(names) + 110),
@@ -18047,28 +18049,62 @@ def _cc_largest_sites_fig(today):
     return fig
 
 
+def _cc_site_gap(today, dcs=None):
+    """The caption's comparison: (US, China, Johor). US is the largest site a
+    US lab has to itself (one listed user, so a shared site's whole capacity
+    is never credited to one lab); China the largest any Chinese company of
+    the chart can use; Johor the largest China-accessible site abroad with no
+    recorded tenant, the case for a smaller gap. Each (H100e, site, country,
+    company), Johor's company None (`TestCcLargestSites`)."""
+    dcs = dc_all if dcs is None else dcs
+    solo = _cc_largest_sites([dc for dc in dcs
+                              if len(dc.get('users') or []) <= 1], today)
+    now = _cc_largest_sites(dcs, today)
+    cos = _cc_site_companies(today)
+
+    def best(table, us_side):
+        got = [table[_CC_SITE_PARTY.get(n, n)] + (n,) for n, u in cos
+               if u == us_side and _CC_SITE_PARTY.get(n, n) in table]
+        return max(got, key=lambda g: g[0]) if got else None
+    johor = None
+    for dc in dcs:
+        if dc['name'] in _DC_CN_ACCESS_ABROAD and not dc.get('users'):
+            past = [q for q in dc['points'] if q['date'] <= today and q.get('h100')]
+            if past and (johor is None or past[-1]['h100'] > johor[0]):
+                johor = (past[-1]['h100'], dc['name'], dc.get('country', ''), None)
+    return best(solo, True), best(now, False), johor
+
+
 def _render_cc_largest_sites(today):
     """Under *Compute by company*: the largest single site each company can
     use, end of 2025 and today, from Epoch's data-center catalogue."""
     st.markdown(f"**{_CC_SITE_HEAD}**")
-    now = _cc_largest_sites(dc_all, today)
-    cos = _cc_site_companies(today)
-    us, cn = (next(now[_CC_SITE_PARTY.get(n, n)] + (n,) for n, u in cos
-                   if u == side and _CC_SITE_PARTY.get(n, n) in now)
-              for side in (True, False))
+    us, cn, johor = _cc_site_gap(today)
+    text = (f"Today the biggest site a US lab has to itself is {us[1]} "
+            f"({us[0] / 1e6:.1f}M H100e, {us[3]}); the biggest any Chinese "
+            f"company can use is {cn[1]} ({cn[0] / 1e3:,.0f}k, {cn[3]}, in "
+            f"{cn[2]}), {us[0] / cn[0]:.1f}\u00d7 smaller.")
+    if johor and johor[0] > cn[0]:
+        text += (f" If {cn[3]} had all of {johor[1]} in {johor[2]} "
+                 f"({johor[0] / 1e3:,.0f}k), where no tenant is recorded, the "
+                 f"gap would be {us[0] / johor[0]:.1f}\u00d7.")
+    text += (" One training run can only use what is networked together, so "
+             "this matters as much as the totals. Faded bars are today, solid "
+             "ones the end of 2025.")
     _fn_caption(
-        f"Today the biggest site a US lab can use is {us[1]} "
-        f"({us[0] / 1e6:.1f}M H100e, {us[3]}); the biggest any Chinese company "
-        f"can, {cn[1]} ({cn[0] / 1e3:,.0f}k, {cn[3]}, in {cn[2]}), "
-        f"{us[0] / cn[0]:.0f}× smaller. One training run can only use "
-        "what is networked together, so this matters as much as the totals. "
-        "Faded bars are today, solid ones the end of 2025.",
+        text,
         ("can use", "Epoch's data-center catalogue: a site counts for every "
                     "company Epoch lists as using it, or its owner when none "
-                    "is listed. Sites with no recorded user, such as DayOne's "
-                    "Johor campus, count for no one. Shared sites count in "
-                    "full for each user, so Anthropic and SpaceXAI both get "
-                    "Colossus 2."))
+                    "is listed; a site with no recorded user counts for no "
+                    "one. The chart counts a shared site in full for each "
+                    "user and marks it (shared): Anthropic and SpaceXAI both "
+                    "get Colossus 2, though one run probably could not use "
+                    "all of it."),
+        ("where no tenant is recorded", "Reports name ByteDance as the "
+                    "campus's largest customer. The app's other China charts "
+                    "assume Chinese firms can use 30% of it for one run "
+                    "(CHINA_COMPUTE_JUDGMENTS.md \u00a77), less than "
+                    "ByteDance's own Malaysian site."))
     st.plotly_chart(_cc_largest_sites_fig(today), width="stretch")
 
 

@@ -96,7 +96,10 @@ each bar split into at home and rented abroad, from `_cc_companies(view)`:
 4. **The largest single site each company can use** sits under it
    (`_render_cc_largest_sites`), end of 2025 and today, whatever the view: a site counts in
    full for every user Epoch lists, else its operator, and for no one when no party is
-   recorded, so DayOne's Johor campus counts for no Chinese firm (`TestCcLargestSites`).
+   recorded, so DayOne's Johor campus counts for no Chinese firm. The caption's gap
+   (`_cc_site_gap`) takes the US side from sites with one listed user, so a shared site
+   (Colossus 2) never sets it, and quotes the untenanted Johor campus apart as the
+   smaller-gap case (`TestCcLargestSites`).
 
 The lead line is read off the rows (`_cc_companies_lead`); `TestCcCompanies` (unit) and
 `test_company_views_switch_the_bars` (integration) guard it.
