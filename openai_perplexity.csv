@@ -1,0 +1,32 @@
+# OpenAI, "Perplexity and Intelligence" (Jakub Pachocki, 2026-11-22),
+# https://openai.com/index/perplexity-and-intelligence/
+# Base-model log-perplexity (cross-entropy loss) on OpenAI's main held-out dataset, a fixed
+# snapshot of its internal codebase, used since GPT-3.5. OpenAI publishes no table: every
+# value is read from the chart's SVG (viewBox 908x534), each model's leader-line anchor
+# against the axes (0.37 log-perplexity over 458 px, 2022-01-01 at x=176, 103 px a year).
+# Values land on 0.001 steps and dates mid-month, so the source has three decimals and
+# month resolution. Calibration guards (TestOpenAIPerplexity): GPT-3.5 0.986, GPT-4 0.913
+# and GPT-6.2 Astra 0.761 against the text's ~0.99, ~0.91 and ~0.76.
+# date: the chart's "release or evaluation date"; GPT-3.5 sits at Mar 2022, the base
+#   model's date, not ChatGPT's (Nov 2022). The internal model is unreleased and unnamed,
+#   evaluated in Nov 2026; the post gives nothing else about it.
+# milestone: the chart's dotted line through that model, the capability OpenAI names there.
+#   The post's next window, 0.68-0.70, is the chart's shaded band.
+# epoch_model: the matching `Model version` in epoch_capabilities_index.csv, blank if none.
+#   A label naming two models (a base model and a reasoning model built on it) takes the
+#   higher-ECI one.
+model,date,log_ppl,kind,milestone,epoch_model
+GPT-3.5,2022-03-18,0.986,public,Fluent conversation,
+GPT-4,2023-03-18,0.913,public,Benefits from thinking before answering,GPT-4 (Mar 2023)
+GPT-4 Turbo,2023-11-17,0.909,public,,GPT-4 Turbo (Nov 2023)
+GPT-4o / o1,2024-05-17,0.904,public,,o1
+GPT-4.5,2025-02-15,0.876,public,,GPT-4.5
+GPT-4.1 / o3,2025-04-17,0.902,public,,o3
+GPT-5 / 5.1,2025-08-17,0.893,public,,GPT-5.1
+GPT-5.2,2025-12-16,0.888,public,,GPT-5.2
+GPT-5.3-Codex / 5.4,2026-02-15,0.871,public,Useful coder,GPT-5.4
+GPT-5.5,2026-04-17,0.848,public,,GPT-5.5
+GPT-5.6 Sol,2026-07-17,0.828,public,Cybersecurity expert,GPT-5.6 Sol
+GPT-6 Astra,2026-09-16,0.783,public,,GPT-6 Astra
+GPT-6.2 Astra,2026-11-16,0.761,public,Solved a Millennium Prize math problem,GPT-6.2 Astra
+Internal model,2026-11-16,0.732,internal,,

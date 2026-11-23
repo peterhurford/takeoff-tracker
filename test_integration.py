@@ -122,7 +122,8 @@ def _plan(at, run=True, **fields):
         ph = {f: ss[f"pc_win1_{f}"] for f in vp._PC_PHASE_FIELDS}
     else:
         ph = dict(kind="pace", pace=100, cut=2, start=vp._pc_pause_default_mo(),
-                  end=vp._PC_PAUSE_MO_MAX, ban=1, ai=0, **{u: 100 for u in vp._PC_USES})
+                  end=vp._PC_PAUSE_MO_MAX, ban=1, ai=0, capeci=185, lift=0,
+                  **{u: 100 for u in vp._PC_USES})
     ph.update(fields)
     ss["pc_win_n"] = 1
     for f, v in ph.items():
@@ -2142,7 +2143,7 @@ class TestTakeoffTab:
         naming its latest reading; the chart sits inside."""
         at = self._app()
         folds = [e for e in at.expander if e.label.endswith("*chart and details*")]
-        assert len(folds) == 8
+        assert len(folds) == 9
         assert all(e.label.startswith("Latest **") for e in folds)
         assert all(e.get("plotly_chart") for e in folds)
         heads = [h.value for h in at.subheader]
@@ -3953,6 +3954,68 @@ class TestPacingTab:
         _assert_no_error(at, "Pacing / training freeze and AI R&D ban")
         assert last(at)[0] < held
 
+    def test_a_capability_cap_holds_the_us_at_its_level(self):
+        """A *Cap capability* phase (`_pc_cap_rule`, `_tk_cap`) reruns the US
+        with no model past the cap: the US line rises to the cap and holds
+        there through the phase while the no-plan line climbs on, and the
+        plan's labels name the cap."""
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        at.button(key="pc_add_cap").click().run()
+        _assert_no_error(at, "Pacing / capability cap")
+        ss = at.session_state
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        a, b = (_pc_add_months(today, ss[f"pc_win1_{f}"]) for f in ("start", "end"))
+        for el in at.get("plotly_chart"):
+            d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+            if "China, projected" in d:
+                break
+        else:
+            raise AssertionError("no pause chart")
+        us, free = d["US, projected"], d["US, no capability cap"]
+        held = [y for x, y in zip(us["x"], us["y"])
+                if a.isoformat() < x[:10] < b.isoformat()]
+        # The phase opens now, so the US climbs to the cap and holds there,
+        # below the no-plan line by the phase's end.
+        assert held and max(held) <= ss["pc_win1_capeci"] + 1
+        assert max(held) - held[-1] < 0.5
+        free_at = dict(zip(free["x"], free["y"]))
+        last = max(x for x in us["x"] if x[:10] < b.isoformat())
+        assert free_at[last] > max(held) + 5
+
+    def test_each_kind_of_pause_runs_and_the_full_stop_buys_most(self):
+        """The four kinds-of-pause presets (`_PC_PRESET_HELP`) each run
+        without error and carry their help; half a year after they end the
+        US stands lower under the full stop than under the training pause,
+        whose research carried on and shipped at the lift."""
+        import visualize_projection as vp
+
+        def us_at(at, when):
+            for el in at.get("plotly_chart"):
+                d = {t.get("name"): t for t in json.loads(el.proto.spec)["data"]}
+                if "US, projected" in d:
+                    xs = [x[:10] for x in d["US, projected"]["x"]]
+                    return d["US, projected"]["y"][next(i for i, x in enumerate(xs) if x >= when)]
+            raise AssertionError("no pause chart")
+
+        at = _fresh_app()
+        at.run()
+        _switch_tab(at, "Pacing")
+        names = list(vp._pc_plan_presets(datetime.now()))
+        end = _pc_add_months(datetime.now(), 30).date().isoformat()
+        got = {}
+        for name in vp._PC_PRESET_HELP:
+            at.button(key=f"pc_preset_{names.index('Clear plan')}").click().run()
+            btn = at.button(key=f"pc_preset_{names.index(name)}")
+            assert btn.help == vp._PC_PRESET_HELP[name]
+            btn.click().run()
+            _assert_no_error(at, f"Pacing / {name}")
+            got[name] = us_at(at, end)
+        # Half a year after the pause ends, the training pause's backlog has
+        # shipped; the full stop is still two years behind.
+        assert got["Full stop, 2 years"] < got["Training pause, 2 years"] - 5
+
     def test_time_bought_reads_the_plan_against_no_plan(self):
         """*Time bought* (`_pc_render_time_bought`) appears once the plan does
         anything: per milestone the US's median date without and with the
@@ -4043,7 +4106,7 @@ class TestPacingTab:
         _switch_tab(at, "Pacing")
         assert not charts(at, "US pace")
 
-        preset(at, "Pause a year, then half speed")
+        preset(at, "Full stop a year, then half speed")
         assert at.session_state["pc_win_n"] == 2
         assert at.selectbox(key="pc_win1_pace").value == 0
         assert at.selectbox(key="pc_win2_pace").value == 50

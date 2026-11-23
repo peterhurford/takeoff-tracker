@@ -5700,6 +5700,17 @@ class TestPacing:
         assert vp._tk_cut_hold(sched) == (sched[0][0], sched[1][1])
         assert vp._tk_cut_hold((6.0, 1.0, None)) is None and vp._tk_cut_hold(None) is None
         assert vp._pc_uses_label(vp._PC_HOLD) == "training compute frozen"
+        # A capability cap: one rule over its phases, at the lowest level,
+        # and nothing else.
+        assert vp._pc_cap_rule(today) is None
+        state.update(pc_win1_kind="cap", pc_win1_capeci=200, pc_win2_kind="cap", pc_win2_capeci=185)
+        assert vp._pc_cap_rule(today) == (phases[0][0], phases[1][1], 185, 0)
+        state.update(pc_win1_lift=2, pc_win2_lift=1)       # the slowest lift
+        assert vp._pc_cap_rule(today)[3] == 1
+        state.update(pc_win2_lift=0)
+        assert vp._pc_cap_rule(today)[3] == 2
+        assert vp._pc_ai_rule(today) is None and vp._pc_cut_spans(today) == []
+        assert vp._pc_pace_plan(today) == (1.0, [])
         state.update(pc_win1_kind="pace", pc_win2_kind="ban")
         assert vp._pc_uses_label((0.25, 0.5, 0.5)) == "training 25%, experiments 50%, AI researchers 50%"
 
@@ -5727,7 +5738,19 @@ class TestPacing:
         assert vp._pc_ai_rule(today)[1:] == (None, None)
         assert vp._pc_cut_spans(today)[0][2] == vp._PC_HOLD
         state.clear()
-        vp._pc_apply_preset(presets["Pause a year, then half speed"])
+        vp._pc_apply_preset(presets["Cap capability at ECI 185 for two years"])
+        a, b, level, lift = vp._pc_cap_rule(today)
+        assert level == 185 and lift == 0 and (b - a).days == pytest.approx(730, abs=2)
+        # The kinds of pause: each runs two years from now, each has its help,
+        # and the training pauses cap at today's frontier.
+        kinds = [n for n in presets if n.endswith(", 2 years")]
+        assert kinds == list(vp._PC_PRESET_HELP)
+        for name in kinds:
+            assert all(ph["start"] == 0 and ph["end"] == 24 for ph in presets[name])
+            assert name == "Full stop, 2 years" or {"kind": "cap", "capeci": 0}.items() <= \
+                next(ph for ph in presets[name] if ph["kind"] == "cap").items()
+        state.clear()
+        vp._pc_apply_preset(presets["Full stop a year, then half speed"])
         vp._pc_add_phase("realloc")      # training compute to experiments
         assert state["pc_win_n"] == 3 and state["pc_win2_pace"] == 50
         assert state["pc_win3_kind"] == "realloc"
@@ -5817,6 +5840,67 @@ class TestPacing:
         assert 0.05 < one < three
         assert all(delay(review=(0.5, 3.0), k=k) >= 0 for k in base["when"])
         assert delay((3.0, 0.5, None), (0.5, 3.0)) > delay((3.0, 0.5, None))
+
+    def test_a_capability_cap_holds_the_path_and_moves_milestones_past_it(self):
+        """`_tk_cap`: from the start to the lift each draw's path and model
+        stop at its start plus the gain (or where it stood, if higher), then
+        rejoin the run's; a milestone the run had above the cap waits until
+        the held path reaches that ECI, one below it or before the start
+        stands; the uncapped model is kept for China. `_tk_merge_limits`
+        spans both rules at the stricter level, and the lift is a training
+        run and validation after the cap ends."""
+        years = np.arange(0, 4, 1 / 12)
+        paths = np.vstack([150 + 10 * years, 170 + 10 * years])
+        result = {"workflow_progress": {"years": years},
+                  "coding_at": np.array([0.5, 2.0]),
+                  "events": {"RSI": np.array([np.inf, 1.8])}}
+        eci = {"paths": paths, "model": paths - 1, "ultra_level": 190.0}
+        res, out = vp._tk_cap(result, eci, 1.0, 15.0, 3.0)
+        held = out["paths"]
+        assert held[0, 12:36].max() == pytest.approx(165.0)     # 150 + 15
+        assert held[1, 12:36].max() == pytest.approx(185.0)
+        # A draw already past its cap at the start holds where it stood.
+        assert vp._tk_cap(result, eci, 1.0, 5.0, 3.0)[1]["paths"][0, 12:36].max() == \
+            pytest.approx(160.0)
+        np.testing.assert_array_equal(held[:, 36:], paths[:, 36:])
+        np.testing.assert_array_equal(held[:, :12], paths[:, :12])
+        np.testing.assert_array_equal(out["model_uncapped"], paths - 1)
+        assert res["coding_at"][0] == 0.5                       # before the cap
+        assert res["coding_at"][1] == pytest.approx(3.0, abs=1 / 12)   # 190 waits for the lift
+        assert res["events"]["RSI"][1] == pytest.approx(3.0, abs=1 / 12)
+        assert np.isinf(res["events"]["RSI"][0])
+        assert out["ultra"][1] == pytest.approx(3.0, abs=1 / 12) and np.isinf(out["ultra"][0])
+        assert vp._tk_merge_limits(None, (1.0, 5.0, 3.0)) == (1.0, 5.0, 3.0)
+        assert vp._tk_merge_limits((0.5, None, 2.0), (1.0, 5.0, 3.0)) == (0.5, None, 3.0)
+        assert vp._tk_merge_limits((0.5, 8.0, None), (1.0, 5.0, 3.0)) == (0.5, 5.0, None)
+        # A rising lift: from the lift the cap climbs at the rate, never past
+        # the run's own path.
+        rise = vp._tk_cap(result, eci, 1.0, 15.0, 3.0, rate=12.0)[1]["paths"]
+        assert rise[1, 36] == pytest.approx(185.0) and rise[1, 42] == pytest.approx(191.0)
+        assert np.all(rise <= paths + 1e-9) and np.all(np.diff(rise, axis=1) >= -1e-9)
+        prm = {"training_months": 3, "validation_months": 1}
+        assert vp._tk_cap_lift((0.0, 5.0, 2.0), prm) == pytest.approx(2 + 4 / 12)
+        assert np.isinf(vp._tk_cap_lift((0.0, 5.0, None), prm))
+
+    def test_a_capability_cap_holds_the_us_then_it_jumps(self, monkeypatch):
+        """Pacing's US under a two-year cap (`_pc_takeoff_us(cap=...)`): the
+        median path stays at the cap until the lift, then jumps past it;
+        every milestone's median comes later, none sooner."""
+        monkeypatch.setattr(vp.st, "session_state", {})
+        today = vp._today()
+        base = vp._pc_takeoff_us(today)
+        tk = vp._pc_takeoff_us(today, cap=(0.0, 5.0, 2.0))
+        years, m = tk["years"], np.median(tk["paths"], axis=0)
+        level = np.median(base["paths"][:, 0]) + 5.0
+        assert m[(years > 0.5) & (years < 2.3)].max() <= level + 0.5
+        assert m[years >= 3.0][0] > level + 30
+        for k, v in base["when"].items():
+            ok = np.isfinite(v) & (v > 0.05)
+            with np.errstate(invalid="ignore"):
+                d = np.where(np.isfinite(tk["when"][k]), tk["when"][k], 99)[ok] - v[ok]
+            # The AI-limited rerun itself brings a few draws (under 1%) a
+            # few months sooner, as Pacing's AI R&D ban alone does.
+            assert np.median(d) > 0 and np.mean(d < -1 / 12) < 0.01, k
 
     def test_time_bought_reads_delay_per_scenario_and_the_even_odds_start(self):
         """`_pc_time_bought` takes each scenario's own delay (not the gap
@@ -7223,6 +7307,45 @@ class TestTkStartDraws:
         d, mid, half, _n = vp._cc_frontier_anchor(fr)
         lowest = mid - half + 24.5 * (max((today - d).days, 0) + vp._ship_lag("us")) / 365.25
         assert starts.min() >= lowest - 1e-9
+
+
+class TestOpenAIPerplexity:
+    """OpenAI's base-model log-perplexity (`openai_perplexity.csv`), the
+    Takeoff evidence section that draws it."""
+
+    def test_digitized_values_match_the_posts_text(self):
+        """Calibration guards: the chart's values agree with the three the post
+        prints (~0.99, ~0.91, ~0.76), one internal model sits below the newest
+        public one, and every Epoch match exists."""
+        rows = {r['model']: r for r in vp.load_openai_perplexity()}
+        assert rows['GPT-3.5']['ppl'] == pytest.approx(0.99, abs=0.005)
+        assert rows['GPT-4']['ppl'] == pytest.approx(0.91, abs=0.005)
+        assert rows['GPT-6.2 Astra']['ppl'] == pytest.approx(0.76, abs=0.005)
+        assert rows['GPT-6.2 Astra']['milestone'] == "Solved a Millennium Prize math problem"
+        (internal,) = [r for r in rows.values() if r['kind'] == 'internal']
+        assert internal['ppl'] < rows['GPT-6.2 Astra']['ppl']
+        eci = {m['version'] for m in vp._eci_rows_by_version()}
+        assert all(r['epoch_model'] in eci for r in rows.values() if r['epoch_model'])
+
+    def test_the_2026_trend_reaches_the_window_in_2027(self):
+        """`_ppl_trend` over the 2026 public models falls about 0.14 a year;
+        `_ppl_window_dates` puts the window in 2027, the internal model
+        (already ahead) sooner than the public line; `_ppl_eci_rate` puts
+        the window near ECI 183-186."""
+        rows = vp.load_openai_perplexity()
+        slope, _ = vp._ppl_trend(rows)
+        assert slope == pytest.approx(-0.14, abs=0.02)
+        w = vp._ppl_window_dates(rows)
+        assert all(d.year == 2027 for d in w['public'] + w['internal'])
+        assert w['internal'][0] < w['public'][0] and w['public'][0] < w['public'][1]
+        per, (p0, e0) = vp._ppl_eci_rate(rows)
+        assert e0 + (p0 - 0.70) * per == pytest.approx(183, abs=2)
+        assert vp._ppl_window_dates([r for r in rows if r['kind'] == 'public'])['internal'] is None
+        assert vp._ppl_trend(rows[:3]) is None
+
+    def test_the_section_summary_reads_the_lowest_value(self):
+        line = vp._rsi_evidence_summary("perplexity")
+        assert "**0.732**" in line and "internal model" in line and "0.68–0.70" in line
 
 
 class TestMetrAeci:

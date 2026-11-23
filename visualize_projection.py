@@ -7386,6 +7386,12 @@ def _rsi_evidence_summary(key):
     if key == "tasteval":
         r = max(load_tasteval(), key=lambda r: r['mult'])
         return reading(f"{r['mult']:g}×", f"expert compute, {r['name']}, {when(r)}")
+    if key == "perplexity":
+        r = min(load_openai_perplexity(), key=lambda r: r['ppl'])
+        lo, hi = _PPL_WINDOW
+        name = r['model'].lower() if r['kind'] == 'internal' else r['model']
+        return (reading(f"{r['ppl']:.3f}", f"{name}, {when(r)}")
+                + f" · next window {lo:.2f}–{hi:.2f}" + (", entered" if r['ppl'] <= hi else ""))
     return ""
 
 
@@ -7412,6 +7418,7 @@ _TK_JUMP_ROWS = (
                   ("OpenAI internal task horizon", "Internal horizon"),
                   ("Research direction", "Direction"),
                   ("Research taste (TasteVal)", "TasteVal"),
+                  ("OpenAI base-model perplexity", "Perplexity"),
                   ("Capabilities Milestones", "Milestones"),
                   ("Automated coder projection", "Coder projection"),
                   ("METR's acceleration assessment", "METR"))),
@@ -7639,6 +7646,8 @@ def render_rsi(end_year):
         _render_rsi_direction(rsi_end_year)
     with _evidence_section("Research taste (TasteVal)", "tasteval"):
         _render_rsi_tasteval(rsi_end_year)
+    with _evidence_section("OpenAI base-model perplexity", "perplexity"):
+        _render_rsi_perplexity(rsi_end_year)
 
     st.markdown("---")
     # The conditioning controls render inside the blend's weights expander,
@@ -8566,6 +8575,179 @@ def _render_rsi_horizon(end_year):
          "The mix of tasks people delegate is lengthening, which this does not "
          "control for."))
 
+
+# ── OpenAI base-model perplexity (Pachocki, Nov 22 2026) ─────────────────
+_PPL_SOURCE_URL = "https://openai.com/index/perplexity-and-intelligence/"
+_PPL_WINDOW = (0.68, 0.70)              # the post's next "transformative" window
+# The trend is fitted on OpenAI's public models from here: its 2026 run, which
+# the post calls a steep acceleration (footnote 5).
+_PPL_TREND_FROM = datetime(2025, 12, 1)
+
+
+def load_openai_perplexity():
+    """OpenAI's base-model log-perplexity per model, digitized
+    (`openai_perplexity.csv`; method in its header)."""
+    with Path(__file__).with_name('openai_perplexity.csv').open() as f:
+        return [{'model': r['model'], 'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+                 'ppl': float(r['log_ppl']), 'kind': r['kind'],
+                 'milestone': r['milestone'] or None, 'epoch_model': r['epoch_model'] or None}
+                for r in csv.DictReader(line for line in f if not line.startswith('#'))]
+
+
+def _ppl_trend(rows, since=_PPL_TREND_FROM):
+    """OLS of log-perplexity on time over the public models from `since`:
+    (slope a year, the fit at `since`), or None under three models."""
+    pub = [r for r in rows if r['kind'] == 'public' and r['date'] >= since]
+    if len(pub) < 3:
+        return None
+    t = np.array([(r['date'] - since).days / 365.25 for r in pub])
+    slope, icpt = np.polyfit(t, [r['ppl'] for r in pub], 1)
+    return float(slope), float(icpt)
+
+
+def _ppl_window_dates(rows, since=_PPL_TREND_FROM):
+    """When the trend reaches each edge of `_PPL_WINDOW` (0.70, then 0.68):
+    {'public': [dates] on the fitted line, 'internal': [dates] at the same
+    slope from the newest internal model, or None without one}, or None
+    when the trend is not falling."""
+    fit = _ppl_trend(rows, since)
+    if fit is None or fit[0] >= 0:
+        return None
+    slope, icpt = fit
+    edges = sorted(_PPL_WINDOW, reverse=True)
+    out = {'public': [since + timedelta(days=365.25 * (lvl - icpt) / slope) for lvl in edges],
+           'internal': None}
+    internal = [r for r in rows if r['kind'] == 'internal']
+    if internal:
+        r = max(internal, key=lambda r: r['date'])
+        out['internal'] = [r['date'] + timedelta(days=365.25 * (lvl - r['ppl']) / slope)
+                           for lvl in edges]
+    return out
+
+
+def _ppl_eci_rate(rows, since=_PPL_TREND_FROM):
+    """ECI points per unit drop in log-perplexity over the public models from
+    `since` that Epoch scores (OLS of ECI on log-perplexity), with the newest
+    such model as (log-perplexity, ECI): (rate, anchor), or None under three."""
+    eci = {m['version']: m['eci'] for m in _eci_rows_by_version()}
+    pts = [(r['ppl'], eci[r['epoch_model']], r['date']) for r in rows
+           if r['kind'] == 'public' and r['date'] >= since and r['epoch_model'] in eci]
+    if len(pts) < 3:
+        return None
+    slope = np.polyfit([p for p, _, _ in pts], [e for _, e, _ in pts], 1)[0]
+    last = max(pts, key=lambda x: x[2])
+    return float(-slope), (last[0], last[1])
+
+
+def _render_rsi_perplexity(end_year):
+    """OpenAI's base-model log-perplexity by model, the capability lines its
+    chart draws, the post's next window and the 2026 trend run into it.
+    Display only: nothing here feeds the takeoff model."""
+    rows = load_openai_perplexity()
+    fit, when, rate = _ppl_trend(rows), _ppl_window_dates(rows), _ppl_eci_rate(rows)
+    _fn_line(
+        "How well OpenAI's base models predict held-out text (lower is better), the "
+        "measure OpenAI's chief scientist proposes labs share and set common limits on.",
+        ("held-out text",
+         "Log-perplexity (cross-entropy loss) on a fixed snapshot of OpenAI's internal "
+         "codebase, the dataset it has tracked since GPT-3.5. It measures pretraining "
+         "alone: chain-of-thought and other post-training gains do not lower it."))
+    # The chart stops half a year past the window: nothing is projected beyond it.
+    end = (when['public'][-1] + timedelta(days=180) if when
+           else datetime(min(end_year, _RSI_MAX_END_YEAR), 12, 31))
+
+    def _build():
+        fig = go.Figure()
+        lo, hi = _PPL_WINDOW
+        fig.add_hrect(y0=lo, y1=hi, fillcolor='rgba(142,68,173,0.15)', line_width=0)
+        fig.add_annotation(xref='x domain', x=0.01, y=(lo + hi) / 2, showarrow=False,
+                           xanchor='left', text='Next window (0.68–0.70)',
+                           font=dict(color='#8e44ad', size=11))
+        for r in rows:
+            if r['milestone']:
+                fig.add_hline(y=r['ppl'], line=dict(color='rgba(44,62,80,0.35)', width=1,
+                                                    dash='dot'))
+                fig.add_annotation(xref='x domain', x=0.01, y=r['ppl'], showarrow=False,
+                                   xanchor='left', yanchor='bottom', text=r['milestone'],
+                                   font=dict(color='#5c6370', size=10))
+        if fit and when:
+            slope, icpt = fit
+            a, b = _PPL_TREND_FROM, when['public'][-1]
+            fig.add_trace(go.Scatter(
+                x=[a, b], y=[icpt, icpt + slope * (b - a).days / 365.25], mode='lines',
+                name=f'2026 trend ({slope:+.2f} a year)',
+                line=dict(color='#2c3e50', dash='dash'), hoverinfo='skip'))
+            if when['internal']:
+                r = max((r for r in rows if r['kind'] == 'internal'), key=lambda r: r['date'])
+                b = when['internal'][-1]
+                fig.add_trace(go.Scatter(
+                    x=[r['date'], b], y=[r['ppl'], r['ppl'] + slope * (b - r['date']).days / 365.25],
+                    mode='lines', name='Same slope from the internal model',
+                    line=dict(color='#E8871E', dash='dot'), hoverinfo='skip'))
+        for kind, name, marker in (
+                ('public', 'OpenAI base models',
+                 dict(color='#4F8DFD', size=9)),
+                ('internal', 'Internal model (unreleased)',
+                 dict(color='white', size=10, line=dict(color='#E8871E', width=2)))):
+            pts = [r for r in rows if r['kind'] == kind]
+            fig.add_trace(go.Scatter(
+                x=[r['date'] for r in pts], y=[r['ppl'] for r in pts],
+                mode='markers+lines' if kind == 'public' else 'markers', name=name,
+                line=dict(color='rgba(79,141,253,0.5)', width=1), marker=marker,
+                customdata=[[r['model']] for r in pts],
+                hovertemplate='%{customdata[0]}<br>%{x|%b %Y}<br>'
+                              'Log-perplexity: %{y:.3f}<extra></extra>'))
+        _add_today_vline(fig)
+        fig.update_layout(
+            height=500, margin=dict(l=60, r=30, t=70, b=40),
+            xaxis=dict(title='Release or evaluation date',
+                       range=[datetime(2022, 1, 1), end],
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            yaxis=dict(title='Log-perplexity (lower is better)', range=[0.66, 1.0],
+                       tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e'),
+                       gridcolor='rgba(0,0,0,0.12)', zeroline=False),
+            hovermode='closest', plot_bgcolor='white', paper_bgcolor='white',
+            font=dict(color='#1a1a2e'),
+            legend=dict(orientation='h', x=0, xanchor='left', y=1.02, yanchor='bottom',
+                        font=dict(color='#1a1a2e', size=11)),
+            hoverlabel=dict(bgcolor='#ffffff', font_color='#1a1a2e',
+                            bordercolor='#5c6370'))
+        return fig
+    st.plotly_chart(_fig_memo(_build), width='stretch', theme=None)
+    old_rows = [r for r in rows if r['kind'] == 'public'
+                and datetime(2023, 1, 1) <= r['date'] < _PPL_TREND_FROM]
+    t = np.array([(r['date'] - old_rows[0]['date']).days / 365.25 for r in old_rows])
+    old_slope = float(np.polyfit(t, [r['ppl'] for r in old_rows], 1)[0])
+    text = (f"Source: [Pachocki, *Perplexity and Intelligence*]({_PPL_SOURCE_URL}) "
+            "(OpenAI, Nov 22 2026), read from the chart. One lab on its own dataset, so "
+            "not comparable across labs.")
+    notes = [("read from the chart",
+              "From the chart's SVG, three decimals and month resolution "
+              "(`openai_perplexity.csv`). The text gives GPT-3.5 ~0.99, GPT-4 ~0.91 and the "
+              "Millennium Prize model ~0.76; the internal model is otherwise undescribed.")]
+    if when:
+        pub, internal = when['public'], when['internal']
+        text += (f" On the 2026 trend the public models reach 0.70 in {pub[0]:%b %Y} and "
+                 f"0.68 in {pub[1]:%b %Y}")
+        text += (f"; the internal model, already ahead, in {internal[0]:%b %Y} and "
+                 f"{internal[1]:%b %Y}." if internal else ".")
+        notes.append(("2026 trend",
+                      f"OLS over OpenAI's public models since Dec 2025, {fit[0]:+.3f} a year, "
+                      f"against {old_slope:+.3f} over 2023-25, when gains came mostly from "
+                      "reasoning, which perplexity does not see. The post expects progress "
+                      "to look slower near the data's unknown entropy floor, so a straight "
+                      "line may run early."))
+    if rate:
+        per, (p0, e0) = rate
+        lo_e, hi_e = (e0 + (p0 - v) * per for v in sorted(_PPL_WINDOW, reverse=True))
+        text += f" At 2026's exchange rate the window is about ECI {lo_e:.0f}–{hi_e:.0f}."
+        notes.append(("2026's exchange rate",
+                      f"OLS of Epoch's ECI on log-perplexity over the 2026 models Epoch "
+                      f"scores: {per / 100:.1f} ECI points per 0.01 drop. It does not hold "
+                      "across eras: from GPT-4 to GPT-5.2 ECI rose 33 points while "
+                      "log-perplexity fell 0.025."))
+    _fn_caption(text, *notes)
 
 # ── METR's acceleration assessment (AECI) against public ECI ─────────────
 _METR_ACCEL_SOURCE_URL = (
@@ -18684,13 +18866,22 @@ _PC_BAN_OPTIONS = [1, 2, 3, 6]
 # A *Ban AI in AI R&D* phase: 0 bans all AI from AI research, else the
 # highest ECI a model doing it may have.
 _PC_AI_OPTIONS = [0, 150, 160, 170, 180, 190, 200, 220]
+# A *Cap capability* phase: the highest ECI a US model may be trained to.
+# OpenAI's next perplexity window (0.68-0.70, Pachocki, Nov 22 2026) is about
+# ECI 183-187 at 2026's exchange rate (`openai_perplexity.csv`).
+# 0 is today's trained frontier, whatever its score.
+_PC_CAP_OPTIONS = [0, 180, 185, 190, 200, 210, 225, 250]
+# How a cap ends: 0 lifts it at once, else it rises from the phase's end at
+# that multiple of today's ECI pace.
+_PC_LIFT_OPTIONS = [0, 2, 1]
 # A *Cut US R&D compute* phase divides every use's compute by this.
 _PC_CUT_OPTIONS = [2, 3, 6, 10, 12, 30]
 # What a phase does, {kind: its button and row name}: each kind's row shows
 # only its own setting(s) and dates, and `_pc_phase_effect` reads only those.
 _PC_PHASE_KINDS = {"pace": "Pace the US", "cut": "Cut US R&D compute",
                    "realloc": "Reallocate compute", "ban": "Ban runaway RSI",
-                   "noai": "Ban AI in AI R&D", "hold": "Freeze training compute"}
+                   "noai": "Ban AI in AI R&D", "hold": "Freeze training compute",
+                   "cap": "Cap capability"}
 # A *Freeze training compute* phase's kept shares: training's is not a share
 # but its level at the phase's start, which only the Takeoff rerun knows
 # per scenario (`takeoff.simulate(train_hold=…)`).
@@ -18703,7 +18894,8 @@ _PC_TB_VIEWS = ("Over time", "By start date: chance", "By start date: time bough
 _PC_TB_COLORS = {"automated coder": "#E8871E", "RSI": "#7B3FA0",
                  "ultraintelligence": "#C0392B"}
 
-_PC_PHASE_FIELDS = ("kind", "pace", "cut", "start", "end", *_PC_USES, "ban", "ai")
+_PC_PHASE_FIELDS = ("kind", "pace", "cut", "start", "end", *_PC_USES, "ban", "ai", "capeci",
+                    "lift")
 _PC_RESET_KEYS = ["pc_run", "pc_pool", "pc_party", "pc_tb_date", "pc_tb_view",
                   "pc_timing", "pc_end_year", "pc_stop_dist",
                   "pc_stop_remote", "pc_withhold", "pc_dom_slow", "pc_duv_ban",
@@ -18850,8 +19042,8 @@ def _pc_cut_plan_note(eq, moved, banned):
     """Under the plan: the pacing plan its compute changes and bans (on
     runaway RSI, on AI in AI R&D) are nearest, `eq` = (pace %, months) from `_pc_cut_equivalent`."""
     pct, months = eq
-    what = ("the compute changes and the ban" if moved and banned
-            else "the compute changes" if moved else "the ban")
+    what = ("the compute changes and the ban or cap" if moved and banned
+            else "the compute changes" if moved else "the ban or cap")
     _fn_caption(
         f"About the same as pacing at {pct}% for {months} months, then no pacing.",
         ("About the same", f"The pacing plan whose US path best tracks the "
@@ -18903,12 +19095,19 @@ def _pc_plan_presets(today):
                 "start": min(t0 + start, _PC_PAUSE_MO_MAX),
                 "end": _PC_PAUSE_MO_MAX if end is None else min(t0 + end, _PC_PAUSE_MO_MAX),
                 **{u: v.get(u, 100) for u in _PC_USES}, "ban": v.get("ban", 1),
-                "ai": v.get("ai", 0)}
+                "ai": v.get("ai", 0), "capeci": v.get("capeci", 185), "lift": v.get("lift", 0)}
+
+    def now(kind, **v):
+        # The kinds of pause run two years from now, so they compare.
+        return phase(kind, -t0, 24 - t0, **v)
     return {
         "Clear plan": (),
-        "Pause": (phase("pace", 0, pace=0),),
+        "Training pause, 2 years": (now("cap", capeci=0),),
+        "Training + hardware pause, 2 years": (now("cap", capeci=0), now("cut", cut=10)),
+        "Training + research pause, 2 years": (now("cap", capeci=0), now("hold"), now("noai")),
+        "Full stop, 2 years": (now("pace", pace=0),),
         "Half speed": (phase("pace", 0, pace=50),),
-        "Pause a year, then half speed": (phase("pace", 0, 12, pace=0),
+        "Full stop a year, then half speed": (phase("pace", 0, 12, pace=0),
                                           phase("pace", 12, pace=50)),
         "Step down: 75%, 50%, 25%": (phase("pace", 0, 12, pace=75),
                                      phase("pace", 12, 24, pace=50), phase("pace", 24, pace=25)),
@@ -18918,7 +19117,32 @@ def _pc_plan_presets(today):
         "Two years of half training compute": (phase("realloc", 0, 24, train=50),),
         "No AI in AI R&D, compute ÷30": (phase("noai", 0), phase("cut", 0, cut=30)),
         "No AI in AI R&D, training compute frozen": (phase("noai", 0), phase("hold", 0)),
+        "Cap capability at ECI 185 for two years": (phase("cap", -t0, 24 - t0, capeci=185),),
     }
+
+
+# What each kind of pause preset stands for, on its button.
+_PC_PRESET_HELP = {
+    "Training pause, 2 years": (
+        "No US model trained past today's frontier; research, chip buying and "
+        "AI use go on. What most pause proposals ask for: FLI's 2023 letter "
+        "(its FAQ: research and existing models carry on), PauseAI, "
+        "responsible scaling policies and OpenAI's proposed perplexity limits. "
+        "The cap lifts at once; set *How it lifts* to end it gradually."),
+    "Training + hardware pause, 2 years": (
+        "The training pause, plus R&D compute ÷10 for the two years, standing "
+        "in for Yudkowsky's 2023 call to shut down large GPU clusters."),
+    "Training + research pause, 2 years": (
+        "The training pause, plus training compute frozen and no AI in AI R&D: "
+        "close to MIRI's 2025 treaty (chips, training and research) and "
+        "ControlAI's ban on automated AI research. People's own research goes "
+        "on, which no lever stops apart from a full stop."),
+    "Full stop, 2 years": (
+        "The US's whole effort waits: research, compute buildup and training "
+        "all stop and pick up where they left off, so every date moves by the "
+        "full two years. No pause proposal asks for this; it is the upper "
+        "bound on what a pause buys."),
+}
 
 
 def _pc_apply_preset(phases):
@@ -18987,6 +19211,7 @@ def _pc_render_plan_builder(today):
         with st.container(horizontal=True):
             for j, (name, phases) in enumerate(_pc_plan_presets(today).items()):
                 st.button(name, key=f"pc_preset_{j}", type="tertiary" if not phases else "secondary",
+                          help=_PC_PRESET_HELP.get(name),
                           disabled=win_n + len(phases) > _PC_WIN_MAX,
                           on_click=_pc_apply_preset, args=(phases,))
         if win_n + 1 > _PC_WIN_MAX:
@@ -19016,7 +19241,13 @@ def _pc_render_plan_builder(today):
                      lambda m: f"{m} month" + ("s" if m > 1 else "")),),
             "noai": (("ai", "Banned", _PC_AI_OPTIONS,
                       lambda e: f"AI above ECI {e}" if e else "All AI"),),
-            "hold": ()}
+            "hold": (),
+            "cap": (("capeci", "Highest ECI", _PC_CAP_OPTIONS,
+                     lambda e: f"ECI {e}" if e else "Today's frontier"),
+                    ("lift", "How it lifts", _PC_LIFT_OPTIONS,
+                     lambda m: "All at once" if not m
+                     else "Rises at today's pace" if m == 1
+                     else f"Rises at {m}× today's pace"))}
         dates = (("start", "Starts", months[:-1], month), ("end", "Ends", months, month))
         for i in range(1, win_n + 1):
             kind = _pc_phase_kind(i)
@@ -19051,9 +19282,11 @@ def _pc_first_phase_mo():
 
 _PC_PHASE_HELP = {
     "pace": "Adds a phase that runs the US at a share of its own speed: 100% is "
-            "the Takeoff tab's path, 0% a pause, and 50% runs the US along "
+            "the Takeoff tab's path, 0% a full stop, and 50% runs the US along "
             "that same path at half speed, so automated coding and RSI "
-            "arrive later too.",
+            "arrive later too. The pace slows everything at once: research, "
+            "compute buildup and training. A pause on training alone is "
+            "*Cap capability*; see the pause presets.",
     "cut": "Adds a phase in which US labs put this many times less compute "
            "into AI research: training runs, experiments and the AI agents "
            "doing research all shrink by it. This reruns the Takeoff model "
@@ -19085,6 +19318,17 @@ _PC_PHASE_HELP = {
             "keeps growing. Against no plan that is a training cut that "
             "deepens every month (about ÷3 after a year at 3× a year "
             "growth). This reruns the Takeoff model, as a compute cut does.",
+    "cap": "Adds a phase in which no US model may be trained past an ECI "
+           "level, the shared limit OpenAI's chief scientist proposed on Nov 22, "
+           "2026 (in perplexity; its next window, 0.68-0.70, is about ECI "
+           "183-187). Research goes on with the capped model's help and "
+           "compute keeps growing, so when the phase ends the next model, a "
+           "training run and validation later, jumps to where research has "
+           "got, unless *How it lifts* raises the cap gradually instead (then "
+           "research uses uncapped models after the phase, so the delay shown "
+           "is a lower bound). A US already past the level when the phase "
+           "starts holds where it stands. China is not capped. This reruns the "
+           "Takeoff model, as a compute cut does.",
 }
 
 
@@ -19111,7 +19355,8 @@ def _pc_phase_effect(i):
 
 def _pc_add_phase(kind):
     """A kind's button: one more row of that kind, at its defaults; a cut
-    or a ban has no end, as those levers last until someone lifts them."""
+    or a ban has no end, as those levers last until someone lifts them, and
+    a cap opens now for two years."""
     n = min(st.session_state.get("pc_win_n", 0) + 1, _PC_WIN_MAX)
     st.session_state["pc_win_n"] = n
     for f in _PC_PHASE_FIELDS:
@@ -19119,6 +19364,10 @@ def _pc_add_phase(kind):
     st.session_state[f"pc_win{n}_kind"] = kind
     if kind in ("cut", "ban", "noai", "hold"):
         st.session_state[f"pc_win{n}_end"] = _PC_PAUSE_MO_MAX
+    elif kind == "cap":
+        # A cap is a level, which the US passes before the usual start: it
+        # opens now, for two years.
+        st.session_state[f"pc_win{n}_start"], st.session_state[f"pc_win{n}_end"] = 0, 24
 
 
 def _pc_remove_phase(i):
@@ -19207,7 +19456,8 @@ _PC_DEFAULTS = {"pc_run": "2-month run",
                     # Reallocating opens on training compute moved to experiments.
                     (f"pc_win{i}_train", 50), (f"pc_win{i}_exp", _PC_REALLOC_EXP),
                     (f"pc_win{i}_agents", 100), (f"pc_win{i}_ban", 1),
-                    (f"pc_win{i}_ai", 0))},
+                    (f"pc_win{i}_ai", 0), (f"pc_win{i}_capeci", 185),
+                    (f"pc_win{i}_lift", 0))},
                 **{_PC_RSI_W_KEY + s: w for s, w in _PC_RSI_WEIGHTS.items()}}
 _PC_END_YEARS = list(range(2027, 2036))
 
@@ -20936,25 +21186,25 @@ def _tk_run_seeded(day):
 _TK_CUT_MEMO = {}
 
 
-def _tk_run_cut_seeded(day, cut, years=None, review=None, limit=None):
-    """`_tk_run_seeded(day)` under an R&D compute cut, a ban on runaway RSI
-    and/or a limit on AI in AI R&D (`_tk_run_cut`, stopped `years` out), once
-    per rerun, settings and rule."""
+def _tk_run_cut_seeded(day, cut, years=None, review=None, limit=None, cap=None):
+    """`_tk_run_seeded(day)` under an R&D compute cut, a ban on runaway RSI,
+    a limit on AI in AI R&D and/or a capability cap (`_tk_run_cut`, stopped
+    `years` out), once per rerun, settings and rule."""
     run = _tk_run_seeded(day)
     if not isinstance(run, dict) or "error" in run:
         return run
-    key = (id(run), cut, years, review, limit)
+    key = (id(run), cut, years, review, limit, cap)
     if key not in _TK_CUT_MEMO:
         _TK_CUT_MEMO.clear()
         with _seeded_rng(_tk_seed()):
-            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut, years, review, limit))   # holds `run`: its id stays its own
+            _TK_CUT_MEMO[key] = (run, _tk_run_cut(run, cut, years, review, limit, cap))   # holds `run`: its id stays its own
     return _TK_CUT_MEMO[key][1]
 
 
-def _pc_takeoff_us(today, cut=None, years=None, review=None, limit=None):
+def _pc_takeoff_us(today, cut=None, years=None, review=None, limit=None, cap=None):
     """The Takeoff tab's run, as the Pacing tab reads it (with `cut`,
-    `review` or `limit`, under that R&D compute cut, ban on runaway RSI or
-    limit on AI in AI R&D,
+    `review`, `limit` or `cap`, under that R&D compute cut, ban on runaway
+    RSI, limit on AI in AI R&D or capability cap,
     `_tk_run_cut_seeded`, stopped `years` out; then 'run' is the run itself,
     for China to follow): {'day', 'years',
     'paths' (draws x months, ECI of the trained US frontier from `day`),
@@ -20963,8 +21213,8 @@ def _pc_takeoff_us(today, cut=None, years=None, review=None, limit=None):
     `day`, the very dates Takeoff's cards take medians of)}, or None when Takeoff cannot run. Seeded, so it
     neither depends on nor shifts this tab's draws."""
     day = today.replace(hour=0, minute=0, second=0, microsecond=0)
-    slowed = cut is not None or review is not None or limit is not None
-    run = (_tk_run_cut_seeded(day, cut, years, review, limit) if slowed
+    slowed = cut is not None or review is not None or limit is not None or cap is not None
+    run = (_tk_run_cut_seeded(day, cut, years, review, limit, cap) if slowed
            else _tk_run_seeded(day))
     if not isinstance(run, dict) or "error" in run:
         return None
@@ -21155,14 +21405,35 @@ def _pc_ai_rule(today):
             min(e for _, _, e in bans) or None)
 
 
-def _pc_slow_args(tk_free, sched, review, limit, horizon):
+def _pc_cap_rule(today):
+    """The plan's capability cap, (start date, end date or None for good,
+    highest ECI with 0 today's frontier, lift: 0 at once or the multiple of
+    today's pace it rises at), or None: one cap from the first such phase's
+    start to the last one's end, at the lowest level and slowest lift."""
+    caps = []
+    for i in range(1, int(st.session_state.get("pc_win_n", 0) or 0) + 1):
+        a, b = _pc_phase_effect(i)[:2]
+        if _pc_phase_kind(i) == "cap" and b > a:
+            caps.append((a, b, *(st.session_state.get(f"pc_win{i}_{f}",
+                                                      _PC_DEFAULTS[f"pc_win{i}_{f}"])
+                                 for f in ("capeci", "lift"))))
+    if not caps:
+        return None
+    end = max(c[1] for c in caps)
+    rising = [m for *_, m in caps if m]
+    return (_pc_add_months(today, min(c[0] for c in caps)),
+            None if end >= _PC_PAUSE_MO_MAX else _pc_add_months(today, end),
+            min(c[2] for c in caps), min(rising) if rising else 0)
+
+
+def _pc_slow_args(tk_free, sched, review, limit, horizon, cap=None):
     """What `_pc_takeoff_us` takes for the plan's slowed run, (cut schedule,
-    years to run, review rule, AI limit) in years from Takeoff's day, from
-    `_pc_cut_schedule`, `_pc_ban_rule` and `_pc_ai_rule`; None when the plan
-    has none of the three. The allowed ECI becomes a gain over today's
-    frontier, and the run stops `_PC_CUT_RUN_PAST` after the chart's end,
-    past which nothing reads it."""
-    if sched is None and review is None and limit is None:
+    years to run, review rule, AI limit, capability cap) in years from
+    Takeoff's day, from `_pc_cut_schedule`, `_pc_ban_rule`, `_pc_ai_rule` and
+    `_pc_cap_rule`; None when the plan has none of them. An allowed or
+    capped ECI becomes a gain over today's frontier, and the run stops
+    `_PC_CUT_RUN_PAST` after the chart's end, past which nothing reads it."""
+    if sched is None and review is None and limit is None and cap is None:
         return None
 
     def yrs(d):
@@ -21173,9 +21444,13 @@ def _pc_slow_args(tk_free, sched, review, limit, horizon):
                      None if limit[2] is None
                      else float(limit[2] - np.median(tk_free['paths'][:, 0])),
                      None if limit[1] is None else yrs(limit[1]))
+    capr = cap and (yrs(cap[0]),
+                    float(cap[2] - np.median(tk_free['paths'][:, 0])) if cap[2] else 0.0,
+                    None if cap[1] is None else yrs(cap[1]),
+                    float(cap[3] * tk_free['ppy']) if len(cap) > 3 and cap[3] else None)
     end = (None if horizon is None else float(np.ceil(
         max((horizon - tk_free['day']).days / 365.25, 1.0) + _PC_CUT_RUN_PAST)))
-    return sched, end, rule, lim
+    return sched, end, rule, lim, capr
 
 
 def _pc_plan_when(today, shift=0, horizon=None):
@@ -21193,7 +21468,7 @@ def _pc_plan_when(today, shift=0, horizon=None):
     at = _pc_add_months(today, shift)
     day = free['day']
     args = _pc_slow_args(free, _pc_cut_schedule(at, day), _pc_ban_rule(at),
-                         _pc_ai_rule(at), horizon)
+                         _pc_ai_rule(at), horizon, _pc_cap_rule(at))
     if args is None:
         tk = free
     elif not shift:
@@ -21961,13 +22236,14 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                         us_steps=None, timing_label=_DC_TIMING_OPTIONS[0],
                         horizon=None, caps_now=None, state_out=None,
                         levers_box=None, pace=0.0, advanced_box=None,
-                        cut_box=None, review=None, limit=None):
+                        cut_box=None, review=None, limit=None, cap=None):
     """If the US paused or paced: China's catch-up to the US frontier, in ECI.
 
     The plan's compute changes (`_pc_cut_schedule`) and `review`, its ban on
     runaway RSI ((start date, end date or None, months), `_pc_ban_rule`,
     `takeoff.simulate`'s `review`), and `limit`, its ban on AI in AI R&D
-    (`_pc_ai_rule`, `takeoff.simulate`'s `ai_limit`), rerun the US and China's takeoff, and
+    (`_pc_ai_rule`, `takeoff.simulate`'s `ai_limit`), and `cap`, its capability cap
+    (`_pc_cap_rule`, `_tk_cap`), rerun the US and China's takeoff, and
     `cut_box` takes their equivalent pacing plan.
 
     The pause is the **plan's first phase's start** (`_pc_first_phase_mo`, read by
@@ -22044,11 +22320,11 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     _cut_rules = [r for a, b, kept in _cut_spans for r in (
         [(a, _pc_uses_label(kept))] + ([(b, "R&D compute restored")] if b else []))]
     _no_pace = (pace >= 1 and not _pc_pace_windows(today) and not _cut_spans
-                and review is None and limit is None)
+                and review is None and limit is None and cap is None)
     # What the Takeoff rerun is under, for the labels: "compute cut", "RSI
     # ban", both, or None.
     _lever = (" and ".join(n for n, on in (("compute cut", _cut_rules), ("RSI ban", review),
-                                           ("AI R&D ban", limit))
+                                           ("AI R&D ban", limit), ("capability cap", cap))
                            if on) or None)
     with levers_box:
         withhold = st.checkbox(
@@ -22622,7 +22898,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     # `tk_free` the one with neither, which the no-lever lines read.
     tk = tk_free = _pc_takeoff_us(today)
     _sched = _pc_cut_schedule(today, tk['day']) if tk is not None else None
-    _slow = (_pc_slow_args(tk_free, _sched, review, limit, horizon)
+    _slow = (_pc_slow_args(tk_free, _sched, review, limit, horizon, cap)
              if tk is not None else None)
     if _slow is not None:
         _c0 = min(([_tk_cut_start(_sched)] if _sched else [])
@@ -22639,7 +22915,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
                            "fit a pacing plan to it.")
             else:
                 _pc_cut_plan_note(_eq, bool(_cut_spans),
-                                  review is not None or limit is not None)
+                                  review is not None or limit is not None or cap is not None)
     _t_day = ((tk['day'] if tk else today) - anchor_d).days / 365.25
     # Each sample follows one Takeoff scenario, cycling through those China's
     # takeoff pairs with (`_cn_tk_rows`), so every sample has a Chinese twin.
@@ -23417,7 +23693,7 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     if _chg or _lever:
         _d0 = min([d for d, _ in _chg[:1]] + [d for d, _ in _cut_rules]
                   + ([review[0]] if review else [])
-                  + ([limit[0]] if limit else [])) + off_us
+                  + ([limit[0]] if limit else []) + ([cap[0]] if cap else [])) + off_us
         _uk = [i for i, t in enumerate(grid_yrs)
                if _d0 <= _date_of(t) <= x_end]
         if len(_uk) > 1:
@@ -24004,6 +24280,7 @@ def render_pacing():
     pc_pace, _ = _pc_pace_plan(_today)
     pc_review = _pc_ban_rule(_today)
     pc_limit = _pc_ai_rule(_today)
+    pc_cap = _pc_cap_rule(_today)
     _pc_loading_start()
 
     # ── Series shared by both halves of the tab ──
@@ -24055,7 +24332,7 @@ def render_pacing():
                         state_out=state_rows, levers_box=levers_top,
                         advanced_box=advanced_box,
                         pace=pc_pace, cut_box=cut_box, review=pc_review,
-                        limit=pc_limit)
+                        limit=pc_limit, cap=pc_cap)
     _pc_loading(2)
 
     # ── Entities and projections ──
@@ -26397,10 +26674,11 @@ def _tk_path_at(paths, years, t):
 
 
 def _tk_first_reach(paths, years, level):
-    """Per draw, when its path first reaches `level`, linear inside the month
-    as Pacing's `_pc_cross_years` reads it (+inf if never; the grid's start if
-    already there)."""
-    hit = paths >= level
+    """Per draw, when its path first reaches `level` (one for all, or one per
+    draw), linear inside the month as Pacing's `_pc_cross_years` reads it
+    (+inf if never; the grid's start if already there)."""
+    level = np.broadcast_to(np.asarray(level, dtype=float), (len(paths),))
+    hit = paths >= level[:, None]
     idx = np.argmax(hit, axis=1)
     rows = np.arange(len(paths))
     lo, hi = paths[rows, np.maximum(idx - 1, 0)], paths[rows, idx]
@@ -27343,20 +27621,23 @@ def _tk_run(today, progress=None):
     return dict(_tk_finish(inputs, onset_years), inputs=inputs, onset=onset_years)
 
 
-def _tk_finish(inputs, onset_years, cut=None, years=None, review=None, limit=None):
+def _tk_finish(inputs, onset_years, cut=None, years=None, review=None, limit=None,
+               cap=None):
     """`_tk_run`'s last step, the simulation on its prepared `inputs` and
     paired coding dates, read as ECI; `cut`, `review` and `limit` as `_tk_simulate`
-    takes them, and with `years` the run stops at the first month that many
-    years out."""
+    takes them, `cap` as `_tk_cap`, and with `years` the run stops at the
+    first month that many years out."""
     params, ultra = inputs["params"], inputs["ultra"]
     full = params["years"]
     # Stopped on one of the full run's own months, so its grid is that run's.
     months = np.arange(0, full, 1 / 12)
     if years is not None and years <= months[-1]:
         params = dict(params, years=float(months[np.searchsorted(months, years)]))
+    lift = None if cap is None else _tk_cap_lift(cap, params)
     result = _tk_simulate(params, onset_years, _TK_SOURCE_DIGEST, *inputs["rest"], cut=cut,
                           cut_years=full if cut is not None and params["years"] < full else None,
-                          review=review, limit=limit)
+                          review=review, limit=_tk_merge_limits(
+                              limit, None if cap is None else (cap[0], cap[1], lift)))
     # The ECI trend reflects the compute growth behind it: the data-center
     # series' own historical fit when its projection is in use.
     for key in ("hist_compute", "eci_rates", "eci_lead", "eci_start_dev", "eci_today"):
@@ -27368,15 +27649,74 @@ def _tk_finish(inputs, onset_years, cut=None, years=None, review=None, limit=Non
     # date coding no later than that (RSI, which needs coding, is unmoved).
     result["coding_at"] = np.minimum(np.asarray(result["coding_at"], dtype=float),
                                      eci["ultra"])
+    if cap is not None:
+        result, eci = _tk_cap(result, eci, cap[0], cap[1], lift,
+                              cap[3] if len(cap) > 3 else None)
     return {"params": params, "result": result, "eci": eci, **{
         k: inputs[k] for k in ("eci_base", "experiment_starts", "pace_today", "pace_yield",
                                "software_pace")}}
 
 
-def _tk_run_cut(run, cut, years=None, review=None, limit=None):
+def _tk_merge_limits(a, b):
+    """Two `ai_limit` rules, (start, ECI gain or None for no AI, end or None),
+    as the one `takeoff.simulate` takes: from the first start to the last
+    end at the stricter level, as Pacing merges its AI bans."""
+    if a is None or b is None:
+        return a if b is None else b
+    return (min(a[0], b[0]), None if a[1] is None or b[1] is None else min(a[1], b[1]),
+            None if a[2] is None or b[2] is None else max(a[2], b[2]))
+
+
+def _tk_cap_lift(cap, params):
+    """When a capability cap, (start, gain, end or None), stops holding US
+    models back: a training run and validation after it ends, since a model
+    past it cannot start training before then (inf: for good)."""
+    return (np.inf if cap[2] is None
+            else cap[2] + (params["training_months"] + params["validation_months"]) / 12)
+
+
+def _tk_cap(result, eci, start, gain, lift, rate=None):
+    """A run under a capability cap from `start` to `lift` (years): each
+    draw's ECI path and model held at its start plus `gain` (or where it
+    stood at `start`, if higher), and its automated-coding, RSI and
+    ultraintelligence dates no earlier than the held path reaches the ECI
+    the run had at each. The run itself had AI in research limited to that
+    level over the same span (`_tk_finish`), which binds only once a model
+    passes it, so research went on as it would under the cap and the path
+    jumps to it at `lift`; with `rate` (ECI points a year) the cap instead
+    rises from `lift` at that rate, a lower bound on the delay, since the
+    run's research is not held to it. The uncapped model stays as
+    'model_uncapped' for China's hours-by-ECI table, which reads the
+    capability each ECI carries."""
+    years = result["workflow_progress"]["years"]
+    paths, model = eci["paths"], eci["model"]
+    n = len(paths)
+    level = np.maximum(paths[:, 0] + gain, _tk_path_at(paths, years, np.full(n, start)))
+    after = years >= lift - 1e-9
+    grow = (np.where(after, np.maximum(years - lift, 0.0) * rate, 0.0) if rate
+            else np.where(after, np.inf, 0.0))
+    ceiling = np.where((years >= start - 1e-9)[None, :], level[:, None] + grow[None, :], np.inf)
+    held, held_model = np.minimum(paths, ceiling), np.minimum(model, ceiling)
+
+    def later(t):
+        t = np.asarray(t, dtype=float)
+        ok = np.isfinite(t) & (t > start) & (t <= years[-1])
+        reach = _tk_first_reach(held, years, np.where(ok, _tk_path_at(paths, years, t), -np.inf))
+        return np.where(ok, np.maximum(t, reach), t)
+    result = dict(result, coding_at=later(result["coding_at"]),
+                  events=dict(result["events"], RSI=later(result["events"]["RSI"])))
+    rsi = result["events"]["RSI"]
+    eci = dict(eci, paths=held, model=held_model, model_uncapped=model,
+               ultra=_tk_first_reach(held, years, eci["ultra_level"]),
+               at_rsi=np.where(np.isfinite(rsi) & (rsi <= years[-1]),
+                               _tk_path_at(held, years, rsi), np.nan))
+    return result, eci
+
+
+def _tk_run_cut(run, cut, years=None, review=None, limit=None, cap=None):
     """`run` (a `_tk_run`) again under an R&D compute cut, a ban on runaway
-    RSI and/or a limit on AI in AI R&D (`cut`, `review`, `limit` as
-    `_tk_simulate` takes them, any None):
+    RSI, a limit on AI in AI R&D and/or a capability cap (`cut`, `review`,
+    `limit` as `_tk_simulate` takes them, `cap` as `_tk_finish`, any None):
     once on the same coding dates, then on those dates moved to where the
     slowed run reaches the same capability (`_tk_cut_onset`; a second pass
     moves them by days). With `years`, the second pass stops that many
@@ -27385,10 +27725,11 @@ def _tk_run_cut(run, cut, years=None, review=None, limit=None):
     runs whole, since a date it moves past the stop still shapes the months
     before it."""
     start = min(([_tk_cut_start(cut)] if cut else []) + ([review[0]] if review else [])
-                + ([limit[0]] if limit else []))
-    fixed = _tk_finish(run["inputs"], run["onset"], cut, review=review, limit=limit)
+                + ([limit[0]] if limit else []) + ([cap[0]] if cap else []))
+    fixed = _tk_finish(run["inputs"], run["onset"], cut, review=review, limit=limit, cap=cap)
     onset = _tk_cut_onset(run["onset"], run, fixed, start)
-    return dict(_tk_finish(run["inputs"], onset, cut, years, review, limit), inputs=run["inputs"],
+    return dict(_tk_finish(run["inputs"], onset, cut, years, review, limit, cap),
+                inputs=run["inputs"],
                 onset=onset)
 
 
@@ -27625,7 +27966,8 @@ def _cn_tk_run(today, run=None, pacing=None):
     level, slope, source, innovation, software_scale, oom, compute_rates, experiment_rates, k = (
         v[keep] for v in (level, slope, source, innovation, software_scale, oom, compute_rates,
                           experiment_rates, k))
-    us_paths, us_model = eci["paths"][keep], eci["model"][keep]
+    # Under a capability cap, hours by ECI read the uncapped model (`_tk_cap`).
+    us_paths, us_model = eci["paths"][keep], eci.get("model_uncapped", eci["model"])[keep]
     us_cap, us_soft = wp["capability_log"][keep], wp["software_realized_log"][keep]
     hist_us = res.get("hist_compute")
     leak, us_algo = _cn_tk_leak(cal, hist_us if hist_us is not None

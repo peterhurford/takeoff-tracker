@@ -301,6 +301,19 @@ setup turns it into a per-draw training-only `compute_cut`, the frontier's rise 
 so both loops read it as a by-use cut (`test_a_training_hold_freezes_training_compute_alone`,
 the compiled-loop `train_hold` case).
 
+A capability cap (Pacing's *Cap capability*, `_tk_finish(cap=…)`) is no `simulate` option at
+all. The run takes it as an `ai_limit` at the cap's level until `_tk_cap_lift` (a training
+run and validation after the cap ends), merged with any AI ban by `_tk_merge_limits`; that
+limit binds only once a model passes the level, so research goes on with the capped model's
+help. `_tk_cap` then holds each draw's ECI path and model at the level over the same span and
+moves automated coding, RSI and ultraintelligence to where the held path reaches the ECI the
+run had at each, so the path jumps at the lift (or, with a lift rate, climbs at it from the
+lift; the run's research is not held to the rising level, so that delay is a lower bound). China's hours-by-ECI table reads
+`model_uncapped`. Not modeled: the cap's smaller training runs delaying scale-dependent gains,
+and the RSI compute boost keyed to the run's own RSI date
+(`test_a_capability_cap_holds_the_path_and_moves_milestones_past_it`,
+`test_a_capability_cap_holds_the_us_then_it_jumps`).
+
 Evidence calibration uses the endpoint growth in `openai_experiment_velocity.csv`, adjusts
 for assumed historical compute and coding gains, and fits a quality elasticity blended with
 the prior. A supplied validated-progress ratio overrides the experiment proxy. Matched-stage
@@ -826,6 +839,14 @@ duration across the post's seven bins at their geometric midpoints (`_rsi_horizo
 error bars from the same fit through every bin's sampling-envelope bound at once. The fan and
 its 40h card share `_rsi_horizon_draws`, on its own generator so the cards after it keep their
 draws; the card is in the coder blend at equal weight (`TestRsiHorizon`).
+
+`_render_rsi_perplexity()` charts OpenAI's base-model log-perplexity (`openai_perplexity.csv`,
+`load_openai_perplexity`, read from the post's SVG), the capability lines OpenAI's chart
+draws, the post's 0.68–0.70 window, and an OLS trend over the public models since
+`_PPL_TREND_FROM` (`_ppl_trend`), run into the window from the fit and, at the same slope,
+from the internal model (`_ppl_window_dates`). `_ppl_eci_rate` puts the window on ECI at
+2026's exchange rate, which does not hold across eras (reasoning gains move ECI, not
+perplexity), so nothing here feeds the model (`TestOpenAIPerplexity`).
 
 The RSI blend's *Capabilities Milestones* row dates the CoBench and next-step
 bars through `_pc_rsi_eta()` and `_pc_nextstep_eta()`, which reuse this tab's own
