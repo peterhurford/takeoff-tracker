@@ -225,6 +225,26 @@ class TestMetrPostGpt4o:
         _assert_no_error(at, "METR / early as-of, GPT-4o+ only")
         assert at.selectbox(key="_proj_as_of").value == vp.frontier_names[-1]
 
+    def test_default_view_opens_on_the_first_half_of_the_end_year(self):
+        """The default end year's chart stops at July 1 with the y-axis under
+        the 90% band's top; another *Project through* year shows it whole."""
+        import json
+        import visualize_projection as vp
+
+        def layout(at):
+            return json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]
+        at = self._app()
+        year = vp._METR_DEFAULTS["metr_end_year"]
+        lay = layout(at)
+        assert lay["xaxis"]["range"][1].startswith(f"{year}-07-01")
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+        fan_top = max(max(tr["y"]) for tr in spec["data"]
+                      if tr.get("fill") or tr.get("name") == "90% CI")
+        assert lay["yaxis"]["range"][1] < fan_top
+        other = [y for y in at.radio(key="metr_end_year").options if int(y) != year][-1]
+        at.radio(key="metr_end_year").set_value(type(year)(other)).run()
+        assert not layout(at)["xaxis"]["range"][1].startswith(f"{other}-07-01")
+
 
 # ===========================================================================
 # Mode switching: Linear vs Piecewise produce different widgets and output

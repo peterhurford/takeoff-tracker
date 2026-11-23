@@ -4685,13 +4685,22 @@ def render_metr():
         _bt_lookup = {r['name']: r for r in backtest_results}
 
     # Axis ranges, set before the points so their names can be placed in pixels.
-    if use_log_scale:
-        y_min = np.log2(frontier_plot[0][_val_key]) - 1
-        y_max = max(pct95[-1], np.log2(176 * 60)) + 2
-    else:
-        y_min, y_max = 0, max(pct95[-1], 176) * 1.1
+    # The default end year opens on its first half, and the y-axis fits the 50%
+    # band there: the wider bands run off the top, and a pan or a later
+    # *Project through* year shows the rest.
     _x_lo = frontier_plot[0]['date'] - timedelta(days=30)
     _x_hi = proj_end_date + timedelta(days=30)
+    _mid = datetime(proj_end_date.year, 7, 1)
+    if (int(_metr_end_year) == _METR_DEFAULTS['metr_end_year']
+            and _mid > current['date'] + timedelta(days=90)):
+        _x_hi = _mid
+    _i_hi = min((_x_hi - current['date']).days, len(pct75) - 1)
+    _y_top = max(pct75[_i_hi], _yconv(np.log2(max(m[_val_key] for m in frontier_plot))))
+    if use_log_scale:
+        y_min = np.log2(frontier_plot[0][_val_key]) - 1
+        y_max = max(_y_top, np.log2(176 * 60)) + 1
+    else:
+        y_min, y_max = 0, max(_y_top, 176) * 1.25
 
     # --- Non-SOTA models: only show those within 2 log2 units (4x) of frontier max to reduce clutter ---
     _metr_frontier_max_log2 = max(np.log2(m[_val_key]) for m in frontier_all)
