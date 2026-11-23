@@ -1115,6 +1115,20 @@ class TestEciExplains:
         assert scores[0] > record >= scores[0] - step
         assert len(scores) == 4 and all(b - a == step for a, b in zip(scores, scores[1:]))
 
+    def test_default_view_opens_on_the_first_half_of_the_end_year(self):
+        """As METR's: x stops at July 1 of the default end year, and the y-axis
+        sits under the 90% band's top."""
+        import json
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "eci"
+        at.run()
+        spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+        year = vp._eci_tab_defaults("eci")["eci_end_year"]
+        assert spec["layout"]["xaxis"]["range"][1].startswith(f"{year}-07-01")
+        fan_top = max(max(tr["y"]) for tr in spec["data"] if tr.get("fill"))
+        assert spec["layout"]["yaxis"]["range"][1] < fan_top
+
     def test_no_empty_milestone_tables(self):
         """An entity with no milestone lines shows no milestone expander."""
         at = _fresh_app()

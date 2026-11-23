@@ -430,6 +430,16 @@ def _proj_end(end_year, last_date):
     return max(datetime(int(end_year), 12, 31), last_date + timedelta(days=1))
 
 
+def _default_view_end(end_year, default_year, proj_end, last_date):
+    """Where a projection chart's x-axis ends. The default *Project through*
+    year opens on its first half (July 1), so the fan does not flatten the
+    history; any other year, or data within 90 days of July, shows the span."""
+    mid = datetime(proj_end.year, 7, 1)
+    if int(end_year) == int(default_year) and mid > last_date + timedelta(days=90):
+        return mid
+    return proj_end + timedelta(days=30)
+
+
 def _arrival_row(traj, threshold, base, label, cis=(80,)):
     """A milestone's arrival row from `traj` (samples x days from `base`):
     percentiles over every sample, one that never crosses counting as past the
@@ -4689,11 +4699,8 @@ def render_metr():
     # band there: the wider bands run off the top, and a pan or a later
     # *Project through* year shows the rest.
     _x_lo = frontier_plot[0]['date'] - timedelta(days=30)
-    _x_hi = proj_end_date + timedelta(days=30)
-    _mid = datetime(proj_end_date.year, 7, 1)
-    if (int(_metr_end_year) == _METR_DEFAULTS['metr_end_year']
-            and _mid > current['date'] + timedelta(days=90)):
-        _x_hi = _mid
+    _x_hi = _default_view_end(_metr_end_year, _METR_DEFAULTS['metr_end_year'],
+                              proj_end_date, current['date'])
     _i_hi = min((_x_hi - current['date']).days, len(pct75) - 1)
     _y_top = max(pct75[_i_hi], _yconv(np.log2(max(m[_val_key] for m in frontier_plot))))
     if use_log_scale:
@@ -5837,7 +5844,13 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     all_scores = [m['eci_score'] for m in tab_all if m['is_frontier'] or m['eci_score'] >= _eci_nf_cutoff]
     y_min = min(all_scores) - 5
     _milestone_y_max = max(s for s, _, _ in milestone_list) if milestone_list else 170
-    y_max = max(pct95[-1], max(all_scores) + 5, _milestone_y_max) + 5
+    # As on METR: the default view stops mid-year and fits the 50% band, the
+    # wider bands and any milestone above it running off the top.
+    _x_hi = _default_view_end(_eci_end_year, _eci_tab_defaults(p)[f"{p}_end_year"],
+                              proj_end_date, eci_current['date'])
+    _i_hi = min((_x_hi - eci_current['date']).days, len(pct75) - 1)
+    y_max = max(pct75[_i_hi], max(all_scores) + 5,
+                min([_milestone_y_max, pct95[_i_hi]])) + 5
     for _y, _text in _eci_edge_label_groups(_edge_labels, (y_max - y_min) / 560 * 13):
         fig.add_annotation(x=1.0, xref='paper', y=_y, text=_text, showarrow=False,
                            xanchor='left', yanchor='middle', align='left',
@@ -5856,8 +5869,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
         margin=dict(l=50, r=140, t=50, b=40),
         font=dict(color='#1a1a2e'),
         xaxis=dict(
-            range=[tab_all[0]['date'] - timedelta(days=30),
-                   proj_end_date + timedelta(days=30)],
+            range=[tab_all[0]['date'] - timedelta(days=30), _x_hi],
             gridcolor='rgba(0,0,0,0.1)',
             tickfont=dict(color='#1a1a2e'),
             zeroline=False,
