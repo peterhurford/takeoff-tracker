@@ -1371,6 +1371,9 @@ _RLI_RAW = [
     # the CAIS API. Date is Epoch's catalogued release; Scale does not say whether it ran that checkpoint
     # or the later 1017 one (Epoch: 2026-10-17). Below the frontier either way.
     {"name": "DeepSeek V4.1 Flash", "date": "2026-09-09", "rli_score": 9.58},
+    # Added 2026-11-23: Scale only, as score 20 (isNew, createdAt 2026-11-23T03:00Z); not in the CAIS API.
+    # Date is Epoch's catalogued release. Below the frontier.
+    {"name": "Gemini 4 Carbon", "date": "2026-11-10", "rli_score": 20.00},
     # Rechecked 2026-08-21 against labs.scale.com/leaderboard/rli and dashboard.safe.ai:
     # no entry newer than Fable 5, no changed score on any model we carry, and the CAIS
     # blog (2026-07-01) is still the latest RLI announcement. GPT-5.6 Sol, the Gemini 3.x
@@ -10804,13 +10807,10 @@ _ANTHROPIC_REVENUE = [
     # (press and alt-data), which this disclosure supersedes.
     ("2026-09-30", 71.0),
     ("2026-10-31", 81.0),
-    # Rechecked 2026-11-11: no EDGAR filing since S-1/A No. 2; the 11-10 roadshow post states no run rate.
-    # Rechecked 2026-11-13: five FWPs since (11-10, 11-11) restate the $81B / 10-31 and +$10B; no S-1/A No. 3
-    # or 424B. Pricing and the final 424B are due ~11-18/19 (Nasdaq trading "on or about November 19").
-    # Rechecked 2026-11-17: S-1/A No. 3 (0001628280-26-074338, filed 11-17) restates the $81B / 10-31 and
-    # +$10B, with no newer as-of date; the 8-A12B the same day carries no financials. Still no 424B.
-    # Rechecked 2026-11-18: an FWP (0001628280-26-074628, the Japanese prospectus in English) restates the
-    # $81B / 10-31 and +$10B; a CERT the same day carries no financials. Still no 424B.
+    # Rechecked 2026-11-23: every filing since, through the final 424B4 (0001628280-26-074944, 11-19),
+    # restates the $81B / 10-31 and +$10B with no newer as-of date. Priced 11-18 at $83 (Nasdaq: ANT), trading
+    # from 11-19, so the next disclosure is the first 10-Q or an 8-K. Excluded: TickerTrends' $82.33B for 10-30
+    # (alt-data) and the $100-120B year-end figures in press (forecasts).
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10900,10 +10900,11 @@ _CN_REVENUE = {
              "which contradicts the company's own RMB 16B for August."),
             # Excluded (checked 2026-10-08): Rhodium's ~$2.4B for August (via ifeng,
             # 2026-09-21), a third-party estimate for a month already carried.
-            # Checked 2026-11-13: September-quarter results and call land 2026-11-19, the
-            # next likely MaaS ARR point; convert at that release's 2026-09-30 rate.
-            # Rechecked 2026-11-17: confirmed for 2026-11-19, call 7:00a ET; no MaaS ARR since Yunqi.
-            # Rechecked 2026-11-18: results not yet out.
+            # Checked 2026-11-23: the September-quarter release, 6-K and slides (11-19) state no
+            # MaaS ARR. On the call Wu restated RMB 20B dated to August (21jingji, 11-20), which
+            # contradicts the CFO's RMB 16B for August, so the 09-22 point stands; the RMB 30B
+            # fiscal-year-end target is guidance. AI-related product revenue (RMB 17.9B, run rate
+            # RMB 71.7B) includes GPU rental. Next call ~late Feb; that release's rate, not 6.7045.
         ],
     },
     "Moonshot (Kimi)": {
