@@ -13742,9 +13742,11 @@ def _duv_policy_cut(start, end, ban_imports=True, decay=0.0,
 
 
 # China tab (slug `china`; was Compute/capabilities/diffusion, `computecap`)
-_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company", "cc_vsus_log"]
+_CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company", "cc_vsus_log",
+                  "cc_co_view"]
 _CC_DEFAULTS = {"cc_run": "2-month run", "cc_end_year": 2029,
-                "cc_company": "OpenAI", "cc_vsus_log": False}
+                "cc_company": "OpenAI", "cc_vsus_log": False,
+                "cc_co_view": "Sourced only"}
 
 # Where this tab's time charts open, matching the Data Centers tab's default.
 _CC_X_START = datetime(2025, 1, 1)
@@ -17746,6 +17748,274 @@ def _render_world_shares(today, horizon):
          "arrived worldwide. A check, not an input."))
 
 
+# ── China tab: who holds the compute ─────────────────────────────────────
+
+_CO_FILE = "company_compute.csv"
+_CC_CO_HEAD = "Who holds the compute"
+_CC_CO_AS_OF = datetime(2025, 12, 31)
+_CC_CO_VIEWS = ("Sourced only", "With our estimate", "US labs only")
+# Hand-set shares of China's in-China stock by the company that controls it,
+# owned or rented, cloud arms included: (name, p10, central, p90).
+# CHINA_COMPUTE_JUDGMENTS.md §14. The rest is `_CC_CN_CO_OTHER`.
+_CC_CN_CO_SHARES = (
+    ("ByteDance", 0.12, 0.20, 0.30),
+    ("Alibaba", 0.12, 0.20, 0.28),
+    ("Tencent", 0.07, 0.12, 0.18),
+    ("State carriers", 0.08, 0.10, 0.15),
+    ("Huawei", 0.03, 0.07, 0.12),
+    ("Baidu", 0.03, 0.06, 0.10),
+    ("DeepSeek", 0.01, 0.025, 0.04),
+)
+_CC_CN_CO_OTHER = "Other Chinese firms and state centres"
+_CC_CN_UNNAMED = "China: no named company"
+_CC_CN_ALL = "China, all companies"
+_CC_CO_COLORS = {"lab": "#33415C", "firm": "#E34948", "rest": "#B8B8B8",
+                 "abroad": "#6250D6"}
+
+
+def _co_mtime():
+    return os.path.getmtime(os.path.join(os.path.dirname(__file__), _CO_FILE))
+
+
+@st.cache_data
+def load_company_compute(mtime=None):
+    """`company_compute.csv` as dicts, numbers parsed, a blank range None."""
+    path = os.path.join(os.path.dirname(__file__), _CO_FILE)
+    with open(path) as f:
+        lines = [ln for ln in f if not ln.lstrip().startswith('#')]
+    out = []
+    for r in csv.DictReader(lines):
+        def num(k):
+            v = (r.get(k) or '').strip()
+            return float(v) if v else None
+        out.append(dict(company=r['company'], country=r['country'],
+                        basis=r['basis'], where=r['where'], h100e=num('h100e'),
+                        p5=num('p5'), p95=num('p95'), note=r.get('note') or ''))
+    return out
+
+
+def _cc_cn_catalogue_sites(dcs, as_of=_CC_CO_AS_OF):
+    """{company: H100e} for Epoch's catalogued sites in mainland China whose
+    user or owner Epoch records, each at its last capacity on or before
+    `as_of`; a site with no recorded party is left to the unnamed rest."""
+    out = {}
+    for dc in dcs:
+        if dc.get('country') != 'China' or not dc.get('attributed', True):
+            continue
+        past = [p for p in dc['points'] if p['date'] <= as_of and p.get('h100')]
+        if past:
+            out[dc['company']] = out.get(dc['company'], 0.0) + past[-1]['h100']
+    return out
+
+
+def _cc_companies(view, dcs=None, data=None, cn=None):
+    """Bars for *Who holds the compute*, at end-2025, largest first.
+
+    Each row: name, kind ('lab' a US lab, 'firm' a Chinese company, 'rest'
+    China's unnamed remainder or its whole), home and abroad H100e, the
+    total's (lo, hi) or None, and a note. US labs are Epoch's chip users.
+    China's total is the compute-sources stock, in China plus rented abroad;
+    'Sourced only' names only published numbers (`company_compute.csv` and
+    Epoch's China sites) and leaves the rest unnamed, 'With our estimate'
+    splits the in-China stock by `_CC_CN_CO_SHARES` and remote access by the
+    reported rentals abroad, 'US labs only' keeps China whole
+    (`TestCcCompanies`).
+    """
+    data = data if data is not None else load_company_compute(_co_mtime())
+    if cn is None:
+        stock = load_china_compute_sources(_cn_src_mtime())["stock"][
+            str(_CC_CO_AS_OF.year)]
+        cn = {k: v[:3] for k, v in stock.items()}
+    in_cn = sum(cn[k][0] for k in _CN_SRC_IN_CHINA)
+    remote = cn["remote"][0]
+    rows = [dict(name=r['company'], kind='lab', home=r['h100e'], abroad=0.0,
+                 rng=(r['p5'], r['p95']) if r['p5'] is not None else None,
+                 note=r['note'])
+            for r in data if r['basis'] == 'users']
+    reported = {}
+    for r in data:
+        if r['basis'] != 'reported':
+            continue
+        d = reported.setdefault(r['company'], dict(home=0.0, abroad=0.0, notes=[]))
+        d[r['where']] += r['h100e']
+        d['notes'].append(r['note'])
+    if view == _CC_CO_VIEWS[2]:
+        rows.append(dict(
+            name=_CC_CN_ALL, kind='rest', home=in_cn, abroad=remote,
+            rng=(sum(v[1] for v in cn.values()), sum(v[2] for v in cn.values())),
+            note="Every Chinese company's compute summed, as if one buyer"))
+    elif view == _CC_CO_VIEWS[0]:
+        sites = _cc_cn_catalogue_sites(dc_all if dcs is None else dcs)
+        for name, h in sites.items():
+            d = reported.setdefault(name, dict(home=0.0, abroad=0.0, notes=[]))
+            d['home'] += h
+            d['notes'].append(f"{h / 1e3:,.0f}k at its sites in China in "
+                              "Epoch's data-center catalogue")
+        named = 0.0
+        for name, d in reported.items():
+            rows.append(dict(name=name, kind='firm', home=d['home'],
+                             abroad=d['abroad'], rng=None,
+                             note="; ".join(d['notes'])))
+            named += d['home'] + d['abroad']
+        rows.append(dict(
+            name=_CC_CN_UNNAMED, kind='rest',
+            home=max(in_cn + remote - named, 0.0), abroad=0.0, rng=None,
+            note="China's total less every named company's: no published "
+                 "number says whose it is"))
+    else:
+        rep_abroad = {k: d['abroad'] for k, d in reported.items() if d['abroad']}
+        tot_abroad = sum(rep_abroad.values())
+        used_share, used_abroad = 0.0, 0.0
+        for name, lo, mid, hi in _CC_CN_CO_SHARES:
+            ab = (remote * rep_abroad.get(name, 0.0) / tot_abroad
+                  if tot_abroad else 0.0)
+            rows.append(dict(name=name, kind='firm', home=mid * in_cn, abroad=ab,
+                             rng=(lo * in_cn + ab, hi * in_cn + ab),
+                             note=f"{mid:.1%} of China's in-China stock "
+                                  f"({lo:.0%}–{hi:.0%}, our judgment)"))
+            used_share += mid
+            used_abroad += ab
+        rows.append(dict(
+            name=_CC_CN_CO_OTHER, kind='rest', home=(1 - used_share) * in_cn,
+            abroad=max(remote - used_abroad, 0.0), rng=None,
+            note="Government computing centres, other firms, startups' own "
+                 "clusters: the rest of the split"))
+    for r in rows:
+        r['total'] = r['home'] + r['abroad']
+    return sorted(rows, key=lambda r: -r['total'])
+
+
+def _cc_companies_fig(rows):
+    """Horizontal stacked bars, largest on top: at home, then rented abroad;
+    a range as an error bar on the total."""
+    rr = rows[::-1]
+    names = [r['name'] for r in rr]
+    fig = go.Figure()
+    for key, label in (("lab", "US lab (compute it uses)"),
+                       ("firm", "Chinese company, at home"),
+                       ("rest", "China, not split by company")):
+        xs = [r['home'] / 1e6 if r['kind'] == key else 0.0 for r in rr]
+        if not any(xs):
+            continue
+        fig.add_trace(go.Bar(
+            y=names, x=xs, orientation='h', name=label,
+            marker=dict(color=_CC_CO_COLORS[key]),
+            customdata=[r['note'] for r in rr],
+            hovertemplate="%{y}: %{x:,.2f}M H100e<br>%{customdata}<extra>"
+                          + label + "</extra>"))
+    if any(r['abroad'] for r in rr):
+        fig.add_trace(go.Bar(
+            y=names, x=[r['abroad'] / 1e6 for r in rr], orientation='h',
+            name="Rented abroad (remote access)",
+            marker=dict(color=_CC_CO_COLORS["abroad"]),
+            hovertemplate="%{y}: %{x:,.2f}M H100e rented abroad<extra></extra>"))
+    rng = [r for r in rr if r['rng']]
+    if rng:
+        fig.add_trace(go.Scatter(
+            y=[r['name'] for r in rng], x=[r['total'] / 1e6 for r in rng],
+            mode='markers', marker=dict(size=1, color='rgba(0,0,0,0)'),
+            name="90% range", showlegend=False, hoverinfo='skip',
+            error_x=dict(type='data', symmetric=False, color='#555555',
+                         thickness=1.2, width=4,
+                         array=[(r['rng'][1] - r['total']) / 1e6 for r in rng],
+                         arrayminus=[(r['total'] - r['rng'][0]) / 1e6
+                                     for r in rng])))
+    for r in rr:
+        end = max(r['rng'][1], r['total']) if r['rng'] else r['total']
+        fig.add_annotation(x=end / 1e6, y=r['name'], xanchor='left',
+                           showarrow=False, xshift=4,
+                           text=_cn_src_total_label(r['total']),
+                           font=dict(size=10, color='#444444'))
+    fig.update_layout(
+        barmode='stack', height=max(260, 30 * len(rows) + 110),
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#222222'),
+        margin=dict(l=10, r=40, t=10, b=40),
+        legend=dict(orientation='h', y=-0.15, font=dict(size=11, color='#222222')),
+        xaxis=dict(title_text="AI compute at end-2025 (M H100e)",
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
+                   title_font=dict(color='#222222')),
+        yaxis=dict(tickfont=dict(color='#222222'), automargin=True))
+    return fig
+
+
+def _cc_companies_lead(view, rows):
+    """The line over the chart, read off its rows."""
+    labs = [r for r in rows if r['kind'] == 'lab']
+    firms = [r for r in rows if r['kind'] == 'firm']
+    top = labs[0]
+    cn_tot = sum(r['total'] for r in rows if r['kind'] != 'lab')
+    if view == _CC_CO_VIEWS[0]:
+        named = sum(r['total'] for r in firms)
+        return (f"China's **{cn_tot / 1e6:.1f}M** H100e is spread across many "
+                f"firms, and published numbers name only **{named / 1e6:.1f}M** "
+                f"of it ({named / cn_tot:.0%}). The largest named, "
+                f"{firms[0]['name']} at {firms[0]['total'] / 1e6:.2f}M, has "
+                f"{firms[0]['total'] / top['total']:.0%} of what {top['name']} "
+                f"uses alone ({top['total'] / 1e6:.1f}M).")
+    if view == _CC_CO_VIEWS[1]:
+        f0 = firms[0]
+        return (f"On our split China's largest company, **{f0['name']}**, has "
+                f"**~{f0['total'] / 1e6:.1f}M** H100e, "
+                f"{f0['abroad'] / f0['total']:.0%} of it rented abroad: "
+                f"{f0['total'] / top['total']:.0%} of what {top['name']} uses "
+                f"alone. China's {cn_tot / 1e6:.1f}M beats a US lab only "
+                "when every Chinese firm is summed.")
+    return (f"Counted as one buyer, China's **{cn_tot / 1e6:.1f}M** H100e is "
+            f"{cn_tot / top['total']:.1f}× the largest US lab, "
+            f"{top['name']}. No single company trains on that total; the "
+            "other two views split it.")
+
+
+def _render_cc_companies():
+    """*Who holds the compute*: US labs and Chinese companies side by side at
+    end-2025 (`_cc_companies`), the view picked by `cc_co_view`."""
+    st.subheader(_CC_CO_HEAD)
+    if st.session_state.get("cc_co_view") not in _CC_CO_VIEWS:
+        st.session_state.pop("cc_co_view", None)
+    view = st.radio(
+        "Chinese companies", _CC_CO_VIEWS, horizontal=True,
+        index=_CC_CO_VIEWS.index(_CC_DEFAULTS["cc_co_view"]), key="cc_co_view",
+        help="Sourced only: a Chinese company is named only where a number "
+             "is published, the rest left unnamed. With our estimate: a "
+             "hand-set split of China's total by company. US labs only: "
+             "China kept as one bar, the usual country framing.")
+    rows = _cc_companies(view)
+    notes = [("H100e", "End-2025, the latest date both sides are published "
+                       "for. US labs: Epoch's AI chip users, each lab's own "
+                       "slice (Google DeepMind's of Google's fleet), with its "
+                       "90% range. China: the compute-sources stock below, in "
+                       "China plus rented abroad.")]
+    if view == _CC_CO_VIEWS[1]:
+        notes.append(("our split", "Hand-set shares of China's in-China stock, "
+                      "weighed on each firm's 2025 capex, the state carriers' "
+                      "disclosed compute and Epoch's catalogued sites; remote "
+                      "access split by the reported rentals. A range is the "
+                      "share's p10–p90 with China's total held at its "
+                      "median."))
+    _fn_line(_cc_companies_lead(view, rows), *notes)
+    st.plotly_chart(_cc_companies_fig(rows), width="stretch")
+    owners = [r for r in load_company_compute(_co_mtime())
+              if r['basis'] == 'owners']
+    _fn_caption(
+        "Compute belongs to companies, and remote access crosses borders both "
+        "ways: Anthropic and OpenAI own almost none of what they use, renting "
+        "from the clouds, and Chinese firms rent abroad what export controls "
+        "keep them from buying. Chinese companies are counted by all they "
+        "control, cloud arms included, so the comparison flatters them.",
+        ("renting from the clouds",
+         "Epoch's AI chip owners at end-2025: " + ", ".join(
+             f"{r['company']} {r['h100e'] / 1e6:.1f}M" for r in owners)
+         + " H100e."),
+        ("rent abroad", "The Substrate (May 2026): ByteDance ~611k H100e "
+                        "(91k reported, 520k inferred from a reported "
+                        "budget it disputes), Tencent ~51k."),
+        ("flatters them", "No source splits Alibaba's or Tencent's fleets "
+                          "between their own labs and cloud customers such "
+                          "as Moonshot or Zhipu. Counted that way, Google "
+                          "would be its whole owned fleet, not DeepMind's "
+                          "slice."))
+
+
 _CC_SOURCES_HEAD = "Where China's compute comes from"
 
 
@@ -17913,12 +18183,13 @@ def _cc_compute_vs_us(today):
 
 
 _CC_US_BAR = "#33415C"
+_CC_VS_US_HEAD = "China's installed compute beside the US's"
 
 
 def _render_cc_compute_vs_us(today):
     """China's installed compute by source beside the US's, on one linear
     axis, the US's multiple over each pair (`_cc_compute_vs_us`)."""
-    st.markdown("**China's installed compute beside the US's**")
+    st.subheader(_CC_VS_US_HEAD)
     log = st.toggle("Log scale", value=_CC_DEFAULTS["cc_vsus_log"], key="cc_vsus_log",
                     help="Shows China's early years and the US's on one readable axis. "
                          "On a log axis a stacked segment's height no longer reads as "
@@ -18560,10 +18831,13 @@ def _render_compute_eci(_today, include_future, horizon, run_days=_DAYS_2MO):
 
 
 _CC_LEAD = ("**How far behind is China, in compute and in capability, and is the "
-            "gap closing?** This tab grounds the numbers other tabs use: China's "
-            "share of world AI compute and its range, how its capability lag "
-            "compares with its compute deficit, where its chips come from and how "
-            "much of that rests on US policy, and when a DUVi ban would bind.")
+            "gap closing?** Compute is held by companies, not countries, and "
+            "remote access lets either side's firms rent across the border, so "
+            "the tab starts with who holds it. Then it grounds the numbers other "
+            "tabs use: China's share of world AI compute and its range, where "
+            "its chips come from and how much rests on US policy, when a DUVi "
+            "ban would bind, and how its capability lag compares with its "
+            "compute deficit.")
 
 
 def _cc_headline(today, n=None):
@@ -18679,14 +18953,16 @@ def render_compute_capabilities():
     run_days = _DAYS_6MO if run_key == 'train_flop_6mo' else _DAYS_2MO
     cc_rows = load_eci_compute(mtime=_eci_mtime())
 
-    # Evidence first: where China's compute comes from and what bounds it;
-    # the US-vs-China comparison of largest runs and capability last. The glossary sits under
-    # the first chart (`TestTabTopOrder`).
-    _render_cc_compute_sources()
+    # Three parts: who holds the compute (companies, remote access); where
+    # China's comes from and what bounds it; how it compares with the US. The
+    # glossary sits under the first chart (`TestTabTopOrder`), the order is
+    # `TestCcComputeSourcesTab`'s.
+    _render_cc_companies()
     with st.expander("How to read this"):
         _units()
-    _render_cc_compute_vs_us(_today)
+    _render_cc_compute_sources()
     _render_cc_duv_ceiling(_today)
+    _render_cc_compute_vs_us(_today)
     _cc_us_vs_china(cc_rows, _today, horizon=horizon,
                     run_key=run_key, run_days=run_days)
 

@@ -1817,7 +1817,7 @@ class TestCcExplains:
 
 class TestCcDuvCeilingTab:
     """The CTS lithography ceiling, the China tab's last evidence section,
-    just before the US-vs-China comparison."""
+    just before the comparisons with the US."""
 
     _HEAD = "Lithography ceiling on China's chip output"
 
@@ -1826,8 +1826,8 @@ class TestCcDuvCeilingTab:
         at.run()
         _switch_tab(at, "China")
         _assert_no_error(at, "CC / DUV ceiling")
-        assert [str(h.value) for h in at.subheader][-2:] == [self._HEAD,
-                                                             "US vs. China"]
+        assert [str(h.value) for h in at.subheader][-3:] == [
+            self._HEAD, "China's installed compute beside the US's", "US vs. China"]
         text = " ".join(str(m.value) for m in at.markdown)
         assert "not a forecast" in text
         caps = " ".join(str(c.value) for c in at.caption)
@@ -1835,11 +1835,13 @@ class TestCcDuvCeilingTab:
 
 
 class TestCcComputeSourcesTab:
-    """The China tab's sections in order: China's compute by source, the
-    lithography ceiling, then US vs. China."""
+    """The China tab's sections in order: who holds the compute, China's
+    compute by source, the lithography ceiling, China beside the US, then US
+    vs. China."""
 
-    _ORDER = ["Where China's compute comes from",
-              TestCcDuvCeilingTab._HEAD, "US vs. China"]
+    _ORDER = ["Who holds the compute", "Where China's compute comes from",
+              TestCcDuvCeilingTab._HEAD, "China's installed compute beside the US's",
+              "US vs. China"]
 
     def test_renders_in_order_and_cites_epoch(self):
         at = _fresh_app()
@@ -1852,8 +1854,6 @@ class TestCcComputeSourcesTab:
         caps = " ".join(str(c.value) for c in at.caption)
         assert "epoch.ai/publications/chip-smuggling" in caps
         assert "Faded bars are projections" in caps
-        text = " ".join(str(m.value) for m in at.markdown)
-        assert "China's installed compute beside the US's" in text
         names = [d.get("name", "") for el in at.get("plotly_chart")
                  for d in json.loads(el.proto.spec)["data"]]
         assert "United States" in names and "China: Smuggled" in names
@@ -1862,6 +1862,26 @@ class TestCcComputeSourcesTab:
         at.toggle(key="cc_vsus_log").set_value(True).run()
         _assert_no_error(at, "CC / vs US log")
         self._labels_sit_on_their_bars(at, "log")
+
+    def test_company_views_switch_the_bars(self):
+        """*Who holds the compute* opens on the sourced view and each view
+        draws its own China rows (`TestCcCompanies`)."""
+        import visualize_projection as vp
+        at = _fresh_app()
+        at.query_params["tab"] = "china"
+        at.run()
+        _assert_no_error(at, "China")
+
+        def names():
+            spec = json.loads(at.get("plotly_chart")[0].proto.spec)
+            return {y for d in spec["data"] for y in (d.get("y") or [])}
+        assert vp._CC_CN_UNNAMED in names()
+        at.radio(key="cc_co_view").set_value("With our estimate").run()
+        _assert_no_error(at, "China / estimate")
+        assert "DeepSeek" in names() and vp._CC_CN_UNNAMED not in names()
+        at.radio(key="cc_co_view").set_value("US labs only").run()
+        _assert_no_error(at, "China / US only")
+        assert vp._CC_CN_ALL in names()
 
     @staticmethod
     def _labels_sit_on_their_bars(at, axis):

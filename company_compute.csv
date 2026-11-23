@@ -1,0 +1,45 @@
+# AI compute by company at end-2025, in H100e (dense 8-bit). Read by the China
+# tab's *Who holds the compute* (`load_company_compute`, `_cc_companies`).
+# p5/p95 are a 90% interval where the source gives one, else blank.
+#
+# basis = users: Epoch AI, "AI chip users" (epoch.ai/data/ai-chip-users,
+#   year_end_by_lab.csv, generated 2026-09-09): compute each lab uses, owned or
+#   rented, end-2025. Google DeepMind and Meta (Meta Superintelligence Labs) are
+#   the lab's slice of the parent's fleet, not the parent's.
+# basis = owners: Epoch AI, "AI chip owners" (epoch.ai/data/ai-chip-owners,
+#   cumulative_by_designer.csv), every designer's row at 2025-12-31 summed per
+#   owner. The fleets the labs above rent from. Epoch publishes no 90% interval
+#   for xAI's row. China's own rows are not copied: china_compute_sources.csv
+#   holds China's total.
+# basis = reported: a Chinese company's compute as published.
+#   ByteDance and Tencent abroad: The Substrate, "How much US compute is China
+#   renting from the cloud?" (Cassia King, May 22 2026). ByteDance 91k is
+#   36,000 B200s rented through Aolani Cloud in Malaysia (WSJ), 520k is its
+#   inference from a reported $7B 2025 remote-access budget (The Information;
+#   ByteDance disputed it), net of the 91k. Tencent 51k is ~5,000 B200s from
+#   Datasection in Osaka plus 10,000 B300s in Australia (FT).
+#   China Mobile: 2025 annual results, "total intelligent computing capacity
+#   reached 92.5 EFLOPS (FP16)", own and rented, / 989 TFLOPS dense FP16 per H100.
+#   China Telecom: 2025 annual results slides (Mar 24 2026), 91 EFLOPS of
+#   "proprietary and accessed" intelligent compute as at Mar 2026, precision
+#   unstated, read as FP16 like China Mobile's.
+#   Chinese companies' sites in China come from Epoch's data-center catalogue
+#   in code (dc_all at end-2025), not from this file.
+company,country,basis,where,h100e,p5,p95,note
+OpenAI,US,users,home,1743000,1251000,2185000,"All rented: Microsoft, Oracle, CoreWeave and others"
+Google DeepMind,US,users,home,1583000,1008000,2549000,"DeepMind's share of Google's fleet"
+Anthropic,US,users,home,1190000,842000,1717000,"All rented: Amazon, Google and others"
+Meta,US,users,home,996000,606000,1638000,"Meta Superintelligence Labs' share of Meta's fleet"
+SpaceXAI,US,users,home,635000,587000,787000,"Colossus 1 and the first Colossus 2 cluster"
+Google,US,owners,home,5050000,4039000,6128000,"TPUs and Nvidia"
+Microsoft,US,owners,home,3416000,2620000,4434000,
+Amazon,US,owners,home,2449000,2013000,3004000,"Trainium and Nvidia"
+Meta,US,owners,home,2302000,1771000,2996000,
+Oracle,US,owners,home,1144000,845000,1560000,
+CoreWeave,US,owners,home,832000,785000,882000,
+SpaceXAI,US,owners,home,554000,,,
+ByteDance,China,reported,abroad,91000,,,"36k B200s via Aolani Cloud in Malaysia (WSJ)"
+ByteDance,China,reported,abroad,520000,,,"Inferred from a reported $7B 2025 remote-access budget; ByteDance disputed it"
+Tencent,China,reported,abroad,51000,,,"B200s from Datasection in Osaka and B300s in Australia (FT)"
+China Mobile,China,reported,home,93500,,,"92.5 EFLOPS FP16 at end-2025 incl. rented"
+China Telecom,China,reported,home,92000,,,"91 EFLOPS proprietary and accessed at Mar 2026"

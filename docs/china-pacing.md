@@ -67,9 +67,34 @@ generator, so no other number moves (`test_headline_cards_are_the_other_tabs_num
 
 ## China tab — section order
 
-The tab runs headline cards, *Where China's compute comes from*, the glossary expander, the
-lithography ceiling, then *US vs. China*: the evidence on China's compute before the
-run-and-capability comparison that reads it (`TestCcComputeSourcesTab`).
+The tab runs in three parts after the headline cards: who holds the compute (*Who holds
+the compute*, then the glossary expander under that first chart); where China's comes from
+(*Where China's compute comes from*, the lithography ceiling); how it compares with the US
+(*China's installed compute beside the US's*, *US vs. China*). Companies come first because
+the rest of the tab counts China as one buyer, and that framing needs its caveat before it
+is used (`TestCcComputeSourcesTab`).
+
+## China tab — who holds the compute
+
+`_render_cc_companies` draws US labs beside Chinese companies at end-2025 (`_CC_CO_AS_OF`),
+each bar split into at home and rented abroad, from `_cc_companies(view)`:
+
+1. **US labs are Epoch's chip users, not owners.** A lab's own slice (DeepMind's of
+   Google's fleet), owned or rented. The owners rows (`company_compute.csv`) appear only in
+   the caption's hover, since they are the clouds the labs rent from.
+2. **Every view adds to China's one total**, the compute-sources stock at that year, in
+   China plus remote access (`test_every_view_adds_to_chinas_total`). *Sourced only*
+   (default) names published numbers alone (the CSV's `reported` rows plus
+   `_cc_cn_catalogue_sites`, Epoch's attributed sites in mainland China) and leaves the rest
+   as one grey *no named company* bar; *With our estimate* splits the in-China stock by
+   `_CC_CN_CO_SHARES` (judgment §14) and remote access by the reported rentals; *US labs
+   only* keeps China as one bar, the country framing the other two correct.
+3. **Johor's catalogued sites are not added to ByteDance in *Sourced only*.** The
+   Substrate's 611k already counts its Malaysian rentals, so adding them again would
+   double-count.
+
+The lead line is read off the rows (`_cc_companies_lead`); `TestCcCompanies` (unit) and
+`test_company_views_switch_the_bars` (integration) guard it.
 
 ## China tab — the frontiers under the takeoff, and what drives China's
 
@@ -108,8 +133,8 @@ and both hit the cache (`test_a_chip_cut_today_is_the_same_all_day`).
 
 ## China tab — China beside the US, absolute
 
-Under the by-source share charts and the glossary, *China's installed compute beside the
-US's* (`_render_cc_compute_vs_us`, `_cc_compute_vs_us`) puts each year-end's stock by
+After the lithography ceiling, in its own section, *China's installed compute beside
+the US's* (`_render_cc_compute_vs_us`, `_cc_compute_vs_us`) puts each year-end's stock by
 channel (the installed chart's numbers, remote access included) next to the US's
 (`_pc_us_installed`, Pacing's) on one linear axis, the US multiple over each pair and
 China's total over its bar so a sliver still reads. Installed only: the US has no

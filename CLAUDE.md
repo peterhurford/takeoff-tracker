@@ -48,6 +48,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
 - **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *China tab — lithography ceiling*)
 - **`china_compute_sources.csv`** — China's AI compute by source (domestic, legal sales, smuggled, remote access), flow and stock in H100e: Epoch to 2025, IFP for 2026–27, with `_cn_src_projection()` extending to 2030. Drawn by `_render_cc_compute_sources()` as 100% mixes with totals; derivations in the file's `#` header
+- **`company_compute.csv`** — end-2025 AI compute by company: Epoch's chip users (US labs) and owners, plus published Chinese figures; the China tab's *Who holds the compute* (`_cc_companies`)
 - **`.streamlit/config.toml`** — turns on websocket compression (~4× less chart JSON on the wire)
 - **`openai_perplexity.csv`** — OpenAI's base-model log-perplexity by model (Pachocki, Nov 2026), read from the post's chart SVG; display only, in Takeoff's evidence half
 - **`metr_aeci.csv`** — METR's AECI points for Anthropic and the all-developer frontier, chart-digitized; read by Takeoff's *METR's acceleration assessment* section, beside Epoch's ECI
@@ -70,7 +71,7 @@ it, so most surprising-looking code is deliberate. Update the file in the same c
 |---|---|
 | `render_takeoff`, `takeoff_model.py` wiring, any `_tk_*`; China's takeoff (`_cn_tk_*`, `_tk_render_china`, `simulate(follower=…)`); `render_rsi` and every `_rsi_*`, `_render_rsi_*`, `_tasteval_*`, `load_rsi_*`; the *Capabilities Milestones* cards and *Automated coder projection* blend (`_pc_render_milestones`, `_pc_render_rsi_blend`, `_pc_rsi_*`, `_pc_*_eta`, `_pc_condition_on_today`, `_PC_RSI_WEIGHTS`) | `docs/takeoff.md` (equations: `TAKEOFF_MODEL.md`) |
 | `load_data_centers`, any `_dc_*` (company aliases, tenant/operator, hidden companies, network clusters, by-country panel), the buildout-vs-release panel and Compute ⟷ ECI (`_cc_company_buildout`, `_cc_forward_match`, `_cc_lab_*`, `_cc_frontier_grade_algo`, `_cc_rate_calibration`, `_render_compute_eci`), world shares (`_wc_*`, `_WC_*`) | `docs/data-centers.md` |
-| `render_compute_capabilities`, `_duv_*`, `_cn_src_*`, `_cc_cn_*` (crossing sim, channels, pace band), `render_pacing` and the pause/race/lever code (`_pc_render_us_pause`, `_pc_projection`, `_pc_crossing_idx`, `_pc_capacity_at`, `_pc_render_why`, `_pc_render_compute_*`, every `pc_*` widget) | `docs/china-pacing.md` (judgments: `CHINA_COMPUTE_JUDGMENTS.md`) |
+| `render_compute_capabilities`, `_cc_companies`, `_duv_*`, `_cn_src_*`, `_cc_cn_*` (crossing sim, channels, pace band), `render_pacing` and the pause/race/lever code (`_pc_render_us_pause`, `_pc_projection`, `_pc_crossing_idx`, `_pc_capacity_at`, `_pc_render_why`, `_pc_render_compute_*`, every `pc_*` widget) | `docs/china-pacing.md` (judgments: `CHINA_COMPUTE_JUDGMENTS.md`) |
 | `_ship_lag*`, `_anchor_slug`, `_render_anchor_links`, `?to=` links, `today_fwd` / `_tf` / `_today_forward`, `_fn_caption` / `_fn_line` / `_fn_span`, any caption or hover | `docs/conventions.md` |
 | `render_ukcyber` / `_ukc_*` / `ukc_*`, `render_eci` / `_eci_*` / `_ECI_COMPANIES` / `_best_per_date`, `frontier_thresholds.py`; the full per-tab table | `docs/tabs.md` |
 | any data file, loader or hardcoded `_*_RAW` / `_*_REVENUE` table | `docs/data-sources.md` (step by step: `.claude/commands/update_data.md`) |
@@ -107,7 +108,7 @@ Keep this file an index: new design detail goes in the matching `docs/` file, no
 | Revenue (`revenue`) | `render_revenue()` | `_OPENAI_REVENUE`, `_ANTHROPIC_REVENUE`, `_CN_REVENUE` |
 | Employment (`employment`) | `render_employment()` | RLI frontier + slider assumptions |
 | Data Centers (`datacenters`) | `render_data_centers()` | `data_centers.csv` + timelines → `load_data_centers()` |
-| China (`china`) | `render_compute_capabilities()` | `dc_all` + ECI, `china_compute_sources.csv`, `cts_duv_production.csv` |
+| China (`china`) | `render_compute_capabilities()` | `dc_all` + ECI, `china_compute_sources.csv`, `company_compute.csv`, `cts_duv_production.csv` |
 | Pacing (`pacing`) | `render_pacing()` | `dc_all`, Takeoff's `_tk_run` |
 | Frontier Thresholds (`thresholds`) | `frontier_thresholds.render(st)` | `frontier_thresholds.json` |
 | Release Lag (`releaselag`) | `render_release_lag()` | `metr_aeci.csv` + ECI |

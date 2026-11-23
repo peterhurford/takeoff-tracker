@@ -5481,6 +5481,70 @@ class TestCcWorldShares:
         assert "ai-supercomputers" not in src and "gpu-clusters" not in src
 
 
+class TestCcCompanies:
+    """*Who holds the compute* (`_cc_companies`): US labs from Epoch's chip
+    users, China split three ways, each view adding to China's one total."""
+
+    def _cn_total(self):
+        stock = vp.load_china_compute_sources(vp._cn_src_mtime())["stock"]["2025"]
+        return sum(v[0] for v in stock.values())
+
+    @pytest.mark.parametrize("view", vp._CC_CO_VIEWS)
+    def test_every_view_adds_to_chinas_total(self, view):
+        rows = vp._cc_companies(view)
+        cn = sum(r['total'] for r in rows if r['kind'] != 'lab')
+        assert cn == pytest.approx(self._cn_total(), rel=1e-9)
+        assert [r['total'] for r in rows] == sorted(
+            (r['total'] for r in rows), reverse=True)
+        labs = {r['name']: r['total'] for r in rows if r['kind'] == 'lab'}
+        assert labs["OpenAI"] == 1743000 and len(labs) == 5
+
+    def test_sourced_names_only_published_numbers(self):
+        """ByteDance = The Substrate's rentals abroad plus its Epoch-catalogued
+        site in China; the unnamed rest is what no source attributes."""
+        rows = {r['name']: r for r in vp._cc_companies("Sourced only")}
+        bd = rows["ByteDance"]
+        assert bd['abroad'] == 611000
+        sites = vp._cc_cn_catalogue_sites(vp.dc_all)
+        assert bd['home'] == pytest.approx(sites["ByteDance"])
+        assert "Huawei" in rows and rows["China Mobile"]['home'] == 93500
+        assert rows[vp._CC_CN_UNNAMED]['total'] > 0
+        assert all(r['rng'] is None for r in rows.values() if r['kind'] != 'lab')
+
+    def test_catalogue_sites_skip_abroad_and_unattributed(self):
+        d = datetime
+        dcs = [dict(company="A", country="China", attributed=True,
+                    points=[dict(date=d(2025, 6, 1), h100=10.0),
+                            dict(date=d(2026, 6, 1), h100=99.0)]),
+               dict(company="B", country="Malaysia", attributed=True,
+                    points=[dict(date=d(2025, 6, 1), h100=5.0)]),
+               dict(company="C", country="China", attributed=False,
+                    points=[dict(date=d(2025, 6, 1), h100=7.0)])]
+        assert vp._cc_cn_catalogue_sites(dcs) == {"A": 10.0}
+
+    def test_estimate_splits_by_the_judged_shares(self):
+        stock = vp.load_china_compute_sources(vp._cn_src_mtime())["stock"]["2025"]
+        in_cn = sum(stock[k][0] for k in vp._CN_SRC_IN_CHINA)
+        rows = {r['name']: r for r in vp._cc_companies("With our estimate")}
+        for name, lo, mid, hi in vp._CC_CN_CO_SHARES:
+            r = rows[name]
+            assert r['home'] == pytest.approx(mid * in_cn)
+            assert r['rng'][0] <= r['total'] <= r['rng'][1]
+        assert sum(m for _n, _l, m, _h in vp._CC_CN_CO_SHARES) < 1
+        # Remote access goes by the reported rentals: ByteDance's 611k of 662k.
+        assert rows["ByteDance"]['abroad'] == pytest.approx(
+            stock["remote"][0] * 611 / 662)
+
+    def test_us_only_keeps_china_whole(self):
+        rows = vp._cc_companies("US labs only")
+        assert [r['name'] for r in rows if r['kind'] != 'lab'] == [vp._CC_CN_ALL]
+
+    @pytest.mark.parametrize("view", vp._CC_CO_VIEWS)
+    def test_lead_reads_the_rows(self, view):
+        text = vp._cc_companies_lead(view, vp._cc_companies(view))
+        assert "OpenAI" in text and "M**" in text
+
+
 class TestCcHeadline:
     """The China tab's headline cards (`_cc_headline`) read the functions
     the Data Centers and Pacing tabs read, and draw without moving numpy's
