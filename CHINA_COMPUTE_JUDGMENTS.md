@@ -227,28 +227,33 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2). They sp
 - **Revisit when:** a Chinese model trails the US frontier by well over 12 points and its
   catch-up rate can be read, or a distillation study at frontier scale.
 
-### 14. China's compute by company (`_CC_CN_CO_SHARES`, the China tab's *Our best guess by company* view)
+### 14. China's compute by company (`_CC_CN_CO_SHARES`, the China tab's *Best guess by company* view)
 
 - **Value:** shares of China's end-2025 in-China stock (1.82M H100e) by the company that
-  controls it, owned or rented, cloud arms included, as p10 / central / p90: ByteDance
-  12 / 20 / 30%, Alibaba 12 / 20 / 28%, Tencent 7 / 12 / 18%, state carriers (China
-  Mobile, Telecom, Unicom) 8 / 10 / 15%, Huawei 3 / 7 / 12%, Baidu 3 / 6 / 10%, DeepSeek
-  1 / 2.5 / 4%; the rest (22.5%) goes to government computing centers, other firms and
-  startups' own clusters. Remote access abroad (0.62M) is split by the rentals reported per
-  company (The Substrate: ByteDance 611k, Tencent 51k), so ByteDance gets 92% of it.
+  uses it, a cloud's chips rented to a lab counted under the lab, as p10 / central / p90:
+  ByteDance 12 / 20 / 30%, Alibaba 11 / 18.5 / 26%, Tencent 7 / 11.5 / 17%, state telecoms
+  (China Mobile, Telecom, Unicom) 8 / 10 / 15%, Huawei 3 / 7 / 12%, Baidu 3 / 6 / 10%,
+  DeepSeek 1 / 2.5 / 4%, Zhipu 0.5 / 1.5 / 3%, Moonshot 0.6 / 1.2 / 2.5%, MiniMax
+  0.3 / 0.8 / 2%; the rest (21%) goes to government computing centers, other firms and
+  startups. Remote access abroad (0.62M) is split by the rentals reported per company (The
+  Substrate: ByteDance 611k, Tencent 51k), so ByteDance gets 92% of it.
 - **Evidence:** 2025 capex, used as relative weights only: ByteDance >150B yuan (~$20.6B,
   Reuters), about half planned abroad, so ~$10B at home; Alibaba RMB126B in the year to
   Mar 2026; Tencent RMB79B; Baidu far smaller (no full-year figure found). Goldman puts the
   four hyperscalers' 2025 AI capex at ~$57B. China Mobile discloses 92.5 EFLOPS FP16 at
-  end-2025 (~94k H100e) and China Telecom 91 EFLOPS at Mar 2026, so the carriers' ~10% is
+  end-2025 (~94k H100e) and China Telecom 91 EFLOPS at Mar 2026, so the telecoms' ~10% is
   anchored on disclosure. Epoch's catalogue puts 55k H100e at Huawei's own sites and 123k at
-  a ByteDance site; every central share sits above its sourced floor. DeepSeek's is the
-  weakest: no published fleet figure, only training-run estimates of a few thousand H100e
-  and press claims of ~50k Hopper-class chips.
+  a ByteDance site; every central share sits above its sourced floor. Moonshot: Bloomberg
+  reports a ~20k Nvidia-chip cluster rented from Alibaba, and Moonshot has put its total at
+  about 20k "H-equivalents" (~1.1%), so its share comes out of Alibaba's. MiniMax (Alibaba-
+  and Tencent-backed, H800s in its papers) is taken out of both; Zhipu (state-backed,
+  domestic chips) out of the rest. DeepSeek, Zhipu and MiniMax have no published fleet
+  figure; DeepSeek has training-run estimates of a few thousand H100e and press claims of
+  ~50k Hopper-class chips.
 - **What it cannot show:** capex buys buildings and networks as well as chips, and 2025's
-  H20 ban stranded some of it. The shares are owner-side for China but user-side for the
-  US labs (Epoch's chip users), so they flatter Chinese firms. Alibaba's and Tencent's
-  fleets serve cloud customers (Moonshot, Zhipu, MiniMax) as well as their own labs.
+  H20 ban stranded some of it. Alibaba's and Tencent's bars still hold the cloud customers
+  not split out, so they lean owner-side where the US labs (Epoch's chip users) are
+  user-side, which flatters the Chinese firms.
 - **Revisit when:** a per-company estimate of Chinese fleets is published (Epoch's chip
   users adding Chinese labs would replace this outright), or a firm discloses its compute.
 

@@ -1,5 +1,5 @@
 # AI compute by company at end-2025, in H100e (dense 8-bit). Read by the China
-# tab's *Which companies have the compute* (`load_company_compute`, `_cc_companies`).
+# tab's *Compute by company* (`load_company_compute`, `_cc_companies`).
 # p5/p95 are a 90% interval where the source gives one, else blank.
 #
 # basis = users: Epoch AI, "AI chip users" (epoch.ai/data/ai-chip-users,

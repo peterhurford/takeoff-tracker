@@ -86,12 +86,17 @@ each bar split into at home and rented abroad, from `_cc_companies(view)`:
    China plus remote access (`test_every_view_adds_to_chinas_total`). *Published numbers only*
    (default) names published numbers alone (the CSV's `reported` rows plus
    `_cc_cn_catalogue_sites`, Epoch's attributed sites in mainland China) and leaves the rest
-   as one grey *company unknown* bar; *Our best guess by company* splits the in-China stock by
+   as one grey *company unknown* bar; *Best guess by company* splits the in-China stock by
    `_CC_CN_CO_SHARES` (judgment §14) and remote access by the reported rentals; *US labs
    only* keeps China as one bar, the country framing the other two correct.
 3. **Johor's catalogued sites are not added to ByteDance in *Published numbers only*.** The
    Substrate's 611k already counts its Malaysian rentals, so adding them again would
    double-count.
+
+4. **The largest single site each company can use** sits under it
+   (`_render_cc_largest_sites`), end of 2025 and today, whatever the view: a site counts in
+   full for every user Epoch lists, else its operator, and for no one when no party is
+   recorded, so DayOne's Johor campus counts for no Chinese firm (`TestCcLargestSites`).
 
 The lead line is read off the rows (`_cc_companies_lead`); `TestCcCompanies` (unit) and
 `test_company_views_switch_the_bars` (integration) guard it.

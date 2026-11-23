@@ -17751,20 +17751,23 @@ def _render_world_shares(today, horizon):
 # ── China tab: who holds the compute ─────────────────────────────────────
 
 _CO_FILE = "company_compute.csv"
-_CC_CO_HEAD = "Which companies have the compute (end of 2025)"
+_CC_CO_HEAD = "Compute by company (end of 2025)"
 _CC_CO_AS_OF = datetime(2025, 12, 31)
-_CC_CO_VIEWS = ("Published numbers only", "Our best guess by company", "China as one country")
-# Hand-set shares of China's in-China stock by the company that controls it,
-# owned or rented, cloud arms included: (name, p10, central, p90).
-# CHINA_COMPUTE_JUDGMENTS.md §14. The rest is `_CC_CN_CO_OTHER`.
+_CC_CO_VIEWS = ("Published numbers only", "Best guess by company", "China as one country")
+# Hand-set shares of China's in-China stock by the company that uses it, a
+# cloud's chips rented to a lab counted under the lab: (name, p10, central,
+# p90). CHINA_COMPUTE_JUDGMENTS.md §14. The rest is `_CC_CN_CO_OTHER`.
 _CC_CN_CO_SHARES = (
     ("ByteDance", 0.12, 0.20, 0.30),
-    ("Alibaba", 0.12, 0.20, 0.28),
-    ("Tencent", 0.07, 0.12, 0.18),
-    ("State carriers", 0.08, 0.10, 0.15),
+    ("Alibaba", 0.11, 0.185, 0.26),
+    ("Tencent", 0.07, 0.115, 0.17),
+    ("State telecoms", 0.08, 0.10, 0.15),
     ("Huawei", 0.03, 0.07, 0.12),
     ("Baidu", 0.03, 0.06, 0.10),
     ("DeepSeek", 0.01, 0.025, 0.04),
+    ("Zhipu", 0.005, 0.015, 0.03),
+    ("Moonshot", 0.006, 0.012, 0.025),
+    ("MiniMax", 0.003, 0.008, 0.02),
 )
 _CC_CN_CO_OTHER = "Other Chinese companies and government"
 _CC_CN_UNNAMED = "China, company unknown"
@@ -17809,14 +17812,14 @@ def _cc_cn_catalogue_sites(dcs, as_of=_CC_CO_AS_OF):
 
 
 def _cc_companies(view, dcs=None, data=None, cn=None):
-    """Bars for *Which companies have the compute*, at end-2025, largest first.
+    """Bars for *Compute by company*, at end-2025, largest first.
 
     Each row: name, kind ('lab' a US lab, 'firm' a Chinese company, 'rest'
     China's unnamed remainder or its whole), home and abroad H100e, the
     total's (lo, hi) or None, and a note. US labs are Epoch's chip users.
     China's total is the compute-sources stock, in China plus rented abroad;
     'Published numbers only' names only published numbers (`company_compute.csv` and
-    Epoch's China sites) and leaves the rest unnamed, 'Our best guess by company'
+    Epoch's China sites) and leaves the rest unnamed, 'Best guess by company'
     splits the in-China stock by `_CC_CN_CO_SHARES` and remote access by the
     reported rentals abroad, 'China as one country' keeps China whole
     (`TestCcCompanies`).
@@ -17871,7 +17874,7 @@ def _cc_companies(view, dcs=None, data=None, cn=None):
                   if tot_abroad else 0.0)
             rows.append(dict(name=name, kind='firm', home=mid * in_cn, abroad=ab,
                              rng=(lo * in_cn + ab, hi * in_cn + ab),
-                             note=f"{mid:.1%} of China's in-China stock "
+                             note=f"{mid:.1%} of China's chips in China "
                                   f"({lo:.0%}–{hi:.0%}, our judgment)"))
             used_share += mid
             used_abroad += ab
@@ -17956,7 +17959,7 @@ def _cc_companies_lead(view, rows):
                 f"{top['name']} ({top['total'] / 1e6:.1f}M).")
     if view == _CC_CO_VIEWS[1]:
         f0 = firms[0]
-        return (f"Our best guess is that China's biggest holder, "
+        return (f"Best guess: China's biggest holder, "
                 f"**{f0['name']}**, has about **{f0['total'] / 1e6:.1f}M** "
                 f"H100e, {f0['abroad'] / f0['total']:.0%} of it rented outside "
                 f"China. That is {f0['total'] / top['total']:.0%} as much as "
@@ -17968,8 +17971,109 @@ def _cc_companies_lead(view, rows):
             "views break it down.")
 
 
-def _render_cc_companies():
-    """*Which companies have the compute*: US labs and Chinese companies side by side at
+_CC_SITE_HEAD = "Largest single site each company can use"
+# A lab's name here -> its party in Epoch's catalogue (after
+# `_DC_COMPANY_ALIASES`).
+_CC_SITE_PARTY = {"Google DeepMind": "Google"}
+
+
+def _cc_largest_sites(dcs, as_of):
+    """{party: (H100e, site, country)}: the largest catalogued site each
+    party can use at `as_of`, at its last capacity on or before then. A site
+    counts for every user Epoch lists, or its operator when none is listed,
+    so Colossus 2 counts for Anthropic, Cursor and SpaceXAI alike. A site with
+    no recorded party counts for no one (`TestCcLargestSites`)."""
+    out = {}
+    for dc in dcs:
+        if not dc.get('attributed', True):
+            continue
+        past = [p for p in dc['points'] if p['date'] <= as_of and p.get('h100')]
+        if not past:
+            continue
+        h = past[-1]['h100']
+        for party in (dc.get('users') or [dc.get('operator') or dc['company']]):
+            if h > out.get(party, (0.0,))[0]:
+                out[party] = (h, dc['name'], dc.get('country', ''))
+    return out
+
+
+def _cc_site_companies(today):
+    """[(name, is_us)]: the US labs and the Chinese companies of the chart
+    above, whatever its view, largest site today first, those with none
+    catalogued last."""
+    labs = [r['company'] for r in load_company_compute(_co_mtime())
+            if r['basis'] == 'users']
+    cn = [n for n, *_ in _CC_CN_CO_SHARES if n != "State telecoms"]
+    now = _cc_largest_sites(dc_all, today)
+    size = lambda n: now.get(_CC_SITE_PARTY.get(n, n), (0.0,))[0]
+    return sorted([(n, True) for n in labs] + [(n, False) for n in cn],
+                  key=lambda c: -size(c[0]))
+
+
+def _cc_largest_sites_fig(today):
+    """Each company's largest site at end-2025 and today; a company with none
+    catalogued says so."""
+    cos = _cc_site_companies(today)[::-1]
+    names = [n for n, _us in cos]
+    colors = [_CC_CO_COLORS["lab" if u else "firm"] for _n, u in cos]
+    fig = go.Figure()
+    for as_of, label, op in ((_CC_CO_AS_OF, "End of 2025", 1.0),
+                             (today, "Today", 0.45)):
+        big = _cc_largest_sites(dc_all, as_of)
+        got = [big.get(_CC_SITE_PARTY.get(n, n)) for n in names]
+        fig.add_trace(go.Bar(
+            y=names, x=[g[0] / 1e6 if g else 0.0 for g in got], orientation='h',
+            name=label, marker=dict(color=colors, opacity=op),
+            customdata=[f"{g[1]} ({g[2]})" if g else "none in Epoch's catalogue"
+                        for g in got],
+            hovertemplate="%{y}: %{x:,.2f}M H100e<br>%{customdata}<extra>"
+                          + label + "</extra>"))
+    now = _cc_largest_sites(dc_all, today)
+    for n in names:
+        g = now.get(_CC_SITE_PARTY.get(n, n))
+        fig.add_annotation(x=(g[0] / 1e6) if g else 0, y=n, xanchor='left',
+                           showarrow=False, xshift=4,
+                           text=g[1] if g else "none catalogued",
+                           font=dict(size=10, color='#444444'))
+    fig.update_layout(
+        barmode='group', height=max(260, 34 * len(names) + 110),
+        plot_bgcolor='white', paper_bgcolor='white', font=dict(color='#222222'),
+        margin=dict(l=10, r=40, t=10, b=40), bargap=0.25,
+        showlegend=False,
+        xaxis=dict(title_text="Largest single site (M H100e)",
+                   gridcolor='rgba(0,0,0,0.12)', tickfont=dict(color='#222222'),
+                   title_font=dict(color='#222222')),
+        yaxis=dict(tickfont=dict(color='#222222'), automargin=True))
+    return fig
+
+
+def _render_cc_largest_sites(today):
+    """Under *Compute by company*: the largest single site each company can
+    use, end of 2025 and today, from Epoch's data-center catalogue."""
+    st.markdown(f"**{_CC_SITE_HEAD}**")
+    now = _cc_largest_sites(dc_all, today)
+    cos = _cc_site_companies(today)
+    us, cn = (next(now[_CC_SITE_PARTY.get(n, n)] + (n,) for n, u in cos
+                   if u == side and _CC_SITE_PARTY.get(n, n) in now)
+              for side in (True, False))
+    _fn_caption(
+        f"Today the biggest site a US lab can use is {us[1]} "
+        f"({us[0] / 1e6:.1f}M H100e, {us[3]}); the biggest any Chinese company "
+        f"can, {cn[1]} ({cn[0] / 1e3:,.0f}k, {cn[3]}, in {cn[2]}), "
+        f"{us[0] / cn[0]:.0f}× smaller. One training run can only use "
+        "what is networked together, so this matters as much as the totals. "
+        "Faded bars are today, solid ones the end of 2025.",
+        ("can use", "Epoch's data-center catalogue: a site counts for every "
+                    "company Epoch lists as using it, or its owner when none "
+                    "is listed. Sites with no recorded user, such as DayOne's "
+                    "Johor campus, count for no one. Shared sites count in "
+                    "full for each user, so Anthropic and SpaceXAI both get "
+                    "Colossus 2."))
+    st.plotly_chart(_cc_largest_sites_fig(today), width="stretch")
+
+
+def _render_cc_companies(today):
+    """*Compute by company*: US labs and Chinese companies side by side at
     end-2025 (`_cc_companies`), the view picked by `cc_co_view`."""
     st.subheader(_CC_CO_HEAD)
     if st.session_state.get("cc_co_view") not in _CC_CO_VIEWS:
@@ -17979,7 +18083,7 @@ def _render_cc_companies():
         index=_CC_CO_VIEWS.index(_CC_DEFAULTS["cc_co_view"]), key="cc_co_view",
         help="Published numbers only: a Chinese company gets a bar only where "
              "someone has published a figure for it; the rest is one grey bar. "
-             "Our best guess by company: we split all of China's compute "
+             "Best guess by company: we split all of China's compute "
              "between companies ourselves. China as one country: one bar for "
              "all of China, the way it is usually discussed.")
     rows = _cc_companies(view)
@@ -18015,10 +18119,13 @@ def _render_cc_companies():
                         "(91k reported, 520k inferred from a reported "
                         "budget it disputes), Tencent ~51k."),
         ("on the generous side", "No one has split Alibaba's or Tencent's "
-                          "chips between their own AI work and cloud customers "
-                          "such as Moonshot or Zhipu. Counted the same way, "
+                          "chips between their own AI work and their cloud "
+                          "customers. The best guess moves what Moonshot, "
+                          "Zhipu and MiniMax rent into their own bars; other "
+                          "customers stay with the cloud. Counted that way, "
                           "Google would be all its chips, not DeepMind's "
                           "slice."))
+    _render_cc_largest_sites(today)
 
 
 _CC_SOURCES_HEAD = "Where China's compute comes from"
@@ -18962,7 +19069,7 @@ def render_compute_capabilities():
     # China's comes from and what bounds it; how it compares with the US. The
     # glossary sits under the first chart (`TestTabTopOrder`), the order is
     # `TestCcComputeSourcesTab`'s.
-    _render_cc_companies()
+    _render_cc_companies(_today)
     with st.expander("How to read this"):
         _units()
     _render_cc_compute_sources()

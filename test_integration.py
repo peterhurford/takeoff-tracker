@@ -1839,7 +1839,7 @@ class TestCcComputeSourcesTab:
     compute by source, the lithography ceiling, China beside the US, then US
     vs. China."""
 
-    _ORDER = ["Which companies have the compute (end of 2025)", "Where China's compute comes from",
+    _ORDER = ["Compute by company (end of 2025)", "Where China's compute comes from",
               TestCcDuvCeilingTab._HEAD, "China's installed compute beside the US's",
               "US vs. China"]
 
@@ -1864,7 +1864,7 @@ class TestCcComputeSourcesTab:
         self._labels_sit_on_their_bars(at, "log")
 
     def test_company_views_switch_the_bars(self):
-        """*Which companies have the compute* opens on the sourced view and each view
+        """*Compute by company* opens on the sourced view and each view
         draws its own China rows (`TestCcCompanies`)."""
         import visualize_projection as vp
         at = _fresh_app()
@@ -1876,12 +1876,13 @@ class TestCcComputeSourcesTab:
             spec = json.loads(at.get("plotly_chart")[0].proto.spec)
             return {y for d in spec["data"] for y in (d.get("y") or [])}
         assert vp._CC_CN_UNNAMED in names()
-        at.radio(key="cc_co_view").set_value("Our best guess by company").run()
+        at.radio(key="cc_co_view").set_value("Best guess by company").run()
         _assert_no_error(at, "China / estimate")
         assert "DeepSeek" in names() and vp._CC_CN_UNNAMED not in names()
         at.radio(key="cc_co_view").set_value("China as one country").run()
         _assert_no_error(at, "China / US only")
         assert vp._CC_CN_ALL in names()
+        assert any(vp._CC_SITE_HEAD in str(m.value) for m in at.markdown)
 
     @staticmethod
     def _labels_sit_on_their_bars(at, axis):

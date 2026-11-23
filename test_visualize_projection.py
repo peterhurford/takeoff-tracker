@@ -5482,7 +5482,7 @@ class TestCcWorldShares:
 
 
 class TestCcCompanies:
-    """*Which companies have the compute* (`_cc_companies`): US labs from Epoch's chip
+    """*Compute by company* (`_cc_companies`): US labs from Epoch's chip
     users, China split three ways, each view adding to China's one total."""
 
     def _cn_total(self):
@@ -5525,7 +5525,7 @@ class TestCcCompanies:
     def test_estimate_splits_by_the_judged_shares(self):
         stock = vp.load_china_compute_sources(vp._cn_src_mtime())["stock"]["2025"]
         in_cn = sum(stock[k][0] for k in vp._CN_SRC_IN_CHINA)
-        rows = {r['name']: r for r in vp._cc_companies("Our best guess by company")}
+        rows = {r['name']: r for r in vp._cc_companies("Best guess by company")}
         for name, lo, mid, hi in vp._CC_CN_CO_SHARES:
             r = rows[name]
             assert r['home'] == pytest.approx(mid * in_cn)
@@ -5543,6 +5543,35 @@ class TestCcCompanies:
     def test_lead_reads_the_rows(self, view):
         text = vp._cc_companies_lead(view, vp._cc_companies(view))
         assert "OpenAI" in text and "M**" in text
+
+
+class TestCcLargestSites:
+    """`_cc_largest_sites`: a site counts in full for every listed user, else
+    its operator, and for no one when Epoch records no party."""
+
+    def test_shared_and_unattributed_sites(self):
+        d = datetime
+        pts = lambda h: [dict(date=d(2025, 6, 1), h100=h)]
+        dcs = [dict(name="Shared", company="X", operator="Owner", attributed=True,
+                    users=["A", "B"], country="US", points=pts(100.0)),
+               dict(name="Own", company="A", operator="A", attributed=True,
+                    users=[], country="US", points=pts(50.0)),
+               dict(name="Landlord", company="QTS", operator="QTS",
+                    attributed=False, users=[], country="US", points=pts(999.0)),
+               dict(name="Later", company="C", operator="C", attributed=True,
+                    users=[], country="CN",
+                    points=[dict(date=d(2027, 1, 1), h100=500.0)])]
+        big = vp._cc_largest_sites(dcs, d(2025, 12, 31))
+        assert big == {"A": (100.0, "Shared", "US"), "B": (100.0, "Shared", "US")}
+
+    def test_every_company_in_the_chart_gets_a_row(self):
+        today = datetime(2026, 11, 23)
+        cos = vp._cc_site_companies(today)
+        names = [n for n, _u in cos]
+        assert "OpenAI" in names and "Moonshot" in names
+        assert "State telecoms" not in names
+        big = vp._cc_largest_sites(vp.dc_all, today)
+        assert big["ByteDance"][2] == "Malaysia"   # its largest is abroad
 
 
 class TestCcHeadline:
