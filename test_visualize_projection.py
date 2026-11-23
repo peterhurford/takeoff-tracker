@@ -437,6 +437,21 @@ class TestLoadFrontier:
                 assert not (a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]), \
                     (names[i], names[j])
 
+    def test_default_view_does_not_widen_at_new_year(self):
+        """`_default_view_end` counts months from today, not from the default
+        *Project through* year, which moves on Jan 1."""
+        last = datetime(2026, 9, 11)
+        nov = vp._default_view_end(2027, 2027, datetime(2027, 12, 31), last,
+                                   today=datetime(2026, 11, 23))
+        jan = vp._default_view_end(2028, 2028, datetime(2028, 12, 31), last,
+                                   today=datetime(2027, 1, 2))
+        assert (nov, jan) == (datetime(2027, 7, 1), datetime(2027, 9, 1))
+        # A year the user picked, or a cut past the projection, shows the span.
+        assert vp._default_view_end(2029, 2027, datetime(2029, 12, 31), last,
+                                    today=datetime(2026, 11, 23)) == datetime(2030, 1, 30)
+        assert vp._default_view_end(2027, 2027, datetime(2027, 3, 1), last,
+                                    today=datetime(2026, 11, 23)) == datetime(2027, 3, 31)
+
     def test_gpt4o_on_is_the_default(self):
         assert vp._METR_DEFAULTS['post_gpt4o'] is True
 

@@ -430,13 +430,21 @@ def _proj_end(end_year, last_date):
     return max(datetime(int(end_year), 12, 31), last_date + timedelta(days=1))
 
 
-def _default_view_end(end_year, default_year, proj_end, last_date):
-    """Where a projection chart's x-axis ends. The default *Project through*
-    year opens on its first half (July 1), so the fan does not flatten the
-    history; any other year, or data within 90 days of July, shows the span."""
-    mid = datetime(proj_end.year, 7, 1)
-    if int(end_year) == int(default_year) and mid > last_date + timedelta(days=90):
-        return mid
+_VIEW_MONTHS_AHEAD = 8
+
+
+def _default_view_end(end_year, default_year, proj_end, last_date, today=None):
+    """Where a projection chart's x-axis ends. On the default *Project through*
+    year it is the first of the month `_VIEW_MONTHS_AHEAD` months past today,
+    so the fan does not flatten the history and the view does not widen when
+    the default year rolls over; any other year, or a cut within 90 days of
+    the data or past the projection, shows the whole span."""
+    today = today or datetime.now()
+    m = today.month - 1 + _VIEW_MONTHS_AHEAD
+    cut = datetime(today.year + m // 12, m % 12 + 1, 1)
+    if (int(end_year) == int(default_year)
+            and last_date + timedelta(days=90) < cut < proj_end):
+        return cut
     return proj_end + timedelta(days=30)
 
 
@@ -4695,7 +4703,7 @@ def render_metr():
         _bt_lookup = {r['name']: r for r in backtest_results}
 
     # Axis ranges, set before the points so their names can be placed in pixels.
-    # The default end year opens on its first half, and the y-axis fits the 50%
+    # The default end year opens a few months past today, and the y-axis fits the 50%
     # band there: the wider bands run off the top, and a pan or a later
     # *Project through* year shows the rest.
     _x_lo = frontier_plot[0]['date'] - timedelta(days=30)
@@ -5844,7 +5852,7 @@ def _render_eci_tab(tab_all, tab_frontier_all, tab_frontier_names, p,
     all_scores = [m['eci_score'] for m in tab_all if m['is_frontier'] or m['eci_score'] >= _eci_nf_cutoff]
     y_min = min(all_scores) - 5
     _milestone_y_max = max(s for s, _, _ in milestone_list) if milestone_list else 170
-    # As on METR: the default view stops mid-year and fits the 50% band, the
+    # As on METR: the default view stops a few months out and fits the 50% band, the
     # wider bands and any milestone above it running off the top.
     _x_hi = _default_view_end(_eci_end_year, _eci_tab_defaults(p)[f"{p}_end_year"],
                               proj_end_date, eci_current['date'])

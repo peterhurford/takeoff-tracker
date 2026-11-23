@@ -225,9 +225,10 @@ class TestMetrPostGpt4o:
         _assert_no_error(at, "METR / early as-of, GPT-4o+ only")
         assert at.selectbox(key="_proj_as_of").value == vp.frontier_names[-1]
 
-    def test_default_view_opens_on_the_first_half_of_the_end_year(self):
-        """The default end year's chart stops at July 1 with the y-axis under
-        the 90% band's top; another *Project through* year shows it whole."""
+    def test_default_view_ends_eight_months_past_today(self):
+        """The default end year's chart stops `_VIEW_MONTHS_AHEAD` months out
+        with the y-axis under the 90% band's top; another *Project through*
+        year shows it whole."""
         import json
         import visualize_projection as vp
 
@@ -236,14 +237,16 @@ class TestMetrPostGpt4o:
         at = self._app()
         year = vp._METR_DEFAULTS["metr_end_year"]
         lay = layout(at)
-        assert lay["xaxis"]["range"][1].startswith(f"{year}-07-01")
+        cut = vp._default_view_end(year, year, datetime(year, 12, 31), datetime(2000, 1, 1))
+        assert cut.day == 1 and 210 < (cut - datetime.now()).days < 250
+        assert lay["xaxis"]["range"][1].startswith(cut.strftime("%Y-%m-%d"))
         spec = json.loads(at.get("plotly_chart")[0].proto.spec)
         fan_top = max(max(tr["y"]) for tr in spec["data"]
                       if tr.get("fill") or tr.get("name") == "90% CI")
         assert lay["yaxis"]["range"][1] < fan_top
         other = [y for y in at.radio(key="metr_end_year").options if int(y) != year][-1]
         at.radio(key="metr_end_year").set_value(type(year)(other)).run()
-        assert not layout(at)["xaxis"]["range"][1].startswith(f"{other}-07-01")
+        assert layout(at)["xaxis"]["range"][1] > f"{other}-12-31"
 
 
 # ===========================================================================
@@ -1115,8 +1118,8 @@ class TestEciExplains:
         assert scores[0] > record >= scores[0] - step
         assert len(scores) == 4 and all(b - a == step for a, b in zip(scores, scores[1:]))
 
-    def test_default_view_opens_on_the_first_half_of_the_end_year(self):
-        """As METR's: x stops at July 1 of the default end year, and the y-axis
+    def test_default_view_ends_eight_months_past_today(self):
+        """As METR's: x stops `_VIEW_MONTHS_AHEAD` months out, and the y-axis
         sits under the 90% band's top."""
         import json
         import visualize_projection as vp
@@ -1125,7 +1128,8 @@ class TestEciExplains:
         at.run()
         spec = json.loads(at.get("plotly_chart")[0].proto.spec)
         year = vp._eci_tab_defaults("eci")["eci_end_year"]
-        assert spec["layout"]["xaxis"]["range"][1].startswith(f"{year}-07-01")
+        cut = vp._default_view_end(year, year, datetime(year, 12, 31), datetime(2000, 1, 1))
+        assert spec["layout"]["xaxis"]["range"][1].startswith(cut.strftime("%Y-%m-%d"))
         fan_top = max(max(tr["y"]) for tr in spec["data"] if tr.get("fill"))
         assert spec["layout"]["yaxis"]["range"][1] < fan_top
 
