@@ -1504,7 +1504,9 @@ _RSI_SURVEY = [
              "follow-up"},
     {"name": "Mythos Preview", "date": "2026-04-07", "uplift": 4.0,
      "note": "n=130, opt-in Slack poll · geometric mean, past week's work output"
-             "<br>1 of 18 in a separate poll said a drop-in L4 already exists"},
+             "<br>1 of 18 in a separate poll said a drop-in L4 already exists; "
+             "4 of 18 gave it ≥50% odds within 3 months"
+             "<br>The last round: no survey after this (Aug 2026 Risk Report §3.4.2)"},
     {"name": "Opus 4.6 (broad poll)", "date": "2026-02-05", "uplift": 2.8, "metr": True,
      "note": "broad Slack poll (METR's chart)"},
     {"name": "Mythos 5", "date": "2026-06-09", "uplift": 5.1, "metr": True,
@@ -1852,6 +1854,29 @@ def load_rsi_code():
             for q, v in _RSI_CODE_RAW]
     rows.sort(key=lambda r: r['date'])
     return rows
+
+
+# OpenAI's lines changed per active contributor (Nov 2026 post), daily, on its own
+# pre-2025 = 1x baseline: drawn beside Anthropic's series as a cross-lab check, never
+# fitted, since it counts lines changed (tests excluded), not lines merged.
+_RSI_OPENAI_CODE_SOURCE_URL = (
+    "https://openai.com/index/research-acceleration-jagged-frontier/")
+
+
+@st.cache_data
+def load_rsi_openai_code():
+    """(date, multiple) rows from `openai_code_per_contributor.csv`, daily."""
+    with Path(__file__).with_name('openai_code_per_contributor.csv').open() as f:
+        return [{'date': datetime.strptime(r['date'], '%Y-%m-%d'),
+                 'mult': float(r['mult'])}
+                for r in csv.DictReader(line for line in f if not line.startswith('#'))]
+
+
+def _rsi_openai_code_shown():
+    """OpenAI's rows from the code chart's left edge on, one a week: the series
+    is a 28-day trailing average, so daily points add bytes, not shape."""
+    rows = [r for r in load_rsi_openai_code() if r['date'] >= _RSI_CODE_CHART_FROM]
+    return rows[::-7][::-1]
 
 
 # ── R&D automation index (Anthropic's own share of model R&D work) ───────
@@ -8135,6 +8160,7 @@ def _render_rsi_code(end_year):
     rows = load_rsi_code()
     base, icpt, slope = _rsi_code_fit(rows)
     cur = rows[-1]
+    oai = _rsi_openai_code_shown()
 
     def _build():
         fig = go.Figure()
@@ -8167,7 +8193,7 @@ def _render_rsi_code(end_year):
             fig.add_trace(go.Scatter(
                 x=hdates, y=hy.tolist(), mode='lines',
                 line=dict(color='#2c3e50', width=2.5),
-                name=f"Fitted trend (2×:{dt:.0f}d)",
+                name=f"Anthropic fitted trend (2×:{dt:.0f}d)",
                 hovertext=[f"{d.strftime('%b %d, %Y')}<br>Trend: {y:.1f}×"
                            for d, y in zip(hdates, hy)],
                 hoverinfo='text'))
@@ -8183,6 +8209,16 @@ def _render_rsi_code(end_year):
             y_top = max(y_top, _RSI_CODE_TARGET * 1.3)
         else:
             x_end, y_top = cur['date'], _RSI_CODE_TARGET * 1.3
+
+        # OpenAI's series for comparison: its own pre-2025 = 1x baseline, outside the fit.
+        fig.add_trace(go.Scatter(
+            x=[r['date'] for r in oai], y=[r['mult'] for r in oai],
+            mode='lines', line=dict(color='#e67e22', width=2),
+            name="OpenAI, lines changed (not fitted)",
+            hovertext=[f"{r['date']:%b %d, %Y}<br>OpenAI: {r['mult']:.2f}× its pre-2025 "
+                       "average<br>lines changed per active contributor, 28-day "
+                       "average, tests excluded" for r in oai],
+            hoverinfo='text'))
 
         # The quarters themselves: a light connector so 21 points read as a
         # series, then markers — hollow grey for the unfitted baseline bars,
@@ -8238,8 +8274,8 @@ def _render_rsi_code(end_year):
                        range=[_RSI_CODE_CHART_FROM, max(x_end, cur['date'])],
                        gridcolor='rgba(0,0,0,0.1)', zeroline=False,
                        tickfont=dict(color='#1a1a2e'), title_font=dict(color='#1a1a2e')),
-            yaxis=dict(title="Lines merged per active contributor "
-                             "(× pre-2025 average)",
+            yaxis=dict(title="Code per active contributor "
+                             "(× own pre-2025 average)",
                        type='log', range=[np.log10(0.5), np.log10(y_top * 1.3)],
                        # Decades only: the default log axis labels every minor
                        # tick, and three decades of them bury the four that matter.
@@ -8257,9 +8293,17 @@ def _render_rsi_code(end_year):
 
     _fn_caption(
         "Output volume, not research progress; the last quarter is partial "
-        "and the fit uses the quarters from 2025 on. Source: "
-        f"[Anthropic, *When AI builds itself*]({_RSI_CODE_SOURCE_URL}); bar "
-        "values read off the figure.",
+        "and the fit uses the quarters from 2025 on. The orange line is OpenAI's, "
+        "for comparison only. Sources: "
+        f"[Anthropic, *When AI builds itself*]({_RSI_CODE_SOURCE_URL}), bar "
+        f"values read off the figure; [OpenAI, *The jagged frontier*]"
+        f"({_RSI_OPENAI_CODE_SOURCE_URL}), the chart's own data.",
+        ("The orange line is OpenAI's", "Lines changed per active contributor, a "
+                                        "28-day average with tests excluded, each "
+                                        "lab against its own pre-2025 average. "
+                                        "Lines changed is not lines merged, so the "
+                                        "two levels are not like for like; the "
+                                        "slopes are the comparison. Not fitted."),
         ("Output volume", "Lines merged per contributor. A coding model "
                           "writes more lines for the same task, so some of "
                           "the multiple is verbosity rather than work done "

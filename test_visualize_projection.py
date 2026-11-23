@@ -3159,6 +3159,29 @@ class TestRsiCode:
         pooled = vp.fit_line(all_days, np.log([r['mult'] for r in rows]))[1]
         assert pooled < slope / 2
 
+    def test_openai_line_sits_on_its_own_baseline_outside_the_fit(self):
+        """OpenAI's daily series is drawn beside Anthropic's on the same axis only
+        because both are multiples of their own pre-2025 average: its pre-2025
+        days must average ~1, it must match the post's Q2 2026 level, and the
+        chart must thin it weekly without dropping the latest reading. The fit
+        reads Anthropic's rows alone."""
+        rows = vp.load_rsi_openai_code()
+        pre = [r['mult'] for r in rows if r['date'] < datetime(2025, 1, 1)]
+        assert abs(np.mean(pre) - 1.0) < 0.02
+        q2 = [r['mult'] for r in rows
+              if datetime(2026, 4, 1) <= r['date'] < datetime(2026, 7, 1)]
+        assert np.mean(q2) == pytest.approx(4.16, abs=0.01)
+        assert rows[-1] == {'date': datetime(2026, 10, 18), 'mult': 6.69}
+        shown = vp._rsi_openai_code_shown()
+        assert shown[-1] == rows[-1]
+        assert shown[0]['date'] >= vp._RSI_CODE_CHART_FROM
+        assert {(b['date'] - a['date']).days for a, b in zip(shown, shown[1:])} == {7}
+        base, icpt, slope = vp._rsi_code_fit(vp.load_rsi_code())
+        fitted = [r for r in vp.load_rsi_code() if r['fitted']]
+        days = np.array([(r['date'] - base).days for r in fitted], dtype=float)
+        assert (icpt, slope) == pytest.approx(
+            tuple(vp.fit_line(days, np.log([r['mult'] for r in fitted]))))
+
     def test_fan_start_is_the_fit_and_reaches_the_reading(self):
         """The S-1's 41.7x against a ~20x fit: the fan starts on the fit and
         its 80% band still reaches the reading."""

@@ -1918,6 +1918,20 @@ class TestRsiTab:
                        and sh.get("x0") == sh.get("x1")
                        for sh in L.get("shapes", []))
 
+    def test_code_chart_draws_openai_beside_anthropic(self):
+        """The code chart carries OpenAI's line as its own legend entry next to
+        Anthropic's fitted trend, and the caption says which line is whose."""
+        import json
+        at = self._rsi_app()
+        fig = next(sp for sp in (json.loads(el.proto.spec) for el in at.get("plotly_chart"))
+                   if ((sp["layout"].get("yaxis") or {}).get("title") or {}).get("text")
+                   == "Code per active contributor (× own pre-2025 average)")
+        names = [t.get("name") or "" for t in fig["data"]]
+        oai = next(t for t in fig["data"] if t.get("name") == "OpenAI, lines changed (not fitted)")
+        assert oai["y"][-1] == 6.69
+        assert any(n.startswith("Anthropic fitted trend") for n in names)
+        assert any("The orange line is OpenAI's" in str(c.value) for c in at.caption)
+
     def test_experiment_velocity_chart_and_blend(self):
         import json
         at = self._rsi_app()

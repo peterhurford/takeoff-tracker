@@ -768,6 +768,8 @@ things are load-bearing.
 
 The 2026Q3 row is Anthropic's S-1/A, not the chart: Q3 code per engineer "over 45 times" the 2024 average, restated on this chart's pre-2025 baseline (×0.90, ≥41.7×). It is fitted (doubling 160 → 117 days, so the 30× milestone is passed) but drawn as a labelled triangle (`_RSI_CODE_OTHER`), since the S-1 counts per engineer and states no 99th-percentile cap.
 
+OpenAI's lines changed per active contributor (`openai_code_per_contributor.csv`, `load_rsi_openai_code`) runs beside it as an orange line: each lab against its own pre-2025 average, so the slopes compare and the levels do not (changed with tests excluded is not merged). It is never fitted, and `_rsi_openai_code_shown` thins the daily 28-day average to one point a week from the chart's left edge, keeping the latest (`test_openai_line_sits_on_its_own_baseline_outside_the_fit`).
+
 Lines merged is an output proxy a coding model inflates directly, so the caption
 and the milestone card's hover both have to keep saying it measures how much code
 ships, not how much research it settles. Guarded by `TestRsiCode`.
