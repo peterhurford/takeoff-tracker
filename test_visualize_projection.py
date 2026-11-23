@@ -5482,7 +5482,7 @@ class TestCcWorldShares:
 
 
 class TestCcCompanies:
-    """*Who holds the compute* (`_cc_companies`): US labs from Epoch's chip
+    """*Which companies have the compute* (`_cc_companies`): US labs from Epoch's chip
     users, China split three ways, each view adding to China's one total."""
 
     def _cn_total(self):
@@ -5502,7 +5502,7 @@ class TestCcCompanies:
     def test_sourced_names_only_published_numbers(self):
         """ByteDance = The Substrate's rentals abroad plus its Epoch-catalogued
         site in China; the unnamed rest is what no source attributes."""
-        rows = {r['name']: r for r in vp._cc_companies("Sourced only")}
+        rows = {r['name']: r for r in vp._cc_companies("Published numbers only")}
         bd = rows["ByteDance"]
         assert bd['abroad'] == 611000
         sites = vp._cc_cn_catalogue_sites(vp.dc_all)
@@ -5525,7 +5525,7 @@ class TestCcCompanies:
     def test_estimate_splits_by_the_judged_shares(self):
         stock = vp.load_china_compute_sources(vp._cn_src_mtime())["stock"]["2025"]
         in_cn = sum(stock[k][0] for k in vp._CN_SRC_IN_CHINA)
-        rows = {r['name']: r for r in vp._cc_companies("With our estimate")}
+        rows = {r['name']: r for r in vp._cc_companies("Our best guess by company")}
         for name, lo, mid, hi in vp._CC_CN_CO_SHARES:
             r = rows[name]
             assert r['home'] == pytest.approx(mid * in_cn)
@@ -5536,7 +5536,7 @@ class TestCcCompanies:
             stock["remote"][0] * 611 / 662)
 
     def test_us_only_keeps_china_whole(self):
-        rows = vp._cc_companies("US labs only")
+        rows = vp._cc_companies("China as one country")
         assert [r['name'] for r in rows if r['kind'] != 'lab'] == [vp._CC_CN_ALL]
 
     @pytest.mark.parametrize("view", vp._CC_CO_VIEWS)

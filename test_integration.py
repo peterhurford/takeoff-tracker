@@ -1226,7 +1226,7 @@ class TestEmploymentDefaults:
         for side in ("lo", "hi"):
             ni = at.number_input(key=f"emp_superexp_pos_{side}")
             assert ni.label.startswith("Start spread")
-            assert "centred on the fitted trend" in ni.help
+            assert "centered on the fitted trend" in ni.help
             assert ni.max == 99.9
 
     def test_starting_rli_level_is_the_rli_tabs(self):
@@ -1839,7 +1839,7 @@ class TestCcComputeSourcesTab:
     compute by source, the lithography ceiling, China beside the US, then US
     vs. China."""
 
-    _ORDER = ["Who holds the compute", "Where China's compute comes from",
+    _ORDER = ["Which companies have the compute (end of 2025)", "Where China's compute comes from",
               TestCcDuvCeilingTab._HEAD, "China's installed compute beside the US's",
               "US vs. China"]
 
@@ -1864,7 +1864,7 @@ class TestCcComputeSourcesTab:
         self._labels_sit_on_their_bars(at, "log")
 
     def test_company_views_switch_the_bars(self):
-        """*Who holds the compute* opens on the sourced view and each view
+        """*Which companies have the compute* opens on the sourced view and each view
         draws its own China rows (`TestCcCompanies`)."""
         import visualize_projection as vp
         at = _fresh_app()
@@ -1876,10 +1876,10 @@ class TestCcComputeSourcesTab:
             spec = json.loads(at.get("plotly_chart")[0].proto.spec)
             return {y for d in spec["data"] for y in (d.get("y") or [])}
         assert vp._CC_CN_UNNAMED in names()
-        at.radio(key="cc_co_view").set_value("With our estimate").run()
+        at.radio(key="cc_co_view").set_value("Our best guess by company").run()
         _assert_no_error(at, "China / estimate")
         assert "DeepSeek" in names() and vp._CC_CN_UNNAMED not in names()
-        at.radio(key="cc_co_view").set_value("US labs only").run()
+        at.radio(key="cc_co_view").set_value("China as one country").run()
         _assert_no_error(at, "China / US only")
         assert vp._CC_CN_ALL in names()
 

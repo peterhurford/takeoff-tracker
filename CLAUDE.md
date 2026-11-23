@@ -48,7 +48,7 @@ Test deps: `pip install -r requirements-dev.txt` (adds `pytest-xdist`). Unit tes
 - **`CHINA_COMPUTE_JUDGMENTS.md`** — the record behind every hand-set China/SEA compute pace and share: value, evidence, derivation, revisit triggers
 - **`cts_duv_production.csv`** — CTS lithography report's Table 45: US AI chip output vs China's lithography-bounded ceiling, DUVi imports continuing or banned (see *China tab — lithography ceiling*)
 - **`china_compute_sources.csv`** — China's AI compute by source (domestic, legal sales, smuggled, remote access), flow and stock in H100e: Epoch to 2025, IFP for 2026–27, with `_cn_src_projection()` extending to 2030. Drawn by `_render_cc_compute_sources()` as 100% mixes with totals; derivations in the file's `#` header
-- **`company_compute.csv`** — end-2025 AI compute by company: Epoch's chip users (US labs) and owners, plus published Chinese figures; the China tab's *Who holds the compute* (`_cc_companies`)
+- **`company_compute.csv`** — end-2025 AI compute by company: Epoch's chip users (US labs) and owners, plus published Chinese figures; the China tab's *Which companies have the compute* (`_cc_companies`)
 - **`.streamlit/config.toml`** — turns on websocket compression (~4× less chart JSON on the wire)
 - **`openai_perplexity.csv`** — OpenAI's base-model log-perplexity by model (Pachocki, Nov 2026), read from the post's chart SVG; display only, in Takeoff's evidence half
 - **`metr_aeci.csv`** — METR's AECI points for Anthropic and the all-developer frontier, chart-digitized; read by Takeoff's *METR's acceleration assessment* section, beside Epoch's ECI

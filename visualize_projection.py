@@ -4140,7 +4140,7 @@ _METR_SPLICE_CAPTION = ("The 15 models METR reran in November 2026, GPT-4o on, a
                         "its 95% interval for the rest.")
 _METR_DT_HELP = "Doubling time of the horizon, 80% interval."
 _METR_POS_HELP = ("Uncertainty in where the trend is today; sets the spread, not the "
-                  "centre.")
+                  "center.")
 _METR_WORK_TIME_HELP = ("Work time: 1 day = 8 h, 1 week = 40 h, 1 month = 176 h, "
                         "1 year = 2,000 h.")
 # Past this the benchmark's tasks say nothing; cards read ">100 work-years".
@@ -11876,7 +11876,7 @@ def _render_rev_us_china_ratio(us_series, cn_series, start, as_of):
 # its 80% width in log-odds.
 _EMP_POS_HELP = ("Sets how uncertain today's RLI level is: the gap between low and high "
                  "is the 80% width, in log-odds, of the starting point. The draw is "
-                 "centred on the fitted trend today, not on these two values.")
+                 "centered on the fitted trend today, not on these two values.")
 _EMP_START_HELP = ("Where the RLI frontier stands at its newest record, 80% range; the "
                    "starting level is drawn across it, as the RLI tab's linear fits "
                    "start. Default: the newest record averaged with the one before "
@@ -13746,7 +13746,7 @@ _CC_RESET_KEYS = ["cc_run", "cc_end_year", "cc_company", "cc_vsus_log",
                   "cc_co_view"]
 _CC_DEFAULTS = {"cc_run": "2-month run", "cc_end_year": 2029,
                 "cc_company": "OpenAI", "cc_vsus_log": False,
-                "cc_co_view": "Sourced only"}
+                "cc_co_view": "Published numbers only"}
 
 # Where this tab's time charts open, matching the Data Centers tab's default.
 _CC_X_START = datetime(2025, 1, 1)
@@ -14266,8 +14266,8 @@ def _dc_render_country_panel(series, country_of, cluster_of, *, dcs, today, cap_
                    else ""))
     _fn_caption(
         "Pace \u2014 " + "; ".join(_pace_short(c) for c in cone_for)
-        + ". Bands centre on the plan.",
-        ("Bands centre on the plan", "They widen the further out and the less "
+        + ". Bands center on the plan.",
+        ("Bands center on the plan", "They widen the further out and the less "
                                      "sourced the plan is; past "
                                      f"{_DC_CTY_PLAN_HORIZON_DAYS // 30} months "
                                      "the trend takes over with plans as a "
@@ -17751,9 +17751,9 @@ def _render_world_shares(today, horizon):
 # ── China tab: who holds the compute ─────────────────────────────────────
 
 _CO_FILE = "company_compute.csv"
-_CC_CO_HEAD = "Who holds the compute"
+_CC_CO_HEAD = "Which companies have the compute (end of 2025)"
 _CC_CO_AS_OF = datetime(2025, 12, 31)
-_CC_CO_VIEWS = ("Sourced only", "With our estimate", "US labs only")
+_CC_CO_VIEWS = ("Published numbers only", "Our best guess by company", "China as one country")
 # Hand-set shares of China's in-China stock by the company that controls it,
 # owned or rented, cloud arms included: (name, p10, central, p90).
 # CHINA_COMPUTE_JUDGMENTS.md §14. The rest is `_CC_CN_CO_OTHER`.
@@ -17766,9 +17766,9 @@ _CC_CN_CO_SHARES = (
     ("Baidu", 0.03, 0.06, 0.10),
     ("DeepSeek", 0.01, 0.025, 0.04),
 )
-_CC_CN_CO_OTHER = "Other Chinese firms and state centres"
-_CC_CN_UNNAMED = "China: no named company"
-_CC_CN_ALL = "China, all companies"
+_CC_CN_CO_OTHER = "Other Chinese companies and government"
+_CC_CN_UNNAMED = "China, company unknown"
+_CC_CN_ALL = "China, all companies combined"
 _CC_CO_COLORS = {"lab": "#33415C", "firm": "#E34948", "rest": "#B8B8B8",
                  "abroad": "#6250D6"}
 
@@ -17809,16 +17809,16 @@ def _cc_cn_catalogue_sites(dcs, as_of=_CC_CO_AS_OF):
 
 
 def _cc_companies(view, dcs=None, data=None, cn=None):
-    """Bars for *Who holds the compute*, at end-2025, largest first.
+    """Bars for *Which companies have the compute*, at end-2025, largest first.
 
     Each row: name, kind ('lab' a US lab, 'firm' a Chinese company, 'rest'
     China's unnamed remainder or its whole), home and abroad H100e, the
     total's (lo, hi) or None, and a note. US labs are Epoch's chip users.
     China's total is the compute-sources stock, in China plus rented abroad;
-    'Sourced only' names only published numbers (`company_compute.csv` and
-    Epoch's China sites) and leaves the rest unnamed, 'With our estimate'
+    'Published numbers only' names only published numbers (`company_compute.csv` and
+    Epoch's China sites) and leaves the rest unnamed, 'Our best guess by company'
     splits the in-China stock by `_CC_CN_CO_SHARES` and remote access by the
-    reported rentals abroad, 'US labs only' keeps China whole
+    reported rentals abroad, 'China as one country' keeps China whole
     (`TestCcCompanies`).
     """
     data = data if data is not None else load_company_compute(_co_mtime())
@@ -17878,7 +17878,7 @@ def _cc_companies(view, dcs=None, data=None, cn=None):
         rows.append(dict(
             name=_CC_CN_CO_OTHER, kind='rest', home=(1 - used_share) * in_cn,
             abroad=max(remote - used_abroad, 0.0), rng=None,
-            note="Government computing centres, other firms, startups' own "
+            note="Government computing centers, other companies, startups' own "
                  "clusters: the rest of the split"))
     for r in rows:
         r['total'] = r['home'] + r['abroad']
@@ -17891,9 +17891,9 @@ def _cc_companies_fig(rows):
     rr = rows[::-1]
     names = [r['name'] for r in rr]
     fig = go.Figure()
-    for key, label in (("lab", "US lab (compute it uses)"),
-                       ("firm", "Chinese company, at home"),
-                       ("rest", "China, not split by company")):
+    for key, label in (("lab", "US AI lab"),
+                       ("firm", "Chinese company, in China"),
+                       ("rest", "China, company unknown")):
         xs = [r['home'] / 1e6 if r['kind'] == key else 0.0 for r in rr]
         if not any(xs):
             continue
@@ -17906,9 +17906,10 @@ def _cc_companies_fig(rows):
     if any(r['abroad'] for r in rr):
         fig.add_trace(go.Bar(
             y=names, x=[r['abroad'] / 1e6 for r in rr], orientation='h',
-            name="Rented abroad (remote access)",
+            name="Rented outside China",
             marker=dict(color=_CC_CO_COLORS["abroad"]),
-            hovertemplate="%{y}: %{x:,.2f}M H100e rented abroad<extra></extra>"))
+            hovertemplate="%{y}: %{x:,.2f}M H100e rented outside China"
+                          "<extra></extra>"))
     rng = [r for r in rr if r['rng']]
     if rng:
         fig.add_trace(go.Scatter(
@@ -17946,73 +17947,77 @@ def _cc_companies_lead(view, rows):
     cn_tot = sum(r['total'] for r in rows if r['kind'] != 'lab')
     if view == _CC_CO_VIEWS[0]:
         named = sum(r['total'] for r in firms)
-        return (f"China's **{cn_tot / 1e6:.1f}M** H100e is spread across many "
-                f"firms, and published numbers name only **{named / 1e6:.1f}M** "
-                f"of it ({named / cn_tot:.0%}). The largest named, "
-                f"{firms[0]['name']} at {firms[0]['total'] / 1e6:.2f}M, has "
-                f"{firms[0]['total'] / top['total']:.0%} of what {top['name']} "
-                f"uses alone ({top['total'] / 1e6:.1f}M).")
+        return (f"China had about **{cn_tot / 1e6:.1f}M** H100e at the end of "
+                f"2025, but published figures only say which company has "
+                f"**{named / 1e6:.1f}M** of it ({named / cn_tot:.0%}). The "
+                f"biggest known holder, {firms[0]['name']} "
+                f"({firms[0]['total'] / 1e6:.2f}M), has "
+                f"{firms[0]['total'] / top['total']:.0%} as much as "
+                f"{top['name']} ({top['total'] / 1e6:.1f}M).")
     if view == _CC_CO_VIEWS[1]:
         f0 = firms[0]
-        return (f"On our split China's largest company, **{f0['name']}**, has "
-                f"**~{f0['total'] / 1e6:.1f}M** H100e, "
-                f"{f0['abroad'] / f0['total']:.0%} of it rented abroad: "
-                f"{f0['total'] / top['total']:.0%} of what {top['name']} uses "
-                f"alone. China's {cn_tot / 1e6:.1f}M beats a US lab only "
-                "when every Chinese firm is summed.")
-    return (f"Counted as one buyer, China's **{cn_tot / 1e6:.1f}M** H100e is "
-            f"{cn_tot / top['total']:.1f}× the largest US lab, "
-            f"{top['name']}. No single company trains on that total; the "
-            "other two views split it.")
+        return (f"Our best guess is that China's biggest holder, "
+                f"**{f0['name']}**, has about **{f0['total'] / 1e6:.1f}M** "
+                f"H100e, {f0['abroad'] / f0['total']:.0%} of it rented outside "
+                f"China. That is {f0['total'] / top['total']:.0%} as much as "
+                f"{top['name']}. China only has more than a single US lab when "
+                "you add up every Chinese company.")
+    return (f"Added up as one country, China's **{cn_tot / 1e6:.1f}M** H100e "
+            f"is {cn_tot / top['total']:.1f}× {top['name']}'s. But no "
+            "single Chinese company has anything close to that; the other two "
+            "views break it down.")
 
 
 def _render_cc_companies():
-    """*Who holds the compute*: US labs and Chinese companies side by side at
+    """*Which companies have the compute*: US labs and Chinese companies side by side at
     end-2025 (`_cc_companies`), the view picked by `cc_co_view`."""
     st.subheader(_CC_CO_HEAD)
     if st.session_state.get("cc_co_view") not in _CC_CO_VIEWS:
         st.session_state.pop("cc_co_view", None)
     view = st.radio(
-        "Chinese companies", _CC_CO_VIEWS, horizontal=True,
+        "Show China as", _CC_CO_VIEWS, horizontal=True,
         index=_CC_CO_VIEWS.index(_CC_DEFAULTS["cc_co_view"]), key="cc_co_view",
-        help="Sourced only: a Chinese company is named only where a number "
-             "is published, the rest left unnamed. With our estimate: a "
-             "hand-set split of China's total by company. US labs only: "
-             "China kept as one bar, the usual country framing.")
+        help="Published numbers only: a Chinese company gets a bar only where "
+             "someone has published a figure for it; the rest is one grey bar. "
+             "Our best guess by company: we split all of China's compute "
+             "between companies ourselves. China as one country: one bar for "
+             "all of China, the way it is usually discussed.")
     rows = _cc_companies(view)
-    notes = [("H100e", "End-2025, the latest date both sides are published "
-                       "for. US labs: Epoch's AI chip users, each lab's own "
-                       "slice (Google DeepMind's of Google's fleet), with its "
-                       "90% range. China: the compute-sources stock below, in "
-                       "China plus rented abroad.")]
+    notes = [("H100e", "End of 2025, the latest date with figures for both "
+                       "countries. US labs: Epoch's estimate of the compute each "
+                       "lab uses (for Google DeepMind, its share of Google's "
+                       "chips), with a 90% range. China: the total from the "
+                       "sources chart below, in China plus rented outside it. "
+                       "The cards above are for today, so China's total there "
+                       "is higher.")]
     if view == _CC_CO_VIEWS[1]:
-        notes.append(("our split", "Hand-set shares of China's in-China stock, "
-                      "weighed on each firm's 2025 capex, the state carriers' "
-                      "disclosed compute and Epoch's catalogued sites; remote "
-                      "access split by the reported rentals. A range is the "
-                      "share's p10–p90 with China's total held at its "
-                      "median."))
+        notes.append(("best guess", "Our own split of China's chips in China, "
+                      "based on each company's 2025 spending on data centers, "
+                      "what the state telecoms report, and Epoch's mapped "
+                      "sites. Chips rented outside China are split by the "
+                      "reported rental deals. The ranges show how uncertain "
+                      "each company's share is."))
     _fn_line(_cc_companies_lead(view, rows), *notes)
     st.plotly_chart(_cc_companies_fig(rows), width="stretch")
     owners = [r for r in load_company_compute(_co_mtime())
               if r['basis'] == 'owners']
     _fn_caption(
-        "Compute belongs to companies, and remote access crosses borders both "
-        "ways: Anthropic and OpenAI own almost none of what they use, renting "
-        "from the clouds, and Chinese firms rent abroad what export controls "
-        "keep them from buying. Chinese companies are counted by all they "
-        "control, cloud arms included, so the comparison flatters them.",
-        ("renting from the clouds",
+        "Companies, not countries, own compute, and they rent it across "
+        "borders. Anthropic and OpenAI own almost none of theirs; they rent it "
+        "from cloud providers. Chinese companies rent chips abroad that export "
+        "controls stop them buying at home. Chinese bars include chips a "
+        "company rents out to others, so they are on the generous side.",
+        ("cloud providers",
          "Epoch's AI chip owners at end-2025: " + ", ".join(
              f"{r['company']} {r['h100e'] / 1e6:.1f}M" for r in owners)
          + " H100e."),
-        ("rent abroad", "The Substrate (May 2026): ByteDance ~611k H100e "
+        ("rent chips abroad", "The Substrate (May 2026): ByteDance ~611k H100e "
                         "(91k reported, 520k inferred from a reported "
                         "budget it disputes), Tencent ~51k."),
-        ("flatters them", "No source splits Alibaba's or Tencent's fleets "
-                          "between their own labs and cloud customers such "
-                          "as Moonshot or Zhipu. Counted that way, Google "
-                          "would be its whole owned fleet, not DeepMind's "
+        ("on the generous side", "No one has split Alibaba's or Tencent's "
+                          "chips between their own AI work and cloud customers "
+                          "such as Moonshot or Zhipu. Counted the same way, "
+                          "Google would be all its chips, not DeepMind's "
                           "slice."))
 
 
@@ -30025,7 +30030,7 @@ def _render_takeoff(loading):
             "ECI points gained a year in each scenario, read over six months so single "
             "model releases don't spike it. A rising line is superexponential growth.",
             ("read over six months",
-             "Each scenario's ECI change over a centred six-month window, per year; then "
+             "Each scenario's ECI change over a centered six-month window, per year; then "
              "the median and middle 80% across scenarios. The dashed line is today's "
              "setting, the dotted one the 2024–25 average (1× pace)."))
         rate_fig = _tk_eci_rate_fig(result, today, eci, markers)

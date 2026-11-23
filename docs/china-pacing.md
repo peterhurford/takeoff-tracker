@@ -83,13 +83,13 @@ each bar split into at home and rented abroad, from `_cc_companies(view)`:
    Google's fleet), owned or rented. The owners rows (`company_compute.csv`) appear only in
    the caption's hover, since they are the clouds the labs rent from.
 2. **Every view adds to China's one total**, the compute-sources stock at that year, in
-   China plus remote access (`test_every_view_adds_to_chinas_total`). *Sourced only*
+   China plus remote access (`test_every_view_adds_to_chinas_total`). *Published numbers only*
    (default) names published numbers alone (the CSV's `reported` rows plus
    `_cc_cn_catalogue_sites`, Epoch's attributed sites in mainland China) and leaves the rest
-   as one grey *no named company* bar; *With our estimate* splits the in-China stock by
+   as one grey *company unknown* bar; *Our best guess by company* splits the in-China stock by
    `_CC_CN_CO_SHARES` (judgment §14) and remote access by the reported rentals; *US labs
    only* keeps China as one bar, the country framing the other two correct.
-3. **Johor's catalogued sites are not added to ByteDance in *Sourced only*.** The
+3. **Johor's catalogued sites are not added to ByteDance in *Published numbers only*.** The
    Substrate's 611k already counts its Malaysian rentals, so adding them again would
    double-count.
 

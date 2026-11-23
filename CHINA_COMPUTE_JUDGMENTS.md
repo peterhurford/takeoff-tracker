@@ -227,13 +227,13 @@ Rates are power growth times compute per watt (×1.3–1.6/yr, as in 2). They sp
 - **Revisit when:** a Chinese model trails the US frontier by well over 12 points and its
   catch-up rate can be read, or a distillation study at frontier scale.
 
-### 14. China's compute by company (`_CC_CN_CO_SHARES`, the China tab's *With our estimate* view)
+### 14. China's compute by company (`_CC_CN_CO_SHARES`, the China tab's *Our best guess by company* view)
 
 - **Value:** shares of China's end-2025 in-China stock (1.82M H100e) by the company that
   controls it, owned or rented, cloud arms included, as p10 / central / p90: ByteDance
   12 / 20 / 30%, Alibaba 12 / 20 / 28%, Tencent 7 / 12 / 18%, state carriers (China
   Mobile, Telecom, Unicom) 8 / 10 / 15%, Huawei 3 / 7 / 12%, Baidu 3 / 6 / 10%, DeepSeek
-  1 / 2.5 / 4%; the rest (22.5%) goes to government computing centres, other firms and
+  1 / 2.5 / 4%; the rest (22.5%) goes to government computing centers, other firms and
   startups' own clusters. Remote access abroad (0.62M) is split by the rentals reported per
   company (The Substrate: ByteDance 611k, Tencent 51k), so ByteDance gets 92% of it.
 - **Evidence:** 2025 capex, used as relative weights only: ByteDance >150B yuan (~$20.6B,
