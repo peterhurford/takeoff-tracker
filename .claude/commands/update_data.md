@@ -85,7 +85,7 @@ That is ~35× by Mar 2026, ~200–560× at the arrow, now doubling every 1.2–1
 the 2024–25 algorithmic pace (METR: 1.9×). Upper bounds: they assume all acceleration is
 pre-training, and METR's pre-training/RL split is redacted. 10× per gridline is ruled out
 (~40 ECI points a year against 27.3 measured). Takeoff's default stays at 1.47× (decided
-2026-11-13; 29.3 points a year would move RSI 1 month, ultraintelligence 3). **Trigger:** a filed version with axis values (the final 424B4, 2026-11-19, has none; next: a 10-Q or 8-K); check
+2026-11-13; 29.3 points a year would move RSI 1 month, ultraintelligence 3). **Trigger:** a filed version with axis values (the final 424B4, 2026-11-19, and the IPO-closing 8-K, 2026-11-25, have none; next: the first 10-Q); check
 each run. Not to be confused with the deck's ">4x compute efficiency", which is revenue per
 dollar of compute.
 

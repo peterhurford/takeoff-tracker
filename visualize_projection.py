@@ -1431,6 +1431,7 @@ _RLI_RAW = [
     # Rechecked 2026-11-13: Fable 5.2 is 41.25 (99/240) on Scale's JSON, the CAIS API and remotelabor.ai, so
     # corrected from 41.30; no new model. The CAIS API now carries Fable 5.2; Argon and V4.1 Flash are Scale-only.
     # Mythos 5.2, Sonnet 5.5, Haiku 5.5, Mythos 5.1 and Opus 5 have no score; Argon is still Scale-only.
+    # Rechecked 2026-11-25: no new model or changed score; Scale's newest createdAt is still Gemini 4 Carbon.
 ]
 
 
@@ -10692,6 +10693,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-11-17: no TickerTrends post since 11-06; press has only The Information's Q3 revenue
     # (~$10B, quarterly) and the ~$70B year-end target (forecast).
     # Rechecked 2026-11-18: no TickerTrends post since 11-06.
+    # Rechecked 2026-11-25: TickerTrends' only post since (11-19, compute cost) carries no OpenAI ARR.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10811,6 +10813,7 @@ _ANTHROPIC_REVENUE = [
     # restates the $81B / 10-31 and +$10B with no newer as-of date. Priced 11-18 at $83 (Nasdaq: ANT), trading
     # from 11-19, so the next disclosure is the first 10-Q or an 8-K. Excluded: TickerTrends' $82.33B for 10-30
     # (alt-data) and the $100-120B year-end figures in press (forecasts).
+    # Rechecked 2026-11-25: the IPO-closing 8-K (0001628280-26-075973, 11-25) and its exhibits state no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -10847,9 +10850,13 @@ _CN_REVENUE = {
              "was $116.6M. SCMP (2026-09-03, one person familiar) reports the "
              "CEO later said it was one August week × 52, which would make it "
              "weekly-annualized, unlike Zhipu's monthly $1.6B."),
-            # Excluded (checked 2026-11-17): EqualOcean (2026-11-05) relays Goldman and Citi notes that
-            # management said Q4 ARR "had already reached" the $1B year-end target before M3.1 Flash
-            # (10-19). Second-hand, no as-of date or annualization basis; Goldman's ~$1.2B end-2026 is a forecast.
+            ("2026-10-18", 1.0, "press",
+             "Management to broker analysts: ARR “had already reached its original "
+             "year-end 2026 target of 1 billion dollars” before M3.1 Flash launched "
+             "(10-19), per Goldman (10-30, via UnHideA 11-01); Jefferies (11-02) and "
+             "Citi (via Xueqiu 11-18) say “ARR超10亿美元” / “已突破10亿美元”. A floor. "
+             "Weekly-annualized like August's (SPDBI, 11-11). Added with user sign-off "
+             "2026-11-25; Goldman's ~$1.2B end-2026 is a forecast."),
         ],
     },
     "Zhipu (Z.ai)": {
