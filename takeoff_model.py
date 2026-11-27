@@ -2135,9 +2135,9 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # fitted so that research inputs (labor and experiments, half each at
     # today's normalized shares) grow at the rate that holds today's pace
     # steady with AI frozen, as history had it while compute grew at
-    # `hist_rate`: the frontier's 3.1x a year buys more than that, so
-    # experiment compute grows slower (about 1.6x a year, a 0.4 share), and
-    # slows in step when the frontier does.
+    # `hist_rate`. Each difficulty implies one share (about 1.0 at the app's
+    # r = 1.0 and today's pace; floored at none from about r = 1.6, where the
+    # frozen-AI pace accelerates), and it slows in step when the frontier does.
     steady = beta * software_rate * initial_throughput / parallel
     exp_growth = np.maximum(
         hist_rate + inputs_on * (2 * steady - 2 * hist_rate) - hire_effect, 0)

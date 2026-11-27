@@ -29307,9 +29307,11 @@ def _render_takeoff(loading):
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
                    "How many doublings of algorithmic efficiency each doubling of "
                    "cumulative research effort buys; below 1 ideas get harder faster "
-                   "than effort grows. Default 1.0 is Forethought's revised central "
-                   "estimate (range 0.33\u20133); Davidson & Houlden's was 1\u20134, or "
-                   "0.5\u20132 with hardware fixed. Sets research difficulty as "
+                   "than effort grows. Default 1.0 is where history fits with experiment "
+                   "compute growing as fast as the frontier's, about 3\u00d7 a year; 1.5 "
+                   "would need it at 1.2\u00d7. Forethought counts researcher effort alone: "
+                   "Eth & Davidson 1\u20134, or 0.5\u20132 with hardware fixed; Davidson & "
+                   "Houlden 1.2. Sets research difficulty as "
                    f"{_TK_R_REF_PARALLEL:g} / r, independent of the parallelization "
                    "setting.")
         with st.expander("What decides ultraintelligence"):
@@ -29348,7 +29350,9 @@ def _render_takeoff(loading):
                    0.0, 100.0, 5.0,
                    "Median share of each algorithmic gain worth anything only once models "
                    "train at larger compute (Gundlach et al. 2025: most historical gains, "
-                   "like Transformers and Chinchilla scaling, grew with compute). That "
+                   "like Transformers and Chinchilla scaling, grew with compute; Patel & "
+                   "Han: public recipes held at a small scale gain ~40% as fast as the "
+                   "frontier). That "
                    "share of a gain counts in full once models train at the compute set "
                    "under Advanced (default 2\u00d7) past the frontier when it was found; "
                    "gains at the pace AI-frozen research would make never wait. The labor"
@@ -29665,9 +29669,9 @@ def _render_takeoff(loading):
                    "times, workflow human hours and workflow learning rates: 40 is a "
                    "1\u03c3 of 0.4 in each log, an 80% range of 0.6\u20131.7\u00d7.")
             number("Spread on returns to research r (%)", "returns_spread", 0, 200, 5,
-                   "1\u03c3 of ln r across scenarios, around the setting above. 65 "
-                   "spans Forethought's 0.33\u20133 (and Davidson & Houlden's "
-                   "0.4\u20133.6 around 1.2) as a ~90% range.")
+                   "1\u03c3 of ln r across scenarios, around the setting above. 65 is a "
+                   "~90% range of 0.34\u20132.9\u00d7 the setting, about Davidson & "
+                   "Houlden's 0.4\u20133.6 around 1.2.")
             number("Spread on judgment elasticity (%)", "judgment_spread", 0, 200, 5,
                    "1\u03c3 of the log judgment elasticity. 70 is an 80% range of "
                    "0.4\u20132.5\u00d7, wide enough to hold both TasteVal regimes "
@@ -29679,7 +29683,8 @@ def _render_takeoff(loading):
             number("Spread on the scale-dependent share (%)", "scale_dependent_spread",
                    0, 400, 10,
                    "1\u03c3 of the scale-dependent share in log-odds, \u00d7100. 100 gives an "
-                   "80% range of about 22\u201378% around 50%: one paper, on small models.")
+                   "80% range of about 22\u201378% around 50%: three measurements on small "
+                   "models put it at 44\u201358%, two of them as upper bounds.")
             number("Correlation: returns to research and the software ceiling",
                    "ceiling_returns_corr", 0.0, 1.0, 0.1,
                    "A nearer ceiling comes with lower returns to research: algorithms "

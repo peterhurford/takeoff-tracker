@@ -111,8 +111,8 @@ buys research only as fast as AI judgment grows, so the RSI date is mostly a mar
 takeoff, not what paces it. L of 0.75 or 1.5 moves ultraintelligence about a month either
 way.
 
-Difficulty is set from the returns to research r (the tab's control, default 1.0, the
-revised Forethought central estimate): difficulty = 0.5 / r, the semi-endogenous relation
+Difficulty is set from the returns to research r (the tab's control, default 1.0, held
+there by the experiment-compute fit below): difficulty = 0.5 / r, the semi-endogenous relation
 in which each doubling of cumulative effort buys r doublings of efficiency at the default
 input exponent of 0.5. It is held there so the parallelization setting changes only how
 much extra input buys, not how fast ideas get harder. Today's pace has held steady while
@@ -122,10 +122,13 @@ default, a research-staff reading of the S-1's ~170% headcount growth; the model
 change -30% a year after); more staff finish the share of work people still do sooner, so
 they matter until autopilot and not after. Experiment compute grows at a fixed share of the
 frontier's log growth, fitted so labor and experiments together hold today's pace steady
-with AI frozen: about 0.4 of it (1.6x a year against 3.1x), slowing in step after 2030.
-That share is the one unmeasured number this calibration needs; it reads the gap between
-fast frontier growth and a steady trend as experiment compute lagging frontier runs, not
-as weaker returns to research, so r stays at Forethought's 1.0.
+with AI frozen, slowing in step after 2030. Each r implies one share, which moves with
+today's measured pace: at r = 1.0 about 1.0 of it (3.3x a year), at 1.2 2.0x, at 1.5 1.2x,
+and from about 1.6 none, where the fit floors at zero and the frozen-AI pace accelerates.
+Measured growth is about 3x a year (OpenAI's disclosed compute, 0.2, 0.6 and 1.9 GW over
+2023–25; Epoch puts final training runs near a tenth of its R&D compute), which holds r at
+1.0. Forethought's r counts researcher effort alone, so its figures (Eth & Davidson 1–4, or
+0.5–2 with hardware fixed; Davidson & Houlden 1.2) do not transfer one-for-one.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
 can be delivered through fast improvements (tooling, kernels, and small updates) and 75%
@@ -255,13 +258,13 @@ to the literature:
 
 | Setting | 1σ | Range it gives | Source |
 |---|---|---|---|
-| Returns to research r | 0.65 in ln r | ~90%: 0.34–2.9× the setting | Forethought 0.33–3 around 1.0; Davidson & Houlden 0.4–3.6 around 1.2 |
+| Returns to research r | 0.65 in ln r | ~90%: 0.34–2.9× the setting | Davidson & Houlden 0.4–3.6 around 1.2; Eth & Davidson 0.5–2 with hardware fixed |
 | Judgment elasticity | 0.7 in its log | 80%: 0.4–2.5× | Its three readings (next-step ~0.29, TasteVal before and after its break ~0.25 and ~0.76) disagree by ~3×; the band holds all of them |
 | Judgment-rate change | 15 points per 10× | 80%: ±19 points | No measurement; sized so it adds to, rather than sets, the runaway share |
 | Labor–compute elasticity 1/(1−ρ) | 0.8 in its log | ~90%: 0.22–3.1 around 0.83 | Erdil et al. 0.83 (chess), Davidson's −0.2; Whitfill & Wu ~0 (frontier experiments) to 2.6 (compute) |
 | Software ceiling | uniform | 6–16 orders of magnitude above today's efficiency | Forethought: 6–16 above full automation, returns falling linearly to 0 there |
 
-| Scale-dependent share of algorithmic gains | 1.0 in log-odds | 80%: ~22–78% around 50% | Gundlach et al. 2025: most historical gains grew with compute |
+| Scale-dependent share of algorithmic gains | 1.0 in log-odds | 80%: ~22–78% around 50% | Progress at a fixed small scale against the frontier's: ~45% (Gundlach et al. 2025), ~40% (Patel & Han), ~56% (OpenAI's ImageNet doubling, 16 months against Epoch's 9); the first two are lower bounds (Davidson 2026) |
 | Compute such a gain waits for | 0.7 in its log | 80%: ~1.3–5.4x around 2x | No measurement |
 | Share of gains that skip the training wait | 1.0 in log-odds | 80%: ~8–55% around 25% | No measurement |
 
