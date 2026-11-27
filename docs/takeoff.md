@@ -179,8 +179,9 @@ Non-AI inputs (all scaled by `baseline_inputs`): staff headcount (`hiring_growth
 inside the Amdahl term, and experiment compute grows at `exp_share` of the frontier's log
 growth, fitted against `historical_compute_rate` so the frozen-AI pace stays steady
 (`test_headcount_and_experiment_compute_hold_history_steady`); the fit floors at zero, so
-a draw with r above about 1.6 at today's pace has an accelerating reference, and r = 1.0 is
-the default because it puts the share near 1.0 (`TAKEOFF_MODEL.md`). The frozen-AI reference is
+a draw with r above about 1.6 at today's pace has an accelerating reference. The share is
+near 1.0 at r = 1.0 and today's pace, and at r = 0.7 and the 2024–25 average pace, the
+range the default rests on (`TAKEOFF_MODEL.md`). The frozen-AI reference is
 integrated step by step alongside the actual path (`reference_gained`), not by the
 closed-form `reference_software`, since its labor and experiments now grow differently. The
 pace chart's factors split exactly: compute with neither AI help nor extra staff, staff's

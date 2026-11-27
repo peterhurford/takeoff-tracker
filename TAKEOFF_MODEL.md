@@ -126,8 +126,10 @@ with AI frozen, slowing in step after 2030. Each r implies one share, which move
 today's measured pace: at r = 1.0 about 1.0 of it (3.3x a year), at 1.2 2.0x, at 1.5 1.2x,
 and from about 1.6 none, where the fit floors at zero and the frozen-AI pace accelerates.
 Measured growth is about 3x a year (OpenAI's disclosed compute, 0.2, 0.6 and 1.9 GW over
-2023–25; Epoch puts final training runs near a tenth of its R&D compute), which holds r at
-1.0. Forethought's r counts researcher effort alone, so its figures (Eth & Davidson 1–4, or
+2023–25; Epoch puts final training runs near a tenth of its R&D compute). That growth fits
+r = 1.0 at today's pace and 0.7 at the 2024–25 average pace (1.2 and 0.8 with staff growing
+30% a year), so the default sits inside what history allows and nothing above about 1.2
+does. Forethought's r counts researcher effort alone, so its figures (Eth & Davidson 1–4, or
 0.5–2 with hardware fixed; Davidson & Houlden 1.2) do not transfer one-for-one.
 
 Discoveries are measured in log fixed-quality algorithmic efficiency. By default, 25%
