@@ -1483,7 +1483,7 @@ def _per_draw_curves(n, rng):
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
     "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
     "human_uplift", "no_ai", "train_hold", "ai_frozen", "ai_frozen_behind",
-    "speed_copies_experiments", "speed_copies_experiments_no_ai"])
+    "speed_copies_experiments", "speed_copies_experiments_no_ai", "cadence_internal"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1514,6 +1514,9 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
         r = _loops_agree(monkeypatch, dict(years=6, full_human_spread=4.0, human_floor=3.0),
                          n, **app)
         assert (r["draws"]["full_human"] < 3.0).any()
+    elif case == "cadence_internal":
+        _loops_agree(monkeypatch, dict(years=6, fast_share=60.0, internal_validation=0.0),
+                     n, **app)
     elif case == "speed_copies_experiments":
         _loops_agree(monkeypatch, dict(years=6, speed_slope=0.44, copies_compute=1.0,
                                        exp_software=0.5), n, **app)
@@ -1605,3 +1608,22 @@ def test_speed_copies_and_experiment_settings_at_zero_are_todays_model():
         moved = tk.simulate(dict(years=4, **on), n=200)
         assert np.nanmedian(moved["software_log"]) > np.nanmedian(
             base["software_log"]), on
+
+
+def test_internal_validation_sets_when_a_finished_run_goes_into_use():
+    """A finished run goes into internal use after `internal_validation` of
+    validation: at 1 (the default, the model before the setting) training plus
+    validation, at 0 when training ends."""
+    p = dict(tk.POINT_ESTIMATE, years=1.0, fast_share=0.0, training_months=3.0,
+             validation_months=2.0)
+
+    def first_deploy(share):
+        r = tk.simulate(dict(p, internal_validation=share), n=5)
+        wp = r["workflow_progress"]
+        cap = wp["capability_log"][0]
+        return wp["years"][np.flatnonzero(np.diff(cap) > 1e-9)[0] + 1] * 12
+    assert first_deploy(1.0) == pytest.approx(5.0, abs=0.01)
+    assert first_deploy(0.0) == pytest.approx(3.0, abs=0.01)
+    base = tk.simulate(dict(years=3), n=100)
+    same = tk.simulate(dict(years=3, internal_validation=1.0), n=100)
+    np.testing.assert_array_equal(base["software_log"], same["software_log"])

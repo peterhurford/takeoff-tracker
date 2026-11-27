@@ -30,6 +30,11 @@ DEFAULTS = {
     "onset_low": 6, "onset_high": 24, "years": 10, "seed": 42,
     "software_months": 8.4, "compute_growth": 2.0,
     "training_months": 3.0, "validation_months": 1.0,
+    # Share of validation that holds a finished run back from internal use (the
+    # deployed model doing research) and the next run's start: 1 waits it out,
+    # 0 uses the model when training ends, validation then gating only public
+    # release (the app's ship lag).
+    "internal_validation": 1.0,
     # Agents get the rest: 6.3% at the median, the geometric mean of OpenAI's
     # measured 2% of research compute (Nov 2026) and the 20% assumed before.
     # Each draw's agent share is logit-normal within the non-training pool;
@@ -48,6 +53,8 @@ DEFAULTS = {
     # Autopilot: from a draw's RSI, no research stage needs people at all (the
     # hours left in other stages are dropped). 0 keeps each stage's own decline.
     "rsi_autopilot": 1.0,
+    # The fast channel stands in for RL post-training shipped every `fast_months`:
+    # it carries software gains only, so RL's own compute share is not modeled.
     # `fast_share` is each draw's median: logit-normal per draw, its spread
     # 1-sigma of the log-odds times 100 (100 is about 8-55% around 25%).
     "fast_share": 25.0, "fast_months": 1.0, "fast_share_spread": 100.0,
@@ -197,8 +204,10 @@ def validate(params):
                                           "drift_spread", "substitution_spread")):
         raise ValueError("Parameter spreads must be between 0 and 200%.")
     if p["software_months"] <= 0 or p["training_months"] <= 0 \
-            or p["validation_months"] < 0 or p["compute_growth"] < 1:
-        raise ValueError("Use positive doubling/run times and compute growth of at least 1×.")
+            or p["validation_months"] < 0 or p["compute_growth"] < 1 \
+            or not 0 <= p["internal_validation"] <= 1:
+        raise ValueError("Use positive doubling/run times, compute growth of at least 1× "
+                         "and an internal validation share from 0 to 1.")
     if p["taste_slope"] < 0 or p["coding_slope"] <= 0:
         raise ValueError("Research quality slope must be nonnegative and coding slope positive.")
     if p["difficulty"] < 0 or not 0 < p["parallelization"] <= 1:
@@ -1789,7 +1798,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     if fol is not None and coding_capability is None:
         raise ValueError("A follower needs the capability at which its coding is automated.")
     train_time = p["training_months"] / 12 * factors[2]
-    eval_time = p["validation_months"] / 12 * factors[3]
+    eval_time = p["validation_months"] / 12 * factors[3] * p["internal_validation"]
     taste_slope = p["taste_slope"] * np.exp(p["judgment_spread"] / 100 * z[5])
     drift = np.maximum(p["judgment_drift"] / 100 + p["drift_spread"] / 100 * z[16], -0.9)
     # rho through the elasticity of substitution 1 / (1 - rho), lognormal

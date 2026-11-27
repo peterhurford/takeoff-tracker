@@ -66,6 +66,7 @@ Nov 18 2026, since lower uplift needs a steep coding slope to match the staff su
 every draw at the centre (`test_each_scenario_draws_its_own_human_uplift`). China's run
 passes `draw_rows`, so each Chinese twin uses its US scenario's theta.
 Rows 25 and 26 draw each scenario's AI speed slope (`speed_slope`, lognormal) and experiments' software share (`exp_software`, logit-normal); with `copies_compute` they are off at 0 and enter both step loops (`TAKEOFF_MODEL.md`, *Fast and slow feedback*). Their spreads are in `_TK_NOT_WIDGETS`.
+The app ships RL-style gains monthly (`tk_fast_share` 60, the fast channel; software gains only, RL's own compute share unmodeled) and puts a finished run into internal use when training ends (`internal_validation` 0: validation gates only the public score, the ship lag); one model cycle is `_tk_cycle_years` (`test_internal_validation_sets_when_a_finished_run_goes_into_use`). Under that cadence China crosses an unpaced US around 2031, so the no-crossing Pacing tests pin the old cadence.
 Row 18 draws each scenario's software ceiling (`ceiling_low_oom`–`ceiling_high_oom`, default
 6–16 orders of magnitude above today's efficiency, Forethought's range): difficulty rises so
 returns to research fall linearly to 0 there (penalty −βC·ln(1−S/C); `ceiling_step` is the

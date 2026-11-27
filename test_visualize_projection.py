@@ -6088,7 +6088,8 @@ class TestPacing:
         tk = vp._pc_takeoff_us(today, cap=(0.0, 5.0, 2.0))
         years, m = tk["years"], np.median(tk["paths"], axis=0)
         level = np.median(base["paths"][:, 0]) + 5.0
-        assert m[(years > 0.5) & (years < 2.3)].max() <= level + 0.5
+        # The lift is training plus validation's internal share past the cap's end.
+        assert m[(years > 0.5) & (years < 2.2)].max() <= level + 0.5
         assert m[years >= 3.0][0] > level + 30
         for k, v in base["when"].items():
             ok = np.isfinite(v) & (v > 0.05)

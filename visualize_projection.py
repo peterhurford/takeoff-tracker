@@ -25468,6 +25468,9 @@ _TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_comput
 # METR's horizon elasticity halved (horizon is task length, not speed), copies
 # proportional to inference compute, half of algorithms cheapening experiments.
 _TK_DEFAULTS.update({"tk_speed_slope": 0.44, "tk_copies_compute": 1.0, "tk_exp_software": 0.5})
+# Labs ship RL post-training about monthly beside pretraining every ~3 months
+# (the fast channel's share), and use a finished run internally at once.
+_TK_DEFAULTS.update({"tk_fast_share": 60.0, "tk_internal_validation": 0.0})
 # `takeoff.DEFAULTS` at the app's defaults, for fits that read "the defaults".
 _TK_MODEL_DEFAULTS = dict(takeoff.DEFAULTS, **{
     k[3:]: v for k, v in _TK_DEFAULTS.items() if k[3:] in takeoff.DEFAULTS})
@@ -27244,7 +27247,7 @@ def _tk_eci(result, params, ultra=_TK_ULTRA_ECI):
         hist = result.get("hist_compute")
         trend = _tk_eci_floor(
             now, ppy, years, np.asarray(pq, dtype=float)[:, 1],
-            (params["training_months"] + params["validation_months"]) / 12,
+            _tk_cycle_years(params),
             w_compute * (hist if hist is not None else np.log(params["compute_growth"])))
     model = now + w_compute * (wp["capability_log"] - software) + w_software * software
     floored = np.maximum(model, trend[None, :])
@@ -28312,12 +28315,19 @@ def _tk_merge_limits(a, b):
             None if a[2] is None or b[2] is None else max(a[2], b[2]))
 
 
+def _tk_cycle_years(params):
+    """A run's training plus the share of validation that holds it from
+    internal use (`internal_validation`), in years: one model cycle."""
+    return (params["training_months"]
+            + params["validation_months"] * params.get("internal_validation", 1.0)) / 12
+
+
 def _tk_cap_lift(cap, params):
     """When a capability cap, (start, gain, end or None), stops holding US
     models back: a training run and validation after it ends, since a model
     past it cannot start training before then (inf: for good)."""
     return (np.inf if cap[2] is None
-            else cap[2] + (params["training_months"] + params["validation_months"]) / 12)
+            else cap[2] + _tk_cycle_years(params))
 
 
 def _tk_cap(result, eci, start, gain, lift, rate=None):
@@ -28725,7 +28735,7 @@ def _cn_tk_run(today, run=None, pacing=None):
     ultra = eci["ultra_level"]
     return {"years": years, "paths": paths, "us_paths": us_paths,
             "us_trained": trained[:, :len(years)],
-            "rows": keep, "cycle_months": params["training_months"] + params["validation_months"],
+            "rows": keep, "cycle_months": 12 * _tk_cycle_years(params),
             "level": level, "slope": slope, "source": source, "sources": sources, "cal": cal,
             # Coding no later than the ultraintelligence threshold, as for the US.
             "when": {"automated coder": np.minimum(np.asarray(out["coding_at"], float),
@@ -29703,6 +29713,13 @@ def _render_takeoff(loading):
                         "so a shorter run is a smaller model, not a faster route to the same "
                         "one: dates can come later, not sooner.")
             number("Validation and deployment delay (months)", "validation_months", 0.0, 12.0, 0.5)
+            number("Share of validation before internal use", "internal_validation",
+                   0.0, 1.0, 0.25,
+                   "How much of validation a finished run waits out before labs use it "
+                   "internally for research and start the next run. 0: in use when "
+                   "training ends, validation gating only public release (the ship lag "
+                   "behind the trained frontier). 1: the whole delay, the model before "
+                   "this setting.")
             st.checkbox("Labs re-split compute as AI changes", key="tk_reallocate_compute",
                         help="On: the compute not used for training is re-split between "
                              "running AI researchers and running experiments as AI changes "

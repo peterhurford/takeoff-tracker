@@ -3576,6 +3576,10 @@ class TestPacingTab:
         """At the defaults (no pacing) China does not catch up by *Project
         through*, yet the compute ratios and mix still draw, to that year."""
         at = _fresh_app()
+        # The no-crossing case needs the cadence before monthly RL shipping and
+        # internal use at training end, under which China crosses in 2031.
+        at.session_state["tk_fast_share"] = 25.0
+        at.session_state["tk_internal_validation"] = 1.0
         at.run()
         _switch_tab(at, "Pacing")
         _assert_no_error(at, "Pacing / defaults")
@@ -4850,6 +4854,10 @@ class TestPacingTab:
         10% keeps the US climbing, so China catches it later than a pause,
         on a bar that has moved up."""
         at = _fresh_app()
+        # The no-crossing case needs the cadence before monthly RL shipping and
+        # internal use at training end, under which China crosses in 2031.
+        at.session_state["tk_fast_share"] = 25.0
+        at.session_state["tk_internal_validation"] = 1.0
         at.run()
         _switch_tab(at, "Pacing")
         assert at.checkbox(key="pc_withhold").value is False
