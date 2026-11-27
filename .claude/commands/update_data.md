@@ -89,6 +89,14 @@ pre-training, and METR's pre-training/RL split is redacted. 10× per gridline is
 each run. Not to be confused with the deck's ">4x compute efficiency", which is revenue per
 dollar of compute.
 
+**Related, also not ingested:** METR's [*Interpreting a recent acceleration in pretraining
+loss*](https://metr.org/blog/2026-11-24-interpreting-a-recent-acceleration-in-pretraining-loss/)
+(2026-11-24) re-reads OpenAI's perplexity chart (`openai_perplexity.csv`): loss fell ~0.022/yr
+2022 to early 2026 and ~0.156/yr after a Feb 2026 break (7.1×), "roughly 8 to 10 times faster"
+effective-compute growth only under one shared scaling law, which METR calls "unrealistic"; it
+does not attribute the break to AI R&D. No new data, so no row and no change to the 1.47×
+default; treat a METR consensus view or a per-model scaling-law fit as the trigger.
+
 ### Revenue: source-type discipline
 
 The two revenue series follow different conventions on purpose, and mixing them creates a fake growth spike:

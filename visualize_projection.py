@@ -1432,6 +1432,7 @@ _RLI_RAW = [
     # corrected from 41.30; no new model. The CAIS API now carries Fable 5.2; Argon and V4.1 Flash are Scale-only.
     # Mythos 5.2, Sonnet 5.5, Haiku 5.5, Mythos 5.1 and Opus 5 have no score; Argon is still Scale-only.
     # Rechecked 2026-11-25: no new model or changed score; Scale's newest createdAt is still Gemini 4 Carbon.
+    # Rechecked 2026-11-26: no new model or changed score on Scale or the CAIS API.
 ]
 
 
@@ -10694,6 +10695,7 @@ _OPENAI_REVENUE = [
     # (~$10B, quarterly) and the ~$70B year-end target (forecast).
     # Rechecked 2026-11-18: no TickerTrends post since 11-06.
     # Rechecked 2026-11-25: TickerTrends' only post since (11-19, compute cost) carries no OpenAI ARR.
+    # Rechecked 2026-11-26: no TickerTrends post since 11-19.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10814,6 +10816,7 @@ _ANTHROPIC_REVENUE = [
     # from 11-19, so the next disclosure is the first 10-Q or an 8-K. Excluded: TickerTrends' $82.33B for 10-30
     # (alt-data) and the $100-120B year-end figures in press (forecasts).
     # Rechecked 2026-11-25: the IPO-closing 8-K (0001628280-26-075973, 11-25) and its exhibits state no run rate.
+    # Rechecked 2026-11-26: no EDGAR filing since that 8-K.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
