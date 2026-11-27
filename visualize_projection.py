@@ -29307,9 +29307,10 @@ def _render_takeoff(loading):
             number("Returns to research (r)", "returns", 0.2, 5.0, 0.1,
                    "How many doublings of algorithmic efficiency each doubling of "
                    "cumulative research effort buys; below 1 ideas get harder faster "
-                   "than effort grows. Default 1.0 is where history fits with experiment "
-                   "compute growing as fast as the frontier's, about 3\u00d7 a year; 1.5 "
-                   "would need it at 1.2\u00d7. Forethought counts researcher effort alone: "
+                   "than effort grows. Default 1.0 is where history fits at today's pace "
+                   "with experiment compute growing as fast as the frontier's, about "
+                   "3\u00d7 a year; 1.5 would need it at 1.2\u00d7. Forethought counts "
+                   "researcher effort alone: "
                    "Eth & Davidson 1\u20134, or 0.5\u20132 with hardware fixed; Davidson & "
                    "Houlden 1.2. Sets research difficulty as "
                    f"{_TK_R_REF_PARALLEL:g} / r, independent of the parallelization "
