@@ -846,7 +846,11 @@ def test_point_estimate_draws_the_settings_themselves():
     np.testing.assert_allclose(point["difficulty"], tk.DEFAULTS["difficulty"])
     np.testing.assert_allclose(point["judgment_drift"], 0.1)
     np.testing.assert_allclose(point["substitution"], -0.5)
-    spread = tk.simulate(dict(p, scale_dependent=50.0), n=50)["draws"]
+    on = dict(speed_slope=0.44, exp_software=0.5)
+    point = tk.simulate(dict(p, **on, **tk.POINT_ESTIMATE), n=50)["draws"]
+    np.testing.assert_allclose(point["speed_slope"], 0.44)
+    np.testing.assert_allclose(point["exp_software"], 0.5)
+    spread = tk.simulate(dict(p, scale_dependent=50.0, **on), n=50)["draws"]
     assert all(np.ptp(v) > 0 for v in spread.values())
     # rho stays inside the range `validate` accepts.
     assert (spread["substitution"] >= -5).all() and (spread["substitution"] <= 0.9).all()
@@ -1478,7 +1482,8 @@ def _per_draw_curves(n, rng):
 @pytest.mark.parametrize("case", [
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
     "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
-    "human_uplift", "no_ai", "train_hold", "ai_frozen", "ai_frozen_behind"])
+    "human_uplift", "no_ai", "train_hold", "ai_frozen", "ai_frozen_behind",
+    "speed_copies_experiments", "speed_copies_experiments_no_ai"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1509,6 +1514,12 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
         r = _loops_agree(monkeypatch, dict(years=6, full_human_spread=4.0, human_floor=3.0),
                          n, **app)
         assert (r["draws"]["full_human"] < 3.0).any()
+    elif case == "speed_copies_experiments":
+        _loops_agree(monkeypatch, dict(years=6, speed_slope=0.44, copies_compute=1.0,
+                                       exp_software=0.5), n, **app)
+    elif case == "speed_copies_experiments_no_ai":
+        _loops_agree(monkeypatch, dict(years=6, speed_slope=0.44, copies_compute=1.0,
+                                       exp_software=0.5), n, ai_limit=(1.0, None, 4.0), **app)
     elif case == "human_uplift":
         r = _loops_agree(monkeypatch, dict(years=6, human_uplift=0.3), n, **app)
         assert len(np.unique(r["draws"]["human_uplift"])) == n
@@ -1576,3 +1587,21 @@ def test_each_scenario_draws_its_own_agent_share():
     np.testing.assert_allclose(two["software_log"], twenty["software_log"])
     with pytest.raises(ValueError, match="agent share"):
         tk.validate(dict(agent_share_spread=-1))
+
+
+def test_speed_copies_and_experiment_settings_at_zero_are_todays_model():
+    """AI speed rising with capability, copies from inference compute and
+    software-cheapened experiments: each at 0 (their spreads still on) runs
+    today's model exactly; each on moves research."""
+    base = tk.simulate(dict(years=4), n=200)
+    zero = tk.simulate(dict(years=4, speed_slope=0, speed_slope_spread=1.5, copies_compute=0,
+                         exp_software=0, exp_software_spread=2.0), n=200)
+    for key in ("software_log", "deployed_log"):
+        np.testing.assert_array_equal(base[key], zero[key])
+    np.testing.assert_array_equal(base["events"]["RSI"], zero["events"]["RSI"])
+    assert (zero["draws"]["speed_slope"] == 0).all()
+    assert (zero["draws"]["exp_software"] == 0).all()
+    for on in (dict(speed_slope=0.44), dict(copies_compute=1.0), dict(exp_software=0.5)):
+        moved = tk.simulate(dict(years=4, **on), n=200)
+        assert np.nanmedian(moved["software_log"]) > np.nanmedian(
+            base["software_log"]), on

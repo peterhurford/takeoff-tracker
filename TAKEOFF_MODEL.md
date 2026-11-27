@@ -167,6 +167,19 @@ system without requiring a new frontier model. Breadth still depends on successo
 Training capacity remains reserved during validation; fast work uses the experiment/agent
 budgets rather than creating additional resources.
 
+Three further channels, each off at 0, today's model exactly there
+(`test_speed_copies_and_experiment_settings_at_zero_are_todays_model`):
+AI's speed on automated work grows as capability to `speed_slope` (drawn per
+scenario, lognormal, row 25; METR's 50% horizon gives 0.88 per log of effective
+compute, a ceiling since horizon is task length, not speed); copies also grow as
+the compute running them (total compute, agent cuts and the agents' re-split share,
+a step lagged) to `copies_compute`; and `exp_software` of the deployed model's
+log algorithmic gain multiplies experiment compute in the CES (logit-normal per
+scenario, row 26). `calibrate_feedback` sees all three over its window: AI's
+speed-up through `_tk_window_speedup`, cheaper experiments through
+`experiment_software`. At 0.5 the latter leaves OpenAI's 2.33x experiment growth
+nothing for judgment, so the fitted judgment elasticity sits at its 0 floor.
+
 ## Acceleration and autonomy are different outcomes
 
 All four acceleration panels use 2025 units. The first preserves the RSI experiment

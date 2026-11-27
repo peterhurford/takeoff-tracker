@@ -25408,7 +25408,8 @@ def _render_gap_hover():
 
 # Model settings the app sets itself rather than offering as widgets.
 _TK_NOT_WIDGETS = ("onset_low", "onset_high", "years", "compute_slow_years",
-                   "full_human_spread", "human_uplift_spread")
+                   "full_human_spread", "human_uplift_spread", "speed_slope_spread",
+                   "exp_software_spread")
 # The RSI bar's per-scenario spread, a factor either side of its median (`tk_full_human`).
 _TK_BAR_SPREAD = takeoff.DEFAULTS["full_human_spread"]
 
@@ -25753,6 +25754,15 @@ def _tk_window_amdahl(rows, experiments, ai_speed, copies_growth=1.0, hours=None
     copies as algorithms improved)."""
     h0, h1 = _tk_window_human_shares(rows, experiments, hours)
     return h0, h1, float(ai_speed), float(ai_speed * copies_growth)
+
+
+def _tk_window_speedup(params, capability, compute):
+    """AI's speed-up over the calibration window as `simulate` has it: more
+    copies (algorithms to `ai_copies`, inference compute to `copies_compute`)
+    and faster AI (capability to the centre `speed_slope`)."""
+    capability, compute = float(capability), float(compute)
+    return ((capability / compute) ** params["ai_copies"]
+            * compute ** params["copies_compute"] * capability ** params["speed_slope"])
 
 
 def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0, hours=None):
@@ -28136,8 +28146,10 @@ def _tk_run(today, progress=None):
             uplift=_tk_uplift_draws(params["human_uplift"]),
             amdahl=_tk_window_amdahl(
                 load_rsi_automation(), evidence, params["ai_speed"],
-                (ss("tk_cal_capability") / ss("tk_cal_compute"))
-                ** params["ai_copies"], _TK_AL_HUMAN_HOURS))
+                _tk_window_speedup(params, ss("tk_cal_capability"), ss("tk_cal_compute")),
+                _TK_AL_HUMAN_HOURS),
+            experiment_software=(float(ss("tk_cal_capability")) / float(ss("tk_cal_compute")))
+            ** params["exp_software"])
         w = ss("tk_cal_weight") / 100
         calibration["quality_prior"] = params["taste_slope"]
         calibration["weight"] = w
@@ -29611,6 +29623,25 @@ def _render_takeoff(loading):
                    "the human share h falls, research labor speeds up by "
                    "(h\u2080 + (1\u2212h\u2080)/s) / (h + (1\u2212h)/s): Amdahl's law, "
                    "so the last stretch to RSI matters most.")
+            number("AI speed rises with capability (power)", "speed_slope", 0.0, 3.0, 0.05,
+                   "AI's speed on automated work grows as capability (effective compute "
+                   "over today's) to this power, from the speed above: fewer, faster steps "
+                   "per task. Each scenario draws its own, lognormal, 1σ ×2. METR's "
+                   "50% time horizon grows 0.88 per unit of log effective compute (9.5× a "
+                   "year against 12.8×); horizon is task length, not speed, so that is a "
+                   "ceiling. 0 holds the speed fixed.")
+            number("AI researchers from inference compute (power)", "copies_compute",
+                   0.0, 2.0, 0.1,
+                   "AI researcher copies also grow with the compute running them (total "
+                   "compute times the agents' share labs re-split toward) to this power, "
+                   "on top of the algorithms power above for each hour getting cheaper. "
+                   "1: copies proportional to inference compute. 0 off.")
+            number("Experiments cheaper with algorithms (share)", "exp_software",
+                   0.0, 0.95, 0.05,
+                   "This share of the deployed model's algorithmic efficiency gain also "
+                   "multiplies experiment compute: better algorithms make each experiment "
+                   "cheaper. Each scenario draws its own share, logit-normal, 1σ 1 in "
+                   "log-odds. 0 off.")
             uplift_lo, uplift_hi = _tk_uplift_band(float(st.session_state["tk_human_uplift"]))
             number("Human uplift from AI coding", "human_uplift", 0.0, 1.0, 0.05,
                    "Share of AI's coding gain that also speeds up the work people still "

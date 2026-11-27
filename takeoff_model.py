@@ -126,6 +126,20 @@ DEFAULTS = {
     # `rsi_compute_ramp` months. 1 leaves compute as projected; the size is an
     # assumption, with no published estimate.
     "rsi_compute_boost": 2.0, "rsi_compute_delay": 18.0, "rsi_compute_ramp": 12.0,
+    # AI's speed on the work it has taken over rises with capability: log speed
+    # gains `speed_slope` per log of capability over today's (help_cap), each
+    # draw's slope lognormal around it, `speed_slope_spread` the 1-sigma of its
+    # log (row 25). 0 holds `ai_speed` at today's 30x.
+    "speed_slope": 0.0, "speed_slope_spread": 0.69,
+    # AI researcher copies also scale with the inference compute running them
+    # (total compute, cuts and the agents' share of the pool, a step lagged), to
+    # this power, on top of `ai_copies` for each hour getting cheaper. 0 off.
+    "copies_compute": 0.0,
+    # Algorithmic progress also cheapens experiments: this share of the deployed
+    # model's log efficiency gain adds to experiment compute in the CES, each
+    # draw's share logit-normal around it, `exp_software_spread` its 1-sigma in
+    # log-odds (row 26). 0 off.
+    "exp_software": 0.0, "exp_software_spread": 1.0,
     # Software ceiling (Forethought): returns to research fall linearly to 0
     # as algorithmic efficiency nears a limit drawn uniformly this many orders
     # of magnitude above today's. A high of 0 removes it.
@@ -151,7 +165,8 @@ DEFAULTS = {
 POINT_ESTIMATE = {"uncertainty": 0, "returns_spread": 0, "judgment_spread": 0,
                   "drift_spread": 0, "substitution_spread": 0, "scale_dependent_spread": 0,
                   "scale_lag_spread": 0, "fast_share_spread": 0, "full_human_spread": 1,
-                  "human_uplift_spread": 0, "agent_share_spread": 0}
+                  "human_uplift_spread": 0, "agent_share_spread": 0,
+                  "speed_slope_spread": 0, "exp_software_spread": 0}
 PRESETS = {
     "Central": {},
     "Fast": {"software_months": 6.0, "training_months": 1.0,
@@ -227,6 +242,11 @@ def validate(params):
          "The software ceiling's low end must be positive and at most its high end (at most 60 OOM)."),
         (p["rsi_autopilot"] in (0, 1) and 0 <= p["ai_copies"] <= 2,
          "Autopilot must be on or off, and AI copies between 0 and 2."),
+        (0 <= p["speed_slope"] <= 3 and 0 <= p["speed_slope_spread"] <= 3
+         and 0 <= p["copies_compute"] <= 2 and 0 <= p["exp_software"] < 1
+         and 0 <= p["exp_software_spread"] <= 5,
+         "Speed slope 0-3, copies' compute power 0-2 and experiments' software share "
+         "0 up to 1, with spreads 0-3 and 0-5."),
         (p["judgment_cap"] == 0 or p["judgment_cap"] >= 1,
          "The judgment cap must be 0 (off) or at least 1x."),
         (0 <= p["direction_adoption"] <= 2 and 0.25 <= p["judgment_today"] <= 4,
@@ -251,7 +271,8 @@ def validate(params):
 def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
                        yield_change=1.0, validated_growth=None, transfer=.6,
                        coding_slope=.8, parallel=.5, substitution=-0.5,
-                       automation_growth=1.0, uplift=1.0, amdahl=None):
+                       automation_growth=1.0, uplift=1.0, amdahl=None,
+                       experiment_software=1.0):
     """Effective quality elasticity after the model's own research equation
     has accounted for compute, coding help and `automation_growth` (the
     Amdahl labor gain from people's falling share over the same window).
@@ -271,7 +292,9 @@ def calibrate_feedback(experiment_growth, compute_growth, capability_growth,
     if not 0 < transfer <= 1 or not 0 < parallel <= 1 or coding_slope < 0:
         raise ValueError("Calibration requires positive transfer and valid elasticities.")
     useful_growth = experiment_growth * yield_change if validated_growth is None else validated_growth
-    residual = useful_growth / compute_growth ** parallel
+    # `experiment_software`: the window's growth in experiments per unit of
+    # compute from cheaper experiments (algorithmic growth to `exp_software`).
+    residual = useful_growth / (compute_growth * experiment_software) ** parallel
     if amdahl is None:
         coding = ((1 - transfer + transfer * capability_growth ** coding_slope)
                   * (1 - transfer + transfer * automation_growth)) ** parallel
@@ -1008,6 +1031,7 @@ def _k_draw(i, d, s, a, o):
     rsi = o.rsi[i]
     tr = s.transfer
     bound_at = np.inf
+    agent_prev = d.agent0[i]
     # The deployed model (`realized`).
     now0 = deployed - deployed_software
     now1 = pays_off(t, software, boost_log, deployed_scale, deployed_software, fast_deployed,
@@ -1114,7 +1138,10 @@ def _k_draw(i, d, s, a, o):
         share_now = h[0] * _W0 + h[1] * _W1 + h[2] * _W2
         # `theta` of the coding gain speeds every hour (in `labor_log`); the rest, AI's.
         log_speed = (np.log(s.ai_speed) + s.ai_copies * _k_max(help_sw, 0.0)
-                     + (1 - theta) * coding_log)
+                     + (1 - theta) * coding_log + d.speed_slope[i] * _k_max(help_cap, 0.0))
+        if s.copies_compute and not no_ai:
+            log_speed += s.copies_compute * (compute_log + shift(a.agents_logs, mid)
+                                             + np.log(agent_prev / sh2))
         amdahl_log = d.amdahl0[i] - _k_lae(np.log(share_now), np.log1p(-share_now) - log_speed)
         staff_share = share_now if tr else d.human0[i]
         staff_speed = log_speed if tr else np.log(s.ai_speed)
@@ -1136,7 +1163,8 @@ def _k_draw(i, d, s, a, o):
                            + automation_log + headcount_log)
         if bound:                        # a lab can always go without AI
             labor_log = _k_max(labor_log, par * (d.amdahl0[i] + head_log))
-        experiment_log = par * (compute_log + exp_log)
+        exp_soft = d.exp_soft[i] * _k_max(help_sw, 0.0)
+        experiment_log = par * (compute_log + exp_log + exp_soft)
         ref_headcount = (d.amdahl0[i] - _k_lae(np.log(d.human0[i]) - s.hire_rate * mid,
                                                np.log1p(-d.human0[i]) - np.log(s.ai_speed)))
         agent_shift = shift(a.agents_logs, mid)
@@ -1153,11 +1181,12 @@ def _k_draw(i, d, s, a, o):
             agent_share = _k_clip(agent_share, 1e-9 * pool, pool * (1 - 1e-9))
             labor_log = labor_log + par * np.log(agent_share / sh2)
             experiment_log = experiment_log + par * np.log((pool - agent_share) / sh1)
+        agent_prev = agent_share
         labor_log = labor_log + par * agent_shift
         experiment_log = experiment_log + par * exp_shift
         research_log = _k_ces_log(labor_log, experiment_log, rho) + quality_log
         judgment_log = quality_log
-        exp_in = par * (compute_log + exp_shift + exp_log)
+        exp_in = par * (compute_log + exp_shift + exp_log + exp_soft)
         agent_in = par * (compute_log + agent_shift)
         bare = _k_ces_log(agent_in, exp_in, rho)
         compute_part = bare
@@ -1432,10 +1461,10 @@ _KDraws = namedtuple("_KDraws", (
     "human0", "hire_effect", "input_rate", "exp_slope", "coding_level", "taste_slope", "drift",
     "rho", "beta", "ceiling", "scale_share", "scale_lag", "fast_fraction", "bcr", "fol_rate",
     "fol_eci_now", "fol_slope", "fol_distill", "fol_leak", "bar", "theta", "agent0", "exp0",
-    "limit_back", "auto_log"))
+    "limit_back", "auto_log", "speed_slope", "exp_soft"))
 _KSettings = namedtuple("_KSettings", (
     "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
-    "sh0", "ai_speed", "ai_copies", "hire_rate", "after_rate",
+    "sh0", "ai_speed", "ai_copies", "copies_compute", "hire_rate", "after_rate",
     "judgment_today", "judgment_cap", "adoption", "coding_today", "coding_slope",
     "reallocate", "has_slopes", "trend_weight", "trend_months", "useful",
     "autopilot", "serial_speedup", "fast_time", "review_from", "review_to", "review_time",
@@ -1482,7 +1511,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
             "eval_time", "scale_ratio", "amdahl0", "quality0_log", "human0", "hire_effect",
             "input_rate", "taste_slope", "drift", "rho", "beta", "ceiling", "scale_share",
             "scale_lag", "fast_fraction", "bcr", "bar", "theta", "agent0", "exp0",
-            "limit_back")},
+            "limit_back", "speed_slope", "exp_soft")},
         has_history=per(np.asarray(v["has_history"], dtype=float)),
         exp_slope=np.zeros(n) if experiment_slopes is None else per(experiment_slopes),
         coding_level=(np.full(n, np.inf) if coding_capability is None
@@ -1499,7 +1528,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         rsi_delay=float(p["rsi_compute_delay"]) / 12, rsi_ramp=float(p["rsi_compute_ramp"]) / 12,
         slow_at=float(v["slow_at"]), transfer=float(v["transfer"]),
         parallel=float(v["parallel"]), sh0=float(shares[0]), ai_speed=float(v["ai_speed"]),
-        ai_copies=float(p["ai_copies"]),
+        ai_copies=float(p["ai_copies"]), copies_compute=float(p["copies_compute"]),
         hire_rate=float(v["hire_rate"]), after_rate=float(v["after_rate"]),
         judgment_today=float(p["judgment_today"]), judgment_cap=float(p["judgment_cap"]),
         adoption=float(p["direction_adoption"]), coding_today=float(p["coding_today"]),
@@ -1722,7 +1751,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     # Rows fill in order, so appending a factor leaves the earlier draws unchanged.
     # Rows 4, 6, 7 and 11 fed retired milestones; they stay drawn so the others
     # keep their values.
-    raw = rng.uniform(-1, 1, (25, total))[:, keep_rows]
+    raw = rng.uniform(-1, 1, (27, total))[:, keep_rows]
     z = normal_scores(raw)
     spread = p["uncertainty"] / 100
     factors = np.exp(spread * z)
@@ -1784,6 +1813,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     if 0 < p["human_uplift"] < 1 and p["human_uplift_spread"] > 0:
         theta = 1 / (1 + np.exp(-(np.log(p["human_uplift"] / (1 - p["human_uplift"]))
                                   + p["human_uplift_spread"] * z[23])))
+    # Each draw's AI speed slope (row 25) and experiments' software share (row 26).
+    speed_slope = p["speed_slope"] * np.exp(p["speed_slope_spread"] * z[25])
+    exp_soft = np.full(n, float(p["exp_software"]))
+    if 0 < p["exp_software"] < 1 and p["exp_software_spread"] > 0:
+        exp_soft = 1 / (1 + np.exp(-(np.log(p["exp_software"] / (1 - p["exp_software"]))
+                                     + p["exp_software_spread"] * z[26])))
     halves = np.array([p["half_" + s] for s in WORKFLOW_KEYS])[None, :] * factors[8:11].T
     # Each stage's pace along `human_curve` is the settings' weighted halving
     # time over its own (with its draw's spread).
@@ -2047,6 +2082,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             limit_back = baseline_capability_rate / (
                 coding_weights[0] * compute_rate + coding_weights[1] * software_rate)
     bound_at = np.full(n, np.inf)
+    agent_prev = agent0.copy()
     cut = use_cut = None
     if compute_cut is not None:
         by_use = isinstance(compute_cut[1], dict)
@@ -2231,6 +2267,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                    after_rate=after_rate, fast_time=fast_time, floor=floor,
                    reference_half=reference_half, slow_at=slow_at, bar=bar, theta=theta,
                    agent0=agent0, exp0=exp0, limit_back=limit_back,
+                   speed_slope=speed_slope, exp_soft=exp_soft,
                    own_experiments=own_experiments, boost=boost,
                    reference_train_compute=reference_train_compute,
                    grid=workflow_grid))
@@ -2354,7 +2391,10 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # (`human_uplift`) of the coding gain speeds every hour (in `labor_log`);
         # the rest speeds AI's share.
         log_speed = (np.log(ai_speed) + p["ai_copies"] * np.maximum(help_sw, 0)
-                     + (1 - theta) * coding_log)
+                     + (1 - theta) * coding_log + speed_slope * np.maximum(help_cap, 0))
+        if p["copies_compute"]:
+            log_speed = log_speed + np.where(no_ai, 0.0, p["copies_compute"] * (
+                compute_log + use_shift("agents", mid_t) + np.log(agent_prev / agent0)))
         with np.errstate(divide="ignore"):
             amdahl_log = amdahl0 - np.logaddexp(np.log(share_now),
                                                 np.log1p(-share_now) - log_speed)
@@ -2387,7 +2427,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # A lab can always go without AI.
         labor_log = np.where(bound, np.maximum(labor_log, parallel * (amdahl0 + head_log)),
                              labor_log)
-        experiment_log = parallel * (compute_log + exp_log)
+        exp_soft_log = exp_soft * np.maximum(help_sw, 0)
+        experiment_log = parallel * (compute_log + exp_log + exp_soft_log)
         with np.errstate(divide="ignore"):
             ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,
                                                     np.log1p(-human0) - np.log(ai_speed)))
@@ -2411,6 +2452,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             agent_share = np.where(no_ai, agent0, agent_share)
             labor_log = labor_log + parallel * np.log(agent_share / agent0)
             experiment_log = experiment_log + parallel * np.log((pool - agent_share) / exp0)
+        agent_prev = agent_share
         labor_log = labor_log + parallel * agent_shift
         experiment_log = experiment_log + parallel * exp_shift
         research_log = _ces_log(labor_log, experiment_log, rho) + quality_log
@@ -2419,7 +2461,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # more staff, staff what they add to that (nothing once people do no
         # work), and AI help the rest (zero without transfer).
         staff_alone = headcount_log
-        exp_in = parallel * (compute_log + exp_shift + exp_log)
+        exp_in = parallel * (compute_log + exp_shift + exp_log + exp_soft_log)
         agent_in = parallel * (compute_log + agent_shift)
         # At today's split: any gain from re-splitting is AI's doing.
         bare = _ces_log(agent_in, exp_in, rho)
@@ -2833,7 +2875,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                   "ceiling_oom": ceiling / np.log(10), "scale_dependent": scale_share,
                   "fast_share": 100 * fast_fraction,
                   "scale_lag_oom": scale_lag / np.log(10), "full_human": 100 * bar,
-                  "human_uplift": theta, "agent_share": 100 * agent0},
+                  "human_uplift": theta, "agent_share": 100 * agent0,
+                  "speed_slope": speed_slope, "exp_software": exp_soft},
         # Each draw's log compute growth a year before and after `slow_at`;
         # its compute is exp(log_level(t, rate, late, slow_at)) x today's.
         "compute": {"rate": compute_rate, "late": compute_late, "slow_at": slow_at},
