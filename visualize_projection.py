@@ -25461,6 +25461,13 @@ _TK_DEFAULTS.update({
 _TK_DEFAULTS["tk_rsi_autopilot"] = bool(takeoff.DEFAULTS["rsi_autopilot"])
 _TK_DEFAULTS["tk_serial_speedup"] = bool(takeoff.DEFAULTS["serial_speedup"])
 _TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_compute"])
+# The model file keeps these at 0 (today's model); the app turns them on:
+# METR's horizon elasticity halved (horizon is task length, not speed), copies
+# proportional to inference compute, half of algorithms cheapening experiments.
+_TK_DEFAULTS.update({"tk_speed_slope": 0.44, "tk_copies_compute": 1.0, "tk_exp_software": 0.5})
+# `takeoff.DEFAULTS` at the app's defaults, for fits that read "the defaults".
+_TK_MODEL_DEFAULTS = dict(takeoff.DEFAULTS, **{
+    k[3:]: v for k, v in _TK_DEFAULTS.items() if k[3:] in takeoff.DEFAULTS})
 
 # Research work by activity: (activity, the model's stage it belongs to, human
 # hours at each automation level AL0..AL5 as a share of an unassisted
@@ -25772,18 +25779,29 @@ def _tk_automation_growth(rows, experiments, ai_speed, copies_growth=1.0, hours=
     return float((h0 + (1 - h0) / s0) / (h1 + (1 - h1) / s1))
 
 
+def _tk_speedup_yearly(params):
+    """AI's yearly speed-up today apart from coding: a year of algorithms at the
+    software doubling to `ai_copies` (cheaper copies), of compute to
+    `copies_compute` (more inference compute) and of capability to `speed_slope`
+    (faster AI), as `simulate`'s log_speed has them."""
+    sw = 2 ** (12 / params["software_months"])
+    comp = params["compute_growth"]
+    return float(sw ** params["ai_copies"] * comp ** params["copies_compute"]
+                 * (sw * comp) ** params["speed_slope"])
+
+
 def _tk_copies_yearly(rows, params=None, uplift=1.0, coding_gain=1.0):
-    """The yearly research-labor gain more copies alone give today: a year of
-    algorithmic progress at the software doubling, raised to `ai_copies`,
-    speeding only AI's share of the work at the automation index's latest
-    human share (Amdahl). It is netted out of the survey's coding fit. With
+    """The yearly research-labor gain more and faster AI alone give today
+    (`_tk_speedup_yearly`), speeding only AI's share of the work at the
+    automation index's latest human share (Amdahl). It is netted out of the
+    survey's coding fit. With
     `uplift` draws and a year's coding gain K (`coding_gain`), it is the
     copies' gain on top of coding, which already speeds AI's share
     K^(1 - uplift)x, averaged over the draws."""
-    params = params or takeoff.DEFAULTS
+    params = params or _TK_MODEL_DEFAULTS
     h = _tk_ladder_human_share(_tk_ladder_start_row())
     s = params["ai_speed"] * coding_gain ** (1 - np.asarray(uplift, dtype=float))
-    g = 2 ** (12 / params["software_months"] * params["ai_copies"])
+    g = _tk_speedup_yearly(params)
     return float(np.mean((h + (1 - h) / s) / (h + (1 - h) / (s * g))))
 
 
@@ -25793,10 +25811,10 @@ def _tk_coding_fit(uplift, capability, compute, software_months):
     (`_tk_survey_coding`) over the scenarios' uplift draws, at the window's
     `capability` and `compute` growth and the model defaults' transfer, AI
     speed and copies, as the run's experiment calibration reads the window."""
-    d, rows, ex = takeoff.DEFAULTS, load_rsi_automation(), load_rsi_experiments()
+    d, rows, ex = _TK_MODEL_DEFAULTS, load_rsi_automation(), load_rsi_experiments()
     copies = _tk_copies_yearly(rows, dict(d, software_months=software_months))
     amdahl = _tk_window_amdahl(rows, ex, d["ai_speed"],
-                               (capability / compute) ** d["ai_copies"], _TK_AL_HUMAN_HOURS)
+                               _tk_window_speedup(d, capability, compute), _TK_AL_HUMAN_HOURS)
     return _tk_survey_coding(load_rsi_survey(), ex, capability, copies,
                              _tk_uplift_draws(uplift), amdahl,
                              _TK_DEFAULTS["tk_transfer"] / 100)
@@ -26362,23 +26380,25 @@ def _tk_evidence_chain(params):
     survey_now = 1 + float(np.exp(s_icpt + s_slope * (datetime.now() - rows[0]['date']).days))
     sw0 = float(ss("tk_software_months", _TK_DEFAULTS["tk_software_months"]))
     copies_y = _tk_copies_yearly(load_rsi_automation(),
-                                 dict(takeoff.DEFAULTS, software_months=sw0))
+                                 dict(_TK_MODEL_DEFAULTS, software_months=sw0))
     # The parts `_tk_copies_yearly` combines, for the math section.
     cp_h = _tk_ladder_human_share(_tk_ladder_start_row())
-    cp_s = takeoff.DEFAULTS["ai_speed"]
-    cp_g = 2 ** (12 / sw0 * takeoff.DEFAULTS["ai_copies"])
+    cp_s = _TK_MODEL_DEFAULTS["ai_speed"]
+    cp_g = _tk_speedup_yearly(dict(_TK_MODEL_DEFAULTS, software_months=sw0))
     eg = ex[-1]['mult'] / ex[0]['mult']
-    auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"],
-                                 (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
+    speedup = _tk_window_speedup(params, cap, comp)
+    exp_sw = (cap / comp) ** params["exp_software"]
+    auto = _tk_automation_growth(load_rsi_automation(), ex, params["ai_speed"], speedup,
+                                 _TK_AL_HUMAN_HOURS)
     uplift = float(params["human_uplift"])
     draws = _tk_uplift_draws(uplift)
     cal = takeoff.calibrate_feedback(
         eg, comp, cap, float(ss("tk_cal_yield", 1.0)), float(ss("tk_cal_validated", 0)) or None,
         transfer=T, coding_slope=params["coding_slope"], parallel=params["parallelization"],
         substitution=params["substitution"], uplift=draws,
-        amdahl=_tk_window_amdahl(load_rsi_automation(), ex, params["ai_speed"],
-                                 (cap / comp) ** params["ai_copies"], _TK_AL_HUMAN_HOURS)
-    ) if T_set > 0 else None
+        amdahl=_tk_window_amdahl(load_rsi_automation(), ex, params["ai_speed"], speedup,
+                                 _TK_AL_HUMAN_HOURS),
+        experiment_software=exp_sw) if T_set > 0 else None
     coding_fit = _tk_coding_fit(uplift, cap, comp, sw0)
     coding_e1 = float(np.log(survey_y / copies_y) / np.log(cap ** (1 / yrs)))
     labor_need, raw_need = _tk_pace_labor(
@@ -26404,17 +26424,21 @@ def _tk_evidence_chain(params):
         "survey_last_name": rows[-1]['name'], "survey_n": len(rows),
         "cp_h": cp_h, "cp_s": cp_s, "cp_g": cp_g,
         "cp_months": sw0,
-        "cp_copies": takeoff.DEFAULTS["ai_copies"],
+        "cp_copies": _TK_MODEL_DEFAULTS["ai_copies"],
+        "cp_copies_compute": _TK_MODEL_DEFAULTS["copies_compute"],
+        "cp_speed_slope": _TK_MODEL_DEFAULTS["speed_slope"],
+        "cp_compute_y": _TK_MODEL_DEFAULTS["compute_growth"],
         "coding_e1": coding_e1, "coding_ev": coding_fit,
         "coding_target": 1 - T + T * cap ** coding_e1,
         "uplift": uplift, "uplift_band": _tk_uplift_band(uplift),
         "copies_fit": _tk_copies_yearly(load_rsi_automation(),
-                                        dict(takeoff.DEFAULTS, software_months=sw0), draws,
+                                        dict(_TK_MODEL_DEFAULTS, software_months=sw0), draws,
                                         1 - T + T * cap ** (coding_fit / yrs)),
         "cp_before": 1 / (cp_h + (1 - cp_h) / cp_s),
         "cp_after": 1 / (cp_h + (1 - cp_h) / (cp_s * cp_g)),
         "exp_growth": eg, "parallel": params["parallelization"],
-        "compute_part": comp ** params["parallelization"],
+        "compute_part": (comp * exp_sw) ** params["parallelization"],
+        "exp_sw": exp_sw, "exp_software": float(params["exp_software"]),
         "residual": cal["resource_adjusted_growth"] if cal else None,
         "automation": auto, "fitted": cal["quality_slope"] if cal else None,
         "cal_weight": float(ss("tk_cal_weight", _TK_DEFAULTS["tk_cal_weight"])),
@@ -26439,7 +26463,9 @@ def _tk_evidence_chain(params):
         "survey_from": rows[0]['date'],
         "h0": h0, "h1": h1, "ai_speed": float(params["ai_speed"]),
         "ai_copies": float(params["ai_copies"]),
-        "copies_growth": (cap / comp) ** params["ai_copies"],
+        "copies_growth": speedup,
+        "copies_compute": float(params["copies_compute"]),
+        "speed_slope": float(params["speed_slope"]),
         "coding_factor": cal["coding_factor"] if cal else None,
         "labor_part": cal["labor_part"] if cal else None,
         "quality": cal["quality"] if cal else None,
@@ -26582,18 +26608,27 @@ def _tk_evidence_math(c):
             "and judgment, and judgment gets what the other two leave.",
             "*Compute.* Experiment compute grows with training compute, ×"
             f"{c['compute']:.2f} over the window, at returns set by the parallelization "
-            f"exponent ({par:g}, a prior: sidebar *Parallelization exponent*):",
-            rf"$$\text{{left after compute}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute']:.2f}^{{{par:g}}}}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute_part']:.2f}}} = {c['residual']:.2f}\times$$",
+            f"exponent ({par:g}, a prior: sidebar *Parallelization exponent*)"
+            + (f", and each experiment gets cheaper with algorithms: the window's "
+               f"algorithmic gain, {c['cap'] / c['compute']:.2f}, to the power "
+               f"{c['exp_software']:g} (sidebar *Experiments cheaper with algorithms*), "
+               f"×{c['exp_sw']:.2f}" if c["exp_software"] else "") + ":",
+            (rf"$$\text{{left after compute}} = \frac{{{c['exp_growth']:.2f}}}{{({c['compute']:.2f} \times {c['exp_sw']:.2f})^{{{par:g}}}}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute_part']:.2f}}} = {c['residual']:.2f}\times$$"
+             if c["exp_software"] else
+             rf"$$\text{{left after compute}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute']:.2f}^{{{par:g}}}}} = \frac{{{c['exp_growth']:.2f}}}{{{c['compute_part']:.2f}}} = {c['residual']:.2f}\times$$"),
             "*AI labor*, two parts, each through transfer T. Coding help grows with "
             f"capability at step 6's elasticity, {c['coding']:.2f}: "
             f"1 − T + T × {c['cap']:.2f}^{c['coding']:.2f}. People's falling share of the "
             f"work: the automation index puts them at {c['h0']:.1%} of research hours at the "
             f"window's start and {c['h1']:.1%} at its end. AI does its share "
             f"{c['ai_speed']:g}× faster (a prior: sidebar *AI speed on automated work*), "
-            f"and by the end runs ×{c['copies_growth']:.2f} the copies (the window's "
-            f"algorithmic gain, {c['cap'] / c['compute']:.2f}, to the power "
-            f"{c['ai_copies']:g}, a prior: sidebar *More AI researchers as algorithms "
-            "improve*). By Amdahl's law:",
+            f"and by the end ×{c['copies_growth']:.2f} as fast in all: more copies from "
+            f"algorithms (the window's algorithmic gain, {c['cap'] / c['compute']:.2f}, to "
+            f"the power {c['ai_copies']:g}, a prior: sidebar *More AI researchers as "
+            f"algorithms improve*) and from inference compute ({c['compute']:.2f} to "
+            f"{c['copies_compute']:g}, a prior: sidebar *AI researchers from inference "
+            f"compute*), and faster AI (capability, {c['cap']:.2f}, to {c['speed_slope']:g}, "
+            "a prior: sidebar *AI speed rises with capability*). By Amdahl's law:",
             rf"$$\text{{automation}} = \frac{{{c['h0']:.3f} + {1 - c['h0']:.3f}/{c['ai_speed']:g}}}{{{c['h1']:.3f} + {1 - c['h1']:.3f}/({c['ai_speed']:g} \times {c['copies_growth']:.2f})}} = {c['automation']:.2f}\times$$",
             f"Coding's gain, K = 1 − T + T × {c['cap']:.2f}^{c['coding']:.2f}, reaches "
             f"people's hours at its share θ (sidebar *Human uplift from AI coding*, "
@@ -26623,19 +26658,20 @@ def _tk_evidence_math(c):
         f"×{c['survey_y']:.2f} a year, so a year on the trend reads "
         f"~{1 + (c['survey_now'] - 1) * c['survey_y']:.0f}×; ×{c['survey_y']:.2f} is the growth, not "
         "the speedup.",
-        "Part of that growth is just running more AI copies. The automation index, "
+        "Part of that growth is just running more and faster AI. The automation index, "
         "projected to today, puts people at "
         f"{c['cp_h']:.0%} of the work (its three stages weighted "
         f"{c['stage_w'][0]:g}/{c['stage_w'][1]:g}/{c['stage_w'][2]:g}: direction, "
         "experiments, verification; the hours each automation level leaves people are "
         f"priors, in the human-share tables). AI does the rest {c['cp_s']:g}× faster (the default "
         "of the sidebar's *AI speed on automated work*), and a year of algorithmic "
-        f"progress at the baseline doubling ({c['cp_months']:g} months) gives "
-        f"$2^{{12/{c['cp_months']:g} \\times {c['cp_copies']:g}}}$ = ×{c['cp_g']:.2f} the "
-        "copies (the default power of *More AI researchers as algorithms improve*). By "
-        "Amdahl's law the speedup is one over the time the work still takes:",
+        f"progress at the baseline doubling ({c['cp_months']:g} months) and of compute "
+        f"(×{c['cp_compute_y']:g}) makes AI ×{c['cp_g']:.2f} as fast: algorithms to the "
+        f"power {c['cp_copies']:g} and compute to {c['cp_copies_compute']:g} (more copies), "
+        f"and effective compute to {c['cp_speed_slope']:g} (faster AI), the defaults under "
+        "Advanced. By Amdahl's law the speedup is one over the time the work still takes:",
         rf"$$\frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/{c['cp_s']:g}}} = {c['cp_before']:.3f}\times \;\to\; \frac{{1}}{{{c['cp_h']:.3f} + {1 - c['cp_h']:.3f}/({c['cp_s']:g} \times {c['cp_g']:.2f})}} = {c['cp_after']:.3f}\times$$",
-        f"so more copies add ×{c['copies_y']:.3f} ({100 * (c['copies_y'] - 1):+.1f}%) a "
+        f"so more and faster AI adds ×{c['copies_y']:.3f} ({100 * (c['copies_y'] - 1):+.1f}%) a "
         f"year: AI's part is already fast, so people's {c['cp_h']:.0%} sets the pace. "
         "Taking it out leaves "
         f"{c['survey_y']:.2f} ÷ {c['copies_y']:.3f} = ×{c['survey_y'] / c['copies_y']:.2f} a "
@@ -26655,7 +26691,7 @@ def _tk_evidence_math(c):
         f"×{c['coding_target']:.2f} over the window:",
         rf"$$e = {c['coding_ev']:.2f}$$",
         (f"With 10× the effective compute, AI's coding help is about "
-         f"{10 ** c['coding_ev']:.1f}× bigger. At this e, more copies add "
+         f"{10 ** c['coding_ev']:.1f}× bigger. At this e, more and faster AI adds "
          f"×{c['copies_fit']:.3f} a year on top of coding, whose share sped only AI's "
          "work already."
          + (f" The run uses {c['coding']:.2f}, set in the sidebar."
@@ -26758,7 +26794,7 @@ def _tk_flow_dot(v):
         # Coding labor.
         node("s_ev", "Staff speedup\\nsurvey", ora),
         node("s_me", f"speedup ~{c['survey_now']:.0f}× today,\\nits gain over no AI\\ngrowing ×{c['survey_y']:.2f} a year", ora),
-        node("s_cv", f"less what just running\\nmore copies adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
+        node("s_cv", f"less what more and\\nfaster AI adds (+{100 * (c['copies_y'] - 1):.1f}%/yr)\\n→ ×{c['survey_y'] / c['copies_y']:.2f}", ora),
         node("pc", f"Coding labor {c['coding']:.2f}\\nat uplift {c['uplift']:g}", ora),
         # Other inputs.
         node("ix", "R&D automation index\\n(AL4 / AL5)", grn),

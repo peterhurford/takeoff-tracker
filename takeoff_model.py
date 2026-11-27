@@ -1163,7 +1163,9 @@ def _k_draw(i, d, s, a, o):
                            + automation_log + headcount_log)
         if bound:                        # a lab can always go without AI
             labor_log = _k_max(labor_log, par * (d.amdahl0[i] + head_log))
-        exp_soft = d.exp_soft[i] * _k_max(help_sw, 0.0)
+        # Algorithms cheapening experiments is feedback from AI progress: none at
+        # zero transfer, which runs as the frozen-AI reference.
+        exp_soft = d.exp_soft[i] * _k_max(help_sw, 0.0) if tr else 0.0
         experiment_log = par * (compute_log + exp_log + exp_soft)
         ref_headcount = (d.amdahl0[i] - _k_lae(np.log(d.human0[i]) - s.hire_rate * mid,
                                                np.log1p(-d.human0[i]) - np.log(s.ai_speed)))
@@ -2427,7 +2429,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
         # A lab can always go without AI.
         labor_log = np.where(bound, np.maximum(labor_log, parallel * (amdahl0 + head_log)),
                              labor_log)
-        exp_soft_log = exp_soft * np.maximum(help_sw, 0)
+        exp_soft_log = exp_soft * np.maximum(help_sw, 0) if transfer else np.zeros(n)
         experiment_log = parallel * (compute_log + exp_log + exp_soft_log)
         with np.errstate(divide="ignore"):
             ref_headcount = (amdahl0 - np.logaddexp(np.log(human0) - hire_rate * mid_t,

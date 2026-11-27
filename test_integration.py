@@ -3852,10 +3852,11 @@ class TestPacingTab:
         months = why[why["Source"].str.startswith("Time")].iloc[0]
         m = [_span_mo(months[c]) for c in
              ("China ECI/yr at US pause", "Overall China ECI/yr", "China ECI/yr at US/China cross")]
-        # The pause's rate, distillation still flowing, closes the gap fastest.
+        # The pause's rate, distillation still flowing, beats the overall rate.
         # China's AI speed-up climbs toward the crossing as distillation dries
-        # up, so the other two can fall in either order.
-        assert m[0] < min(m[1], m[2])
+        # up, and with AI speed and copies growing with capability it can
+        # close faster there than at the pause.
+        assert m[0] < m[1]
         # The crossover row dates each rate from the pause; the crossing
         # column has no date of its own.
         cross = why[why["Source"] == "Crossover date"].iloc[0]
