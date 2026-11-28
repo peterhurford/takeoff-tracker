@@ -23983,6 +23983,8 @@ def _pc_render_us_pause(today, pause_d, caps, run_days=_DAYS_2MO,
     }[timing_label] + (" The crossing compares trained models (the trained-to-"
                        "release lags are in the sidebar), and the time to "
                        "surpass is trained against trained on every setting.")
+    if _cnp is not None:
+        _clock += _PC_SCALE_SENS
     # How the two paths are built, on the months card's hover.
     _method = (
         ("The US follows the Takeoff tab's scenarios, one ECI path per sample, "
@@ -24757,6 +24759,16 @@ def _pc_loading_done():
     if _PC_LOADING is not None and _PC_LOADING[0] is not None:
         _PC_LOADING[0].empty()
     _PC_LOADING = None
+
+
+# How much the crossing leans on the scale-dependent share (Takeoff, Advanced),
+# measured at the 2026-11-28 defaults with no pacing; rerun if the defaults move.
+_PC_SCALE_SENS = (
+    " The date leans on one judgment, the share of algorithm gains that pay off "
+    "only at scale (Takeoff, Advanced; 50%): at the defaults with no pacing, "
+    "China catches the US by end-2031 in 37% of samples at 50%, at a median of "
+    "Jun 2031 at 22%, and in 24% of samples at 78%, the edges of its 80% range "
+    "(set for both countries; measured Nov 2026).")
 
 
 def render_pacing():

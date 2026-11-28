@@ -4857,6 +4857,8 @@ class TestPacingTab:
         assert at.slider(key="pc_theft_share").value == 0
         card = next(m for m in at.metric if "(no pacing)" in str(m.label))
         assert str(card.value).startswith("After ")
+        # The crossing's dependence on the scale-dependent share rides its help.
+        assert "pay off only at scale" in str(card.help)
         assert "of samples by" in str(card.delta)
         assert at.get("plotly_chart")      # the race chart still draws
 
