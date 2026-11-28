@@ -26,6 +26,11 @@ COMPUTE_USES = ("training", "experiments", "agents")
 # most `full_human`% of baseline human hours, once coding is automated.
 # Capability past it is read as ECI.
 MILESTONES = ("RSI",)
+# The shortest training run: cycles shrink as growth speeds up, and with no
+# validation before internal use a runaway's would reach zero and stop time
+# (`test_a_runaway_with_no_internal_validation_still_steps_forward`).
+MIN_RUN_YEARS = 1 / 365
+
 DEFAULTS = {
     "onset_low": 6, "onset_high": 24, "years": 10, "seed": 42,
     "software_months": 8.4, "compute_growth": 2.0,
@@ -1378,7 +1383,8 @@ def _k_draw(i, d, s, a, o):
             reference_at_run_start = reference_gained
             if s.serial_speedup:
                 growth_now = np.exp(sr_log) * pace + (cr if end < s.slow_at else cl)
-                run_len = d.train_time[i] * _k_min(1.0, d.bcr[i] / _k_max(growth_now, 1e-9))
+                run_len = _k_max(d.train_time[i] * _k_min(1.0, d.bcr[i] / _k_max(growth_now, 1e-9)),
+                                 MIN_RUN_YEARS)
             run_start_scale = frontier(end) + boost_log
             run_compute = 0.0
             finished = False
@@ -2728,8 +2734,8 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
             # today: today's growth rate over the current one, capped at 1.
             growth_now = np.exp(sr_log) * pace + np.where(end < slow_at, compute_rate,
                                                           compute_late)
-            run_len[ready] = (train_time * np.minimum(
-                1.0, baseline_capability_rate / np.maximum(growth_now, 1e-9)))[ready]
+            run_len[ready] = np.maximum(train_time * np.minimum(
+                1.0, baseline_capability_rate / np.maximum(growth_now, 1e-9)), MIN_RUN_YEARS)[ready]
         run_start_scale[ready] = (frontier_log(end) + boost_log)[ready]
         run_compute[ready] = 0
         finished[ready] = False

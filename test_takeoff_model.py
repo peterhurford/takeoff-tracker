@@ -190,6 +190,18 @@ def test_a_runaway_reaches_rsi_unless_the_floor_blocks_it():
     assert np.isinf(inside["events"]["RSI"][0])
 
 
+@pytest.mark.parametrize("compiled", [True, False])
+def test_a_runaway_with_no_internal_validation_still_steps_forward(monkeypatch, compiled):
+    """Cycles shrink as growth speeds up; with no validation before internal
+    use, a runaway's cycle is the run alone, so it is floored at
+    `MIN_RUN_YEARS` and time keeps moving."""
+    monkeypatch.setattr(tk, "COMPILED", compiled and tk.COMPILED)
+    explosive = dict(difficulty=0.0, taste_slope=2.0, transfer=100, **tk.POINT_ESTIMATE,
+                     years=3, internal_validation=0.0, serial_speedup=1.0)
+    r = tk.simulate(explosive, n=1, onset_years=np.array([0.5]))
+    assert r["software_log"][0] == 1e6
+
+
 def test_progress_years_reads_the_capability_gain_after_rsi():
     """Forethought's readout: capability gained in the year after RSI over the
     base rate. A runaway inside the window counts as more than any number; a
