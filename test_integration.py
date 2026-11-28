@@ -1637,19 +1637,21 @@ class TestComputeVsCapabilities:
 
     def test_us_capacity_end_is_dated_by_its_own_point(self):
         """The capacity hover's "~X by YYYY" names the last catalogued
-        buildout point's year, so a later horizon with no new point prints
-        the same value and the same year."""
+        buildout point's year inside the window, not the horizon year."""
+        import visualize_projection as vp
         at = self._cc_app()
-        seen = {}
+        dcs = vp.load_data_centers()
         for yr in (2029, 2031):
             at.radio(key="cc_end_year").set_value(yr).run()
             _assert_no_error(at, f"China / through {yr}")
             text = " ".join(str(c.value) for c in at.caption)
             val, by = re.search(r"megaclusters \(Stargate, Hyperion…\) to "
                                 r"~([\d.]+) by (\d{4})", text).groups()
-            assert int(by) <= yr
-            seen.setdefault(val, set()).add(by)
-        assert all(len(years) == 1 for years in seen.values())
+            horizon = datetime(yr, 12, 31)
+            last = [p for p in vp._cc_trainflop_frontier(dcs, horizon, with_names=True)
+                    if p[0] <= horizon][-1]
+            assert int(by) == last[0].year
+            assert val == f"{np.log10(last[1]):.1f}"
 
     def test_renders_every_section(self):
         """US vs. China ends with the takeoff chart and the breakdown of

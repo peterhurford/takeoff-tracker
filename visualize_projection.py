@@ -1433,6 +1433,7 @@ _RLI_RAW = [
     # Mythos 5.2, Sonnet 5.5, Haiku 5.5, Mythos 5.1 and Opus 5 have no score; Argon is still Scale-only.
     # Rechecked 2026-11-25: no new model or changed score; Scale's newest createdAt is still Gemini 4 Carbon.
     # Rechecked 2026-11-26: no new model or changed score on Scale or the CAIS API.
+    # Rechecked 2026-11-28: no new model or changed score on Scale or the CAIS API.
 ]
 
 
@@ -10696,6 +10697,7 @@ _OPENAI_REVENUE = [
     # Rechecked 2026-11-18: no TickerTrends post since 11-06.
     # Rechecked 2026-11-25: TickerTrends' only post since (11-19, compute cost) carries no OpenAI ARR.
     # Rechecked 2026-11-26: no TickerTrends post since 11-19.
+    # Rechecked 2026-11-28: no TickerTrends post since 11-19.
 ]
 
 _ANTHROPIC_REVENUE = [
@@ -10817,6 +10819,7 @@ _ANTHROPIC_REVENUE = [
     # (alt-data) and the $100-120B year-end figures in press (forecasts).
     # Rechecked 2026-11-25: the IPO-closing 8-K (0001628280-26-075973, 11-25) and its exhibits state no run rate.
     # Rechecked 2026-11-26: no EDGAR filing since that 8-K.
+    # Rechecked 2026-11-28: no EDGAR filing since that 8-K; anthropic.com/news states no run rate.
 ]
 
 # Chinese labs: annualized run rate in $B, like the two series above, and only
@@ -19464,7 +19467,7 @@ _PC_BAN_OPTIONS = [1, 2, 3, 6]
 _PC_AI_OPTIONS = [0, 150, 160, 170, 180, 190, 200, 220]
 # A *Cap capability* phase: the highest ECI a US model may be trained to.
 # OpenAI's next perplexity window (0.68-0.70, Pachocki, Nov 22 2026) is about
-# ECI 183-187 at 2026's exchange rate (`openai_perplexity.csv`).
+# ECI 180-182 at 2026's exchange rate (`openai_perplexity.csv`).
 # 0 is today's trained frontier, whatever its score.
 _PC_CAP_OPTIONS = [0, 180, 185, 190, 200, 210, 225, 250]
 # How a cap ends: 0 lifts it at once, else it rises from the phase's end at
@@ -19917,7 +19920,7 @@ _PC_PHASE_HELP = {
     "cap": "Adds a phase in which no US model may be trained past an ECI "
            "level, the shared limit OpenAI's chief scientist proposed on Nov 22, "
            "2026 (in perplexity; its next window, 0.68-0.70, is about ECI "
-           "183-187). Research goes on with the capped model's help and "
+           "180-182). Research goes on with the capped model's help and "
            "compute keeps growing, so when the phase ends the next model, a "
            "training run and validation later, jumps to where research has "
            "got, unless *How it lifts* raises the cap gradually instead (then "

@@ -71,7 +71,7 @@ speeds up alike (the earlier model); at 0 the gain stays under Amdahl's bound
 calibration reads coding through the same split: the coding elasticity is the one slope at
 which the evidence window's coding labor multiple, K^theta (1 - T + T A) over the same
 without coding, averaged over quantiles of the theta draws, matches what the uplift-1 fit
-gives (0.97; 1.25 at the default 0.75, `test_coding_fit_follows_uplift`), and the experiment
+gives (0.99; 1.28 at the default 0.75, `test_coding_fit_follows_uplift`), and the experiment
 calibration's labor term is that average
 (`test_calibration_reads_coding_through_the_uplift_draws`). Human review
 held back deliberately for safety is a separate policy scenario (Pacing's ban), not this.

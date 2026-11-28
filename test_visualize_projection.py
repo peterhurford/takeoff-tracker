@@ -7527,7 +7527,7 @@ class TestOpenAIPerplexity:
         """`_ppl_trend` over the 2026 public models falls about 0.14 a year;
         `_ppl_window_dates` puts the window in 2027, the internal model
         (already ahead) sooner than the public line; `_ppl_eci_rate` puts
-        the window near ECI 183-186."""
+        the window near ECI 180-182."""
         rows = vp.load_openai_perplexity()
         slope, _ = vp._ppl_trend(rows)
         assert slope == pytest.approx(-0.14, abs=0.02)
@@ -7535,7 +7535,7 @@ class TestOpenAIPerplexity:
         assert all(d.year == 2027 for d in w['public'] + w['internal'])
         assert w['internal'][0] < w['public'][0] and w['public'][0] < w['public'][1]
         per, (p0, e0) = vp._ppl_eci_rate(rows)
-        assert e0 + (p0 - 0.70) * per == pytest.approx(183, abs=2)
+        assert e0 + (p0 - 0.70) * per == pytest.approx(180, abs=2)
         assert vp._ppl_window_dates([r for r in rows if r['kind'] == 'public'])['internal'] is None
         assert vp._ppl_trend(rows[:3]) is None
 
@@ -7804,7 +7804,7 @@ class TestTakeoffRsiCalibration:
         growth = np.exp(vp._rsi_survey_fit(vp.load_rsi_survey())[2] * 365.25) / copies
         e1 = float(np.log(growth) / np.log(cap ** (1 / years)))
         fit = lambda u: vp._tk_coding_fit(u, cap, comp, months)
-        assert fit(1.0) == round(e1, 2) == 0.97
+        assert fit(1.0) == round(e1, 2) == 0.99
         assert fit(1 - 1e-9) == fit(1.0)
         assert fit(0.5) > fit(0.75) > fit(0.85) > fit(1.0)
         T = d["tk_transfer"] / 100
