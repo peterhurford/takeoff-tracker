@@ -1495,7 +1495,8 @@ def _per_draw_curves(n, rng):
     "defaults", "app", "shared_curve", "switches_off", "no_difficulty", "runaway",
     "cut_and_review", "paths", "follower", "follower_scales", "bar_spread",
     "human_uplift", "no_ai", "train_hold", "ai_frozen", "ai_frozen_behind",
-    "speed_copies_experiments", "speed_copies_experiments_no_ai", "cadence_internal"])
+    "speed_copies_experiments", "speed_copies_experiments_no_ai", "cadence_internal",
+    "fast_at_scale"])
 def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
     rng = np.random.default_rng(11)
     n = 120
@@ -1526,6 +1527,9 @@ def test_the_compiled_loop_matches_the_numpy_loop(monkeypatch, case):
         r = _loops_agree(monkeypatch, dict(years=6, full_human_spread=4.0, human_floor=3.0),
                          n, **app)
         assert (r["draws"]["full_human"] < 3.0).any()
+    elif case == "fast_at_scale":
+        _loops_agree(monkeypatch, dict(years=6, fast_share=60.0, internal_validation=0.0,
+                                       fast_at_scale=1.0), n, **app)
     elif case == "cadence_internal":
         _loops_agree(monkeypatch, dict(years=6, fast_share=60.0, internal_validation=0.0),
                      n, **app)
@@ -1620,6 +1624,27 @@ def test_speed_copies_and_experiment_settings_at_zero_are_todays_model():
         moved = tk.simulate(dict(years=4, **on), n=200)
         assert np.nanmedian(moved["software_log"]) > np.nanmedian(
             base["software_log"]), on
+
+
+def test_fast_at_scale_holds_fast_gains_to_the_compute_they_ship_on():
+    """At 0 fast gains count at once (the model before the setting); at 1 the
+    scale-dependent share of them waits for compute as trained gains do, so
+    capability is never higher, and with no scale-dependent gains it is the
+    same."""
+    p = dict(years=4, fast_share=60.0)
+    base = tk.simulate(p, n=200)
+    same = tk.simulate(dict(p, fast_at_scale=0.0), n=200)
+    np.testing.assert_array_equal(base["software_log"], same["software_log"])
+    held = tk.simulate(dict(p, fast_at_scale=1.0), n=200)
+    cap0 = base["workflow_progress"]["capability_log"]
+    cap1 = held["workflow_progress"]["capability_log"]
+    assert (cap1[:, -1] < cap0[:, -1] - 1e-6).mean() > 0.1
+    free = dict(p, scale_dependent=0.0, scale_dependent_spread=0.0)
+    np.testing.assert_allclose(
+        tk.simulate(dict(free, fast_at_scale=1.0), n=50)["workflow_progress"]["capability_log"],
+        tk.simulate(free, n=50)["workflow_progress"]["capability_log"])
+    with pytest.raises(ValueError):
+        tk.simulate(dict(p, fast_at_scale=1.5), n=5)
 
 
 def test_internal_validation_sets_when_a_finished_run_goes_into_use():

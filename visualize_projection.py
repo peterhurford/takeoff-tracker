@@ -25470,7 +25470,9 @@ _TK_DEFAULTS["tk_reallocate_compute"] = bool(takeoff.DEFAULTS["reallocate_comput
 _TK_DEFAULTS.update({"tk_speed_slope": 0.44, "tk_copies_compute": 1.0, "tk_exp_software": 0.5})
 # Labs ship RL post-training about monthly beside pretraining every ~3 months
 # (the fast channel's share), and use a finished run internally at once.
-_TK_DEFAULTS.update({"tk_fast_share": 60.0, "tk_internal_validation": 0.0})
+# RL needs compute, so the fast gains' scale-dependent share waits for it as trained gains do.
+_TK_DEFAULTS.update({"tk_fast_share": 60.0, "tk_internal_validation": 0.0,
+                     "tk_fast_at_scale": 1.0})
 # `takeoff.DEFAULTS` at the app's defaults, for fits that read "the defaults".
 _TK_MODEL_DEFAULTS = dict(takeoff.DEFAULTS, **{
     k[3:]: v for k, v in _TK_DEFAULTS.items() if k[3:] in takeoff.DEFAULTS})
@@ -29438,12 +29440,16 @@ def _render_takeoff(loading):
             number("Gains that skip the training-run wait (%)", "fast_share", 0.0, 100.0, 5.0,
                    "Share of efficiency gains deployable at once through tooling, kernels "
                    "and small updates; the rest wait for a successor's training run and "
-                   "validation. The same gain never counts in both, and these also skip "
-                   "the wait for scale. With \u03c1 above, this decides most of the gap "
+                   "validation. The same gain never counts in both. With \u03c1 above, this decides most of the gap "
                    "to Forethought, whose model has no wait and gives 57% of scenarios "
                    "3 years of progress in RSI's first year and 18% 10 years. The "
                    "*Progress in RSI's first year* card's help gives this model's shares "
                    "at the current settings.")
+            number("Share of fast gains that wait for scale", "fast_at_scale", 0.0, 1.0, 0.25,
+                   "RL post-training needs compute, so at 1 the scale-dependent share of "
+                   "fast gains pays off only at the compute it ships on, as trained gains "
+                   "do: a compute-poor lab gains less from shipping often. 0 counts them "
+                   "all at once, as scale-invariant tooling (the model before this setting).")
             number("Compute growth after RSI (\u00d7 its rate)", "rsi_compute_boost",
                    0.5, 5.0, 0.25,
                    "Multiplies each scenario's log compute growth after its own RSI "

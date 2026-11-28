@@ -63,6 +63,10 @@ DEFAULTS = {
     # `fast_share` is each draw's median: logit-normal per draw, its spread
     # 1-sigma of the log-odds times 100 (100 is about 8-55% around 25%).
     "fast_share": 25.0, "fast_months": 1.0, "fast_share_spread": 100.0,
+    # Share of fast gains that pay off only at the compute they ship on, as
+    # trained gains do (`scale_dependent` of them): 0 counts them all at once,
+    # as scale-invariant tooling; 1, RL post-training, needs the compute.
+    "fast_at_scale": 0.0,
     "coding_today": 70.0,
     # Steady state: the next model ships with one full cycle (training +
     # validation) of discoveries not yet deployed.
@@ -229,6 +233,8 @@ def validate(params):
         if not p["human_floor"] <= p["human_" + stage] <= 100 or p["half_" + stage] <= 0:
             raise ValueError("Each workflow's starting human work must be at least its floor, "
                              "and its halving time must be positive.")
+    if not 0 <= p["fast_at_scale"] <= 1:
+        raise ValueError("fast_at_scale must be between 0 and 1.")
     if not 0 <= p["fast_share"] <= 100 or p["fast_months"] <= 0 \
             or not 0 <= p["fast_share_spread"] <= 400:
         raise ValueError("Fast feedback needs a share in [0, 100] and a positive validation cycle.")
@@ -953,7 +959,8 @@ def _k_draw(i, d, s, a, o):
         if has_t and o.coding[i] > t + 1e-12:
             out[0] = _k_max(out[0], d.bar[i])
 
-    def pays_off(t, software, boost_log, scale_now, trained, fast, reference_trained):
+    def pays_off(t, software, boost_log, scale_now, trained, fast, reference_trained,
+                 reference_fast):
         lag = d.scale_lag[i]
         target = scale_now - lag
         x = _k_min(target, big - 1)
@@ -980,8 +987,10 @@ def _k_draw(i, d, s, a, o):
         if np.isinf(ratio):
             due = np.inf
         else:
-            due = _k_max((1 - ff) * (earlier + ratio * lag), reference_trained)
-        return fast + trained - d.scale_share[i] * _k_max(trained - due, 0.0)
+            due = _k_max((1 - ff + s.fast_at_scale * ff) * (earlier + ratio * lag),
+                         reference_trained + s.fast_at_scale * reference_fast)
+        checked = trained + s.fast_at_scale * fast
+        return fast + trained - d.scale_share[i] * _k_max(checked - due, 0.0)
 
     def difficulty(progress):
         if capped:
@@ -1049,7 +1058,7 @@ def _k_draw(i, d, s, a, o):
     # The deployed model (`realized`).
     now0 = deployed - deployed_software
     now1 = pays_off(t, software, boost_log, deployed_scale, deployed_software, fast_deployed,
-                    reference_delivered)
+                    reference_delivered, reference_fast)
     now2 = now0 + now1
     years = s.years
     carried = False
@@ -1302,7 +1311,7 @@ def _k_draw(i, d, s, a, o):
         if done:
             adopted = candidate_compute + pays_off(
                 t, software, boost_log, run_start_scale, (1 - ff) * snapshot, fast_deployed,
-                (1 - ff) * reference_snapshot) > now2
+                (1 - ff) * reference_snapshot, reference_fast) > now2
             if adopted:
                 pending, pending_scale = candidate, run_start_scale
                 pending_software = (1 - ff) * snapshot
@@ -1320,7 +1329,7 @@ def _k_draw(i, d, s, a, o):
         if ready:
             behind = (pending - pending_software) + pays_off(
                 t, software, boost_log, pending_scale, pending_software, fast_deployed,
-                reference_pending_software) < now2 - 1e-12
+                reference_pending_software, reference_fast) < now2 - 1e-12
             if behind:
                 pending, pending_software = deployed, deployed_software
                 pending_scale = deployed_scale
@@ -1348,7 +1357,7 @@ def _k_draw(i, d, s, a, o):
         if ready or fast_ready:
             now0 = deployed - deployed_software
             now1 = pays_off(t, software, boost_log, deployed_scale, deployed_software,
-                            fast_deployed, reference_delivered)
+                            fast_deployed, reference_delivered, reference_fast)
             now2 = now0 + now1
         software_now = now1 + follow_log
         effective = now2 + follow_log
@@ -1481,7 +1490,7 @@ _KDraws = namedtuple("_KDraws", (
     "limit_back", "auto_log", "speed_slope", "exp_soft"))
 _KSettings = namedtuple("_KSettings", (
     "years", "step", "boost", "rsi_delay", "rsi_ramp", "slow_at", "transfer", "parallel",
-    "sh0", "ai_speed", "ai_copies", "copies_compute", "hire_rate", "after_rate",
+    "sh0", "ai_speed", "ai_copies", "copies_compute", "fast_at_scale", "hire_rate", "after_rate",
     "judgment_today", "judgment_cap", "adoption", "coding_today", "coding_slope",
     "reallocate", "has_slopes", "trend_weight", "trend_months", "useful",
     "autopilot", "serial_speedup", "fast_time", "review_from", "review_to", "review_time",
@@ -1546,6 +1555,7 @@ def _k_simulate(n, p, step, fol, cpath, epath, cut, use_cut, human_curve, coding
         slow_at=float(v["slow_at"]), transfer=float(v["transfer"]),
         parallel=float(v["parallel"]), sh0=float(shares[0]), ai_speed=float(v["ai_speed"]),
         ai_copies=float(p["ai_copies"]), copies_compute=float(p["copies_compute"]),
+        fast_at_scale=float(p["fast_at_scale"]),
         hire_rate=float(v["hire_rate"]), after_rate=float(v["after_rate"]),
         judgment_today=float(p["judgment_today"]), judgment_cap=float(p["judgment_cap"]),
         adoption=float(p["direction_adoption"]), coding_today=float(p["coding_today"]),
@@ -2009,6 +2019,7 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
     scale_ratio = np.divide(software_rate, hist_rate, out=np.full(n, np.inf), where=hist_rate > 0)
 
     def pays_off(rows, scale_now, trained_software, fast_software, reference_trained):
+        # `fast_at_scale` of the fast gains face the same check (docstring below).
         """For draws `rows`, a model's algorithmic part as it pays off at its
         compute. Fast gains (tooling, kernels: Gundlach et al.'s
         scale-invariant kind) count at once. Of the gains that came through
@@ -2044,10 +2055,12 @@ def simulate(params=None, n=1000, step=1 / 52, onset_years=None, experiment_slop
                                      where=c1 > c0), 0, 1)
             earlier = np.where(idx >= 0, s0 + frac * (s1 - s0),
                                initial_stock[rows] + ratio * target)
+            at_scale = p["fast_at_scale"]
             due = np.where(np.isinf(ratio), np.inf, np.maximum(
-                (1 - fast_fraction[rows]) * (earlier + ratio * lag), reference_trained))
+                (1 - fast_fraction[rows] + at_scale * fast_fraction[rows]) * (earlier + ratio * lag),
+                reference_trained + at_scale * reference_fast[rows]))
         return (fast_software + trained_software
-                - scale_share[rows] * np.maximum(trained_software - due, 0))
+                - scale_share[rows] * np.maximum(trained_software + at_scale * fast_software - due, 0))
 
     def realized(rows=None):
         """(training-compute part, algorithmic part as it pays off, capability)
